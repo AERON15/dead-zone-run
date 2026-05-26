@@ -6887,29 +6887,6 @@ menuBtn.addEventListener('click', function() {
 
 // Upgrades chosen listener / continue action handled directly on card selections
 
-// Floating Sound Toggle Button Event Listener
-const soundToggleBtn = document.getElementById('sound-toggle-btn');
-const soundIcon = document.getElementById('sound-icon');
-
-if (soundToggleBtn) {
-  // Let the user enable/resume audio context on click
-  soundToggleBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isMuted = audio.toggleMute();
-    if (isMuted) {
-      soundIcon.textContent = '🔇';
-      soundToggleBtn.classList.add('muted');
-    } else {
-      soundIcon.textContent = '🔊';
-      soundToggleBtn.classList.remove('muted');
-      // Force resume & start music immediately if in-game
-      audio.resume();
-      if (gameState.isRunning) {
-        audio.startMusic();
-      }
-    }
-  });
-}
 
 // Keyboard Shortcut for Testing
 // Press "G" during gameplay to trigger the game-over screen.

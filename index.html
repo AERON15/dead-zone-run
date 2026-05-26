@@ -19,10 +19,6 @@
   <!-- Retro CRT Scanline Screen Overlay -->
   <div class="crt-overlay" aria-hidden="true"></div>
 
-  <!-- Floating Sound Toggle Button -->
-  <button id="sound-toggle-btn" class="sound-toggle" aria-label="Toggle Sound and Music">
-    <span id="sound-icon">🔊</span>
-  </button>
 
   <!-- Floating Pause Button -->
   <button id="pause-btn" class="pause-btn" aria-label="Pause Game" style="display: none;">
@@ -81,63 +77,153 @@
       <span class="particle"></span>
     </div>
 
-    <!-- Main Game Menu Container -->
-    <div class="menu-container">
-      <!-- Retro panel corner rivet details -->
-      <div class="rivet top-left" aria-hidden="true"></div>
-      <div class="rivet top-right" aria-hidden="true"></div>
-      <div class="rivet bottom-left" aria-hidden="true"></div>
-      <div class="rivet bottom-right" aria-hidden="true"></div>
-
-      <!-- Hazard Stripes Banner for Zombie Theme -->
-      <div class="hazard-bar" aria-hidden="true"></div>
-
-      <!-- Game title in block pixel-art styling -->
-      <h1 id="game-title" class="title">
-        <span class="title-dead">DEAD</span><br>
-        <span class="title-zone">ZONE</span>
-        <span class="title-run">RUN</span>
-      </h1>
-      <p class="tagline">Survive the horde. How long can you last?</p>
-
-      <!-- Player name input -->
-      <div class="input-group">
-        <label for="player-name" class="input-label">Enter Your Name, Survivor</label>
-        <input
-          type="text"
-          id="player-name"
-          class="name-input"
-          placeholder="Anonymous Survivor"
-          maxlength="20"
-          autocomplete="off"
-        >
-      </div>
-
-      <!-- Tactical Mission Instructions -->
-      <div class="instructions-panel">
-        <h3 class="instructions-title">SURVIVAL PROTOCOLS</h3>
-        <ul class="instructions-list">
-          <li><span class="key-cap">WASD</span> to move</li>
-          <li><span class="key-cap">MOUSE</span> to aim</li>
-          <li><span class="key-cap">HOLD CLICK</span> to shoot</li>
-          <li><span class="key-cap">SURVIVE WAVES</span> & choose upgrades</li>
+    <!-- Main Game Menu Layout Wrapper (Redesigned Tactical Dashboard) -->
+    <div class="main-menu-wrapper">
+      
+      <!-- Left Panel: Tactical Survival Protocols (Controls & Keybinds) -->
+      <div class="side-panel left-panel">
+        <div class="rivet top-left" aria-hidden="true"></div>
+        <div class="rivet top-right" aria-hidden="true"></div>
+        <div class="rivet bottom-left" aria-hidden="true"></div>
+        <div class="rivet bottom-right" aria-hidden="true"></div>
+        <div class="hazard-bar" aria-hidden="true"></div>
+        
+        <h3 class="side-panel-title">SURVIVAL PROTOCOLS</h3>
+        <ul class="side-panel-list">
+          <li>
+            <span class="key-caps">
+              <span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span>
+            </span>
+            <span class="action-desc">Tactical Movement Control</span>
+          </li>
+          <li>
+            <span class="key-caps">
+              <span class="key-cap">MOUSE</span>
+            </span>
+            <span class="action-desc">Aim / Face Direction</span>
+          </li>
+          <li>
+            <span class="key-caps">
+              <span class="key-cap">HOLD CLICK</span>
+            </span>
+            <span class="action-desc">Primary Weapon Fire</span>
+          </li>
+          <li>
+            <span class="key-caps">
+              <span class="key-cap">SPACE</span> / <span class="key-cap">SHIFT</span>
+            </span>
+            <span class="action-desc">Reflex Dash (Active Upgrade)</span>
+          </li>
+          <li>
+            <span class="key-caps">
+              <span class="key-cap">O + P</span>
+            </span>
+            <span class="action-desc">Developer Cheat Console</span>
+          </li>
+          <li>
+            <span class="key-caps">
+              <span class="key-cap">ESC</span>
+            </span>
+            <span class="action-desc">Pause Mission / Sound Menu</span>
+          </li>
         </ul>
+        
+        <div class="hazard-bar" aria-hidden="true"></div>
       </div>
 
-      <!-- Menu buttons -->
-      <div class="menu-buttons">
-        <button id="start-btn" class="btn btn-primary">
-          Start Game
-        </button>
-        <button id="leaderboard-btn" class="btn btn-secondary">
-          Leaderboard
-        </button>
+      <!-- Center Panel: Core Mission Control (Main Menu) -->
+      <div class="menu-container">
+        <!-- Retro panel corner rivet details -->
+        <div class="rivet top-left" aria-hidden="true"></div>
+        <div class="rivet top-right" aria-hidden="true"></div>
+        <div class="rivet bottom-left" aria-hidden="true"></div>
+        <div class="rivet bottom-right" aria-hidden="true"></div>
+
+        <!-- Hazard Stripes Banner for Zombie Theme -->
+        <div class="hazard-bar" aria-hidden="true"></div>
+
+        <!-- Game title in block pixel-art styling -->
+        <h1 id="game-title" class="title">
+          <span class="title-dead">DEAD</span><br>
+          <span class="title-zone">ZONE</span>
+          <span class="title-run">RUN</span>
+        </h1>
+        <p class="tagline">Survive the horde. How long can you last?</p>
+
+        <!-- Player name input -->
+        <div class="input-group">
+          <label for="player-name" class="input-label">Enter Your Name, Survivor</label>
+          <input
+            type="text"
+            id="player-name"
+            class="name-input"
+            placeholder="Anonymous Survivor"
+            maxlength="20"
+            autocomplete="off"
+          >
+        </div>
+
+        <!-- Menu buttons -->
+        <div class="menu-buttons">
+          <button id="start-btn" class="btn btn-primary">
+            Start Game
+          </button>
+          <button id="leaderboard-btn" class="btn btn-secondary">
+            Leaderboard
+          </button>
+        </div>
+
+        <div class="hazard-bar" aria-hidden="true"></div>
+
+        <!-- Footer credit -->
+        <p class="footer-text">A Web Development Final Project</p>
       </div>
 
-      <div class="hazard-bar" aria-hidden="true"></div>
+      <!-- Right Panel: Arsenal & Upgrade Database (Tactical Intel) -->
+      <div class="side-panel right-panel">
+        <div class="rivet top-left" aria-hidden="true"></div>
+        <div class="rivet top-right" aria-hidden="true"></div>
+        <div class="rivet bottom-left" aria-hidden="true"></div>
+        <div class="rivet bottom-right" aria-hidden="true"></div>
+        <div class="hazard-bar" aria-hidden="true"></div>
+        
+        <h3 class="side-panel-title">ARSENAL DATABASE</h3>
+        
+        <div class="arsenal-item">
+          <div class="arsenal-header">
+            <span class="arsenal-name">Slow Start</span>
+            <span class="arsenal-badge legendary-text">[RAMP]</span>
+          </div>
+          <p class="arsenal-desc">At wave start, fire rate is reduced by 50%. Cooldown speeds up linearly over 10s, capping at a massive 3.0x speed boost.</p>
+        </div>
+        
+        <div class="arsenal-item">
+          <div class="arsenal-header">
+            <span class="arsenal-name">Orbiting Defender</span>
+            <span class="arsenal-badge epic-text">[SAW]</span>
+          </div>
+          <p class="arsenal-desc">Spawns orbiting sawblades slicing through close zombies. Upgrade to increase radius and cap at 5 massive spinning blades.</p>
+        </div>
+        
+        <div class="arsenal-item">
+          <div class="arsenal-header">
+            <span class="arsenal-name">Chain Lightning</span>
+            <span class="arsenal-badge legendary-text">[BOLT]</span>
+          </div>
+          <p class="arsenal-desc">Periodically releases high-voltage cyan lightning arcs that electrocute and bounce across groups of surrounding zombies.</p>
+        </div>
+        
+        <div class="arsenal-item">
+          <div class="arsenal-header">
+            <span class="arsenal-name">Kill Frenzy</span>
+            <span class="arsenal-badge rare-text">[FRENZY]</span>
+          </div>
+          <p class="arsenal-desc">Defeating 5 zombies quickly activates a rush state: +30% movement speed and +30% fire rate for 3 seconds.</p>
+        </div>
+        
+        <div class="hazard-bar" aria-hidden="true"></div>
+      </div>
 
-      <!-- Footer credit -->
-      <p class="footer-text">A Web Development Final Project</p>
     </div>
   </div>
 

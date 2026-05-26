@@ -1722,7 +1722,7 @@ html, body {
 .pause-btn {
   position: absolute;
   top: 15px;
-  right: 80px;
+  right: 25px; /* Moved from 80px to 25px since mute button is removed */
   z-index: 1000;
   width: 44px;
   height: 44px;
@@ -1747,6 +1747,174 @@ html, body {
 
 .pause-btn:active {
   transform: scale(0.95);
+}
+
+/* Tactical Dashboard & Side Panels Layout */
+.main-menu-wrapper {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2rem;
+  width: 95%;
+  max-width: 1240px;
+  max-height: 92vh;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.side-panel {
+  position: relative;
+  flex: 1;
+  max-width: 330px;
+  background: var(--bg-panel);
+  padding: 1.5rem 1.2rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  
+  /* Double block retro-borders */
+  border: 6px solid #000;
+  outline: 6px solid var(--panel-border);
+  box-shadow: 12px 12px 0px #000;
+  
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.side-panel::-webkit-scrollbar {
+  width: 8px;
+}
+.side-panel::-webkit-scrollbar-track {
+  background: #000;
+}
+.side-panel::-webkit-scrollbar-thumb {
+  background: var(--panel-border-light);
+  border: 2px solid #000;
+}
+.side-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--pixel-orange);
+}
+
+.side-panel-title {
+  font-family: var(--font-pixel);
+  font-size: 1rem;
+  color: var(--pixel-orange);
+  text-shadow: 2px 2px 0px #000;
+  text-align: center;
+  margin: 0.2rem 0;
+  letter-spacing: 1px;
+}
+
+.side-panel-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 0;
+  margin: 0.2rem 0;
+}
+
+.side-panel-list li {
+  font-family: var(--font-terminal);
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.5rem 0.6rem;
+  border-left: 4px solid var(--pixel-green);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.side-panel-list li .key-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.side-panel-list li .key-cap {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  background: #242430;
+  color: var(--pixel-green);
+  padding: 2px 6px;
+  border: 1px solid var(--panel-border-light);
+  box-shadow: 1px 1px 0px #000;
+  text-transform: uppercase;
+}
+
+.action-desc {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+/* Arsenal item designs */
+.arsenal-item {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.5rem 0.6rem;
+  border-left: 4px solid var(--pixel-orange);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: var(--font-terminal);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.arsenal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.arsenal-name {
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: var(--text-primary);
+}
+
+.arsenal-badge {
+  font-family: var(--font-terminal);
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.arsenal-desc {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+/* Common, Rare, Epic, Legendary rarity color overrides for text */
+.common-text { color: var(--text-secondary); }
+.rare-text { color: #3b82f6; }
+.epic-text { color: #a855f7; }
+.legendary-text { color: var(--pixel-orange); }
+
+/* Responsive side panels */
+@media (max-width: 1024px) {
+  .main-menu-wrapper {
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    gap: 1.5rem;
+    max-height: 95vh;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+  .side-panel {
+    max-width: 440px;
+    width: 90%;
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 
 
