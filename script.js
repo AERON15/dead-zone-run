@@ -63,6 +63,286 @@ let waveKillCount = 0;         // Kills made in the current wave (used by Slow S
 // Roguelike Upgrades Selection Tracker
 let upgradesChosen = [];
 
+// Sound & Music Synthesizer Engine (Vanilla Web Audio API)
+const audio = {
+  ctx: null,
+  isMuted: false,
+  musicTimer: null,
+  musicStep: 0,
+  musicBpm: 125,
+
+  init() {
+    if (this.ctx) return;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AudioContextClass();
+    } catch (e) {
+      console.warn("Web Audio API is not supported in this browser.");
+    }
+  },
+
+  resume() {
+    this.init();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  },
+
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    if (this.isMuted) {
+      this.stopMusic();
+    } else {
+      this.resume();
+      if (gameState.isRunning) {
+        this.startMusic();
+      }
+    }
+    return this.isMuted;
+  },
+
+  // 🔊 Synthesize short sound effects dynamically
+  playSfx(type) {
+    if (this.isMuted) return;
+    this.resume();
+    if (!this.ctx) return;
+
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    switch (type) {
+      case 'shoot': {
+        // High-to-low retro laser sweep
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(600, now);
+        osc.frequency.exponentialRampToValueAtTime(100, now + 0.12);
+
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+        break;
+      }
+      case 'hit': {
+        // Quick high-passed noise-like pop
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.linearRampToValueAtTime(50, now + 0.08);
+
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.08);
+        break;
+      }
+      case 'kill': {
+        // Retro crunch sweep
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.linearRampToValueAtTime(30, now + 0.15);
+
+        gain.gain.setValueAtTime(0.20, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        break;
+      }
+      case 'playerHit': {
+        // Deep low frequency warning punch
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(95, now);
+        osc.frequency.linearRampToValueAtTime(40, now + 0.25);
+
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+        break;
+      }
+      case 'dash': {
+        // Retro cyber-whoosh sweep
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(900, now + 0.22);
+
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.22);
+        break;
+      }
+      case 'explosion': {
+        // Heavy explosion rumble (low pitch + decaying gain)
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(80, now);
+        osc.frequency.exponentialRampToValueAtTime(20, now + 0.65);
+
+        gain.gain.setValueAtTime(0.48, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.65);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.65);
+        break;
+      }
+      case 'upgrade': {
+        // Futuristic major power-up chime arpeggio
+        const notes = [261.63, 329.63, 392.00, 523.25]; // C4 -> E4 -> G4 -> C5
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const noteTime = now + idx * 0.08;
+
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, noteTime);
+
+          gain.gain.setValueAtTime(0.18, noteTime);
+          gain.gain.exponentialRampToValueAtTime(0.005, noteTime + 0.22);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(noteTime);
+          osc.stop(noteTime + 0.22);
+        });
+        break;
+      }
+      case 'bossSpawn': {
+        // Impending low roaring sweeps
+        for (let i = 0; i < 2; i++) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const delay = i * 0.25;
+
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(110 - i * 20, now + delay);
+          osc.frequency.linearRampToValueAtTime(30, now + delay + 0.85);
+
+          gain.gain.setValueAtTime(0.35, now + delay);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + delay + 0.85);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + delay);
+          osc.stop(now + delay + 0.85);
+        }
+        break;
+      }
+    }
+  },
+
+  // 🎵 Synthesize continuous loops for the background music (cyber arpeggiator sequencer)
+  startMusic() {
+    if (this.isMuted) return;
+    this.resume();
+    if (!this.ctx || this.musicTimer) return;
+
+    const stepIntervalMs = (60 / this.musicBpm / 2) * 1000; // eighth notes loop
+    this.musicTimer = setInterval(() => {
+      this.playMusicStep();
+    }, stepIntervalMs);
+  },
+
+  stopMusic() {
+    if (this.musicTimer) {
+      clearInterval(this.musicTimer);
+      this.musicTimer = null;
+    }
+  },
+
+  playMusicStep() {
+    if (this.isMuted || !this.ctx) return;
+
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const step = this.musicStep;
+
+    const chordNotes = [
+      82.41, 82.41, 164.81, 82.41,
+      97.99, 97.99, 195.99, 97.99,
+      73.42, 73.42, 146.83, 73.42,
+      65.41, 65.41, 130.81, 130.81
+    ];
+
+    const freq = chordNotes[step % chordNotes.length];
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now);
+
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.005, now + 0.18);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.20);
+
+    if (step % 8 === 2) {
+      const melodyFreq = freq * 3.0;
+      const mOsc = ctx.createOscillator();
+      const mGain = ctx.createGain();
+
+      mOsc.type = 'sine';
+      mOsc.frequency.setValueAtTime(melodyFreq, now);
+
+      mGain.gain.setValueAtTime(0.04, now);
+      mGain.gain.exponentialRampToValueAtTime(0.001, now + 0.40);
+
+      mOsc.connect(mGain);
+      mGain.connect(ctx.destination);
+      mOsc.start(now);
+      mOsc.stop(now + 0.45);
+    } else if (step % 16 === 10) {
+      const melodyFreq = freq * 4.0;
+      const mOsc = ctx.createOscillator();
+      const mGain = ctx.createGain();
+
+      mOsc.type = 'sine';
+      mOsc.frequency.setValueAtTime(melodyFreq, now);
+
+      mGain.gain.setValueAtTime(0.03, now);
+      mGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      mOsc.connect(mGain);
+      mGain.connect(ctx.destination);
+      mOsc.start(now);
+      mOsc.stop(now + 0.40);
+    }
+
+    this.musicStep = (step + 1) % 16;
+  }
+};
+
 // Global tick counter for game loops
 let gameTick = 0;
 
@@ -1206,6 +1486,8 @@ function startGame() {
 
   // Set running state and launch game loop
   gameState.isRunning = true;
+  audio.resume();
+  audio.startMusic();
   gameLoop();
 }
 
@@ -2133,6 +2415,7 @@ function update() {
     let z = zombies[zIdx];
     if (z.health <= 0) {
       if (!z.selfDetonated) {
+        audio.playSfx('kill');
         gameState.score += z.scoreValue;
         gameState.kills += 1;
         waveKillCount += 1;
@@ -2233,6 +2516,7 @@ function update() {
 
       // Hit detected!
       if (distSq < radiusSum * radiusSum) {
+        audio.playSfx('hit');
         // Calculate base and upgrades damage
         let damageDealt = b.damage;
 
@@ -2492,6 +2776,8 @@ function renderUpgradeChoices() {
 
     // Bind click trigger
     card.addEventListener('click', () => {
+      // Play upgrade sound effect
+      audio.playSfx('upgrade');
       // 1. Apply the upgrade
       upgrade.apply();
 
@@ -2716,6 +3002,7 @@ function spawnPatientZero() {
 
   zombies.push(boss);
   activeBoss = boss;
+  audio.playSfx('bossSpawn');
   startScreenShake(10, 15);
   console.log(`[BOSS] Patient Zero spawned on wave ${gameState.wave}! HP: ${baseHP}`);
 }
@@ -3222,6 +3509,7 @@ function damagePlayer(rawAmount) {
 
   // 3. Deal damage
   player.health = Math.max(0, player.health - actualDamage);
+  audio.playSfx('playerHit');
   // (Player blood spray and floor stains removed to clean up visual clutter)
   startScreenShake(7, 12);
   updateHUD();
@@ -3347,6 +3635,7 @@ function shootWeapon() {
 
   // Bullet spawn rate cooldown check
   if (now - player.lastShotTime >= currentFireRate) {
+    audio.playSfx('shoot');
     // 1. Calculate angle from player's screen position to mouse cursor screen coordinates
     const playerScreenX = player.x - camera.x;
     const playerScreenY = player.y - camera.y;
@@ -3619,6 +3908,7 @@ function spawnPlayerBloodSpray(px, py) {
 }
 
 function triggerExplosion(ex, ey, maxDamage) {
+  audio.playSfx('explosion');
   startExplosionShake(ex, ey, 20); // Upgraded screen shake to 20 for massive weight
   addFloorScorch(ex, ey, 90, 'fire'); // Perfect circle crater with glowing cracks
 
@@ -3750,6 +4040,7 @@ function triggerExplosion(ex, ey, maxDamage) {
  * Deals splash damage to nearby zombies.
  */
 function triggerNecroBombExplosion(ex, ey) {
+  audio.playSfx('explosion');
   const radius = 110 + player.necroBombLevel * 25; // Massive upgraded base radius
   const damage = Math.floor((18 + player.necroBombLevel * 6) * 0.8); // Nerfed by an additional 20% to keep damage highly controlled
   startExplosionShake(ex, ey, 12 + player.necroBombLevel * 2);
@@ -6355,6 +6646,8 @@ function rectsOverlap(a, b) {
 
 function gameOver() {
   gameState.isRunning = false;
+  audio.stopMusic();
+  audio.playSfx('explosion');
 
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
@@ -6407,6 +6700,7 @@ window.addEventListener('keydown', function(event) {
 });
 
 function triggerReflexDash() {
+  audio.playSfx('dash');
   // Determine dash direction from movement inputs, default to aiming angle if stationary
   let dx = 0;
   let dy = 0;
@@ -6517,6 +6811,30 @@ menuBtn.addEventListener('click', function() {
 });
 
 // Upgrades chosen listener / continue action handled directly on card selections
+
+// Floating Sound Toggle Button Event Listener
+const soundToggleBtn = document.getElementById('sound-toggle-btn');
+const soundIcon = document.getElementById('sound-icon');
+
+if (soundToggleBtn) {
+  // Let the user enable/resume audio context on click
+  soundToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isMuted = audio.toggleMute();
+    if (isMuted) {
+      soundIcon.textContent = '🔇';
+      soundToggleBtn.classList.add('muted');
+    } else {
+      soundIcon.textContent = '🔊';
+      soundToggleBtn.classList.remove('muted');
+      // Force resume & start music immediately if in-game
+      audio.resume();
+      if (gameState.isRunning) {
+        audio.startMusic();
+      }
+    }
+  });
+}
 
 // Keyboard Shortcut for Testing
 // Press "G" during gameplay to trigger the game-over screen.
