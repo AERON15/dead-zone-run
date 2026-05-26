@@ -1,24 +1,21 @@
 // database.js — Supabase Integration for Dead Zone Run Leaderboard
 // This file handles saving scores and loading the leaderboard from Supabase.
 
-// ============================================================
 // STEP 1: Paste your Supabase credentials below.
 //
 // Go to your Supabase project dashboard:
 //   → Settings → API
 //   → Copy the "Project URL" and paste it as SUPABASE_URL
 //   → Copy the "anon public" key and paste it as SUPABASE_ANON_KEY
-// ============================================================
 
-const SUPABASE_URL  = 'YOUR_SUPABASE_URL_HERE';      // Example: 'https://abcdefg.supabase.co'
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE'; // Example: 'eyJhbGciOi...'
+const SUPABASE_URL  = 'https://oxwbcoveslfmasauuoht.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94d2Jjb3Zlc2xmbWFzYXV1b2h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODU3NzUsImV4cCI6MjA5NTM2MTc3NX0.BhytjubkybsLLikoh5gdYh4vsLF_7A0T_m6vHKUq63o';
 
 // Create the Supabase client using the CDN library loaded in index.html.
 // The "supabase" global comes from the Supabase CDN script.
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
-// ============================================================
 // STEP 2: Make sure your Supabase table is set up.
 //
 // Table name: game_scores
@@ -30,7 +27,6 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 //   zombies_killed → int4
 //   upgrades_chosen→ text[] (array of text) or jsonb
 //   created_at     → timestamptz, default now()
-// ============================================================
 
 
 /**

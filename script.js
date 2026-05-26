@@ -125,7 +125,30 @@ let player = {
   splinterShotLevel: 0,
   steadyAimLevel: 0,
   dodgeChance: 0.0,
-  waveHealPercentage: 0.15
+  waveHealPercentage: 0.15,
+
+  // 11 New Roguelike Upgrades Schema Extension
+  critChance: 0.0,
+  finisherDamage: 0.0,
+  secondWindLevel: 0,
+  secondWindTriggered: false,
+  bioShieldLevel: 0,
+  bioShieldActive: false,
+  bioShieldTimer: 0,
+  cryoCapsuleLevel: 0,
+  reflexDashLevel: 0,
+  reflexDashCooldown: 0,
+  reflexDashDuration: 0,
+  reflexDashVx: 0,
+  reflexDashVy: 0,
+  labMineLevel: 0,
+  labMineTimer: 0,
+  stimulantLevel: 0,
+  overclockLevel: 0,
+  overclockShotCounter: 0,
+  killFrenzyLevel: 0,
+  killFrenzyHistory: [],
+  killFrenzyTimer: 0
 };
 
 // Keyboard Input Tracker
@@ -153,68 +176,68 @@ const UPGRADES_REGISTRY = [
     id: 'damage',
     name: 'Damage Up',
     icon: '[DMG]',
-    description: 'Increase bullet damage by 5',
+    description: 'Increase bullet damage by 4 (Capped at +100 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletDamage += 5;
+      player.bulletDamage = Math.min(100, player.bulletDamage + 4);
     }
   },
   {
     id: 'speed',
     name: 'Speed Up',
     icon: '[MOVE]',
-    description: 'Increase player speed by 0.25',
+    description: 'Increase player speed by 0.10 (Capped at +2.50 max)',
     rarity: 'common',
     apply: () => {
-      player.speed += 0.25;
+      player.speed = Number((Math.min(4.2, player.speed + 0.10)).toFixed(2));
     }
   },
   {
     id: 'maxhealth',
     name: 'Max Health Up',
     icon: '[HP+]',
-    description: 'Increase max health by 20 and heal for 20 HP',
+    description: 'Increase max health by 10 and heal for 10 HP (Capped at +250 max)',
     rarity: 'common',
     apply: () => {
-      player.maxHealth += 20;
-      player.health = Math.min(player.maxHealth, player.health + 20);
+      player.maxHealth = Math.min(350, player.maxHealth + 10); // 100 base + 250 cap = 350 max limit
+      player.health = Math.min(player.maxHealth, player.health + 10);
     }
   },
   {
     id: 'heal',
     name: 'Heal Boost',
     icon: '[HEAL]',
-    description: 'Increases natural wave completion heal by +5% of max HP (Stackable, capped at 35% max)',
+    description: 'Increases natural wave completion heal by +2% of max HP (Stackable, capped at 75% max)',
     rarity: 'common',
     apply: () => {
-      player.waveHealPercentage = Math.min(0.35, player.waveHealPercentage + 0.05);
+      player.waveHealPercentage = Number((Math.min(0.75, player.waveHealPercentage + 0.02)).toFixed(2));
     }
   },
   {
     id: 'bulletspeed',
     name: 'Bullet Speed Up',
     icon: '[AMMO]',
-    description: 'Increase bullet speed by 1 (Capped at 16 max)',
+    description: 'Increase bullet speed by 0.30 (Capped at 20 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSpeed = Math.min(16, player.bulletSpeed + 1);
+      player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 0.30)).toFixed(2));
     }
   },
   {
     id: 'thickskin',
     name: 'Thick Skin',
     icon: '[SKIN]',
-    description: 'Reduce all incoming damage taken by 5% (Stackable, capped at 50% max reduction)',
+    description: 'Reduce all incoming damage taken by 1.5% (Stackable, capped at 75% max reduction)',
     rarity: 'common',
     apply: () => {
-      player.damageReduction = Math.min(0.50, player.damageReduction + 0.05);
+      player.damageReduction = Number((Math.min(0.75, player.damageReduction + 0.015)).toFixed(4));
     }
   },
   {
     id: 'runnershigh',
     name: "Runner's High",
     icon: '[HIGH]',
-    description: 'Gives an extra 0.2 speed boost when moving continuously for over 3 seconds (Stackable, capped at +1.0 max speed)',
+    description: 'Gives an extra 0.04 speed boost when moving continuously for over 3 seconds (Stackable, capped at +1.0 max speed)',
     rarity: 'common',
     apply: () => {
       player.runnersHighLevel += 1;
@@ -224,17 +247,17 @@ const UPGRADES_REGISTRY = [
     id: 'giantbullets',
     name: 'Giant Bullets',
     icon: '[SIZE]',
-    description: 'Increases physical size and collision hitbox of bullets by 20% (Stackable, capped at +100% size max)',
+    description: 'Increases physical size and collision hitbox of bullets by 2% (Stackable, capped at +100% size max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSizeModifier = Math.min(1.0, player.bulletSizeModifier + 0.20);
+      player.bulletSizeModifier = Number((Math.min(1.0, player.bulletSizeModifier + 0.02)).toFixed(2));
     }
   },
   {
     id: 'retaliate',
     name: 'Retaliate',
     icon: '[RAGE]',
-    description: 'Taking damage briefly triggers a +0.8 speed boost for 2 seconds (Stackable, duration capped at 4 seconds max)',
+    description: 'Taking damage briefly triggers a +0.10 speed boost per stack (up to +1.5 max) for 2s (Stackable, duration capped at 6s max)',
     rarity: 'common',
     apply: () => {
       player.retaliateLevel += 1;
@@ -246,47 +269,47 @@ const UPGRADES_REGISTRY = [
     id: 'firerate',
     name: 'Fire Rate Up',
     icon: '[FAST]',
-    description: 'Reduce fire rate cooldown by 40ms (min 250ms)',
+    description: 'Reduce fire rate cooldown by 6ms (min 150ms)',
     rarity: 'rare',
     apply: () => {
-      player.fireRate = Math.max(250, player.fireRate - 40);
+      player.fireRate = Math.max(150, player.fireRate - 6);
     }
   },
   {
     id: 'lifesteal',
     name: 'Lifesteal',
     icon: '[VAMP]',
-    description: 'Heal 2 HP after killing a zombie',
+    description: 'Heal 0.10 HP after killing a zombie (Capped at 5 HP max)',
     rarity: 'rare',
     apply: () => {
-      player.lifestealAmount += 2;
+      player.lifestealAmount = Number((Math.min(5.0, player.lifestealAmount + 0.10)).toFixed(2));
     }
   },
   {
     id: 'knockbackrounds',
     name: 'Knockback Rounds',
     icon: '[PUSH]',
-    description: 'Increases pushback distance on hit by 10% (Stackable, capped at +100% max pushback)',
+    description: 'Increases pushback distance on hit by 2% (Stackable, capped at +150% max pushback)',
     rarity: 'rare',
     apply: () => {
-      player.knockbackModifier = Math.min(1.0, player.knockbackModifier + 0.10);
+      player.knockbackModifier = Number((Math.min(1.5, player.knockbackModifier + 0.02)).toFixed(2));
     }
   },
   {
     id: 'bouncingcasings',
     name: 'Bouncing Casings',
     icon: '[RICO]',
-    description: 'Bullets bounce off map walls and obstacles 1 time (Stackable, capped at 3 bounces max)',
+    description: 'Bullets bounce off map walls and obstacles 1 time (Stackable, capped at 10 bounces max)',
     rarity: 'rare',
     apply: () => {
-      player.bounceLimit = Math.min(3, player.bounceLimit + 1);
+      player.bounceLimit = Math.min(10, player.bounceLimit + 2);
     }
   },
   {
     id: 'toxictrail',
     name: 'Toxic Trail',
     icon: '[MUCK]',
-    description: 'Leave a faint chemical trail that deals minor damage over time and slows zombies by 10% (Stackable, slow effect caps at 40% max)',
+    description: 'Leave a faint chemical trail that deals minor damage over time and slows zombies by 3% (Stackable, slow effect caps at 50% max)',
     rarity: 'rare',
     apply: () => {
       player.toxicTrailLevel += 1;
@@ -296,17 +319,17 @@ const UPGRADES_REGISTRY = [
     id: 'splintershot',
     name: 'Splinter Shot',
     icon: '[CHIP]',
-    description: 'Bullets split into fanned shrapnel pieces upon hitting walls/enemies. Each stack adds +1 split bullet (Caps at 4 splits, damage capped at 40%)',
+    description: 'Bullets split into fanned shrapnel pieces upon hitting walls/enemies. Each stack adds +2 split bullets (Caps at 10 split bullets max, damage capped at 40%)',
     rarity: 'rare',
     apply: () => {
-      player.splinterShotLevel = Math.min(3, player.splinterShotLevel + 1); // Caps at level 3 (yields 4 split bullets)
+      player.splinterShotLevel = Math.min(9, player.splinterShotLevel + 2); // Caps at level 9 (yields 10 split bullets)
     }
   },
   {
     id: 'steadyaim',
     name: 'Steady Aim',
     icon: '[STILL]',
-    description: 'Increase damage by 6, but only if you are standing completely still while shooting (Stackable, capped at +30 max static damage)',
+    description: 'Increase damage by 2, but only if you are standing completely still while shooting (Stackable, capped at +50 max static damage)',
     rarity: 'rare',
     apply: () => {
       player.steadyAimLevel += 1;
@@ -316,10 +339,10 @@ const UPGRADES_REGISTRY = [
     id: 'phaseshift',
     name: 'Phase Shift',
     icon: '[VEIL]',
-    description: 'Gain a 5% chance to completely dodge/evade any incoming zombie attack (Stackable, capped at 25% max dodge)',
+    description: 'Gain a 1% chance to completely dodge/evade any incoming zombie attack (Stackable, capped at 45% max dodge)',
     rarity: 'rare',
     apply: () => {
-      player.dodgeChance = Math.min(0.25, player.dodgeChance + 0.05);
+      player.dodgeChance = Number((Math.min(0.45, player.dodgeChance + 0.01)).toFixed(3));
     }
   },
 
@@ -348,10 +371,10 @@ const UPGRADES_REGISTRY = [
     id: 'burn',
     name: 'Burn Bullet',
     icon: '[FIRE]',
-    description: 'Bullets apply burn damage over time to zombies',
+    description: 'Bullets gain +5% chance to become fire rounds that burn zombies (Capped at 30%)',
     rarity: 'epic',
     apply: () => {
-      player.burnLevel += 1;
+      player.burnLevel = Math.min(6, player.burnLevel + 1);
     }
   },
 
@@ -397,6 +420,111 @@ const UPGRADES_REGISTRY = [
     apply: () => {
       player.orbitingDefenderLevel += 1;
     }
+  },
+  {
+    id: 'weakpointscan',
+    name: 'Weak Point Scan',
+    icon: '[CRIT]',
+    description: 'Bullets gain +3% critical chance to deal 1.75x damage (Capped at 30% chance)',
+    rarity: 'common',
+    apply: () => {
+      player.critChance = Number((Math.min(0.30, player.critChance + 0.03)).toFixed(2));
+    }
+  },
+  {
+    id: 'finisherrounds',
+    name: 'Finisher Rounds',
+    icon: '[EXEC]',
+    description: 'Deal +8% damage to zombies below 35% HP (Capped at +60% execute damage)',
+    rarity: 'epic',
+    apply: () => {
+      player.finisherDamage = Number((Math.min(0.60, player.finisherDamage + 0.08)).toFixed(2));
+    }
+  },
+  {
+    id: 'secondwind',
+    name: 'Second Wind',
+    icon: '[REVIVE]',
+    description: 'Once per run, survive fatal damage and restore 40 HP. Re-picking adds +15 HP (Capped at 100 HP)',
+    rarity: 'legendary',
+    apply: () => {
+      player.secondWindLevel = Math.min(5, player.secondWindLevel + 1);
+    }
+  },
+  {
+    id: 'bioshield',
+    name: 'Bio-Shield',
+    icon: '[SHIELD]',
+    description: 'Every 12 seconds, block the next zombie hit. Stacks reduce cooldown by 1s (Capped at 6s)',
+    rarity: 'epic',
+    apply: () => {
+      player.bioShieldLevel = Math.min(7, player.bioShieldLevel + 1);
+      if (player.bioShieldTimer === 0) {
+        player.bioShieldTimer = (12 - player.bioShieldLevel) * 60; // 60 ticks per sec
+      }
+    }
+  },
+  {
+    id: 'cryocapsule',
+    name: 'Cryo Capsule',
+    icon: '[FREEZE]',
+    description: 'Bullets gain +5% chance to become cryo rounds that slow zombies (Capped at 30%)',
+    rarity: 'epic',
+    apply: () => {
+      player.cryoCapsuleLevel = Math.min(6, player.cryoCapsuleLevel + 1);
+    }
+  },
+  {
+    id: 'reflexdash',
+    name: 'Reflex Dash',
+    icon: '[DASH]',
+    description: 'Press Space to dash a short distance (6s cooldown, stacks reduce by 0.5s, cap at 3s)',
+    rarity: 'rare',
+    apply: () => {
+      player.reflexDashLevel = Math.min(7, player.reflexDashLevel + 1);
+    }
+  },
+  {
+    id: 'labmine',
+    name: 'Lab Mine',
+    icon: '[MINE]',
+    description: 'Every 8 seconds, drop an explosive mine behind you (Capped at 3s cooldown)',
+    rarity: 'rare',
+    apply: () => {
+      player.labMineLevel = Math.min(6, player.labMineLevel + 1);
+    }
+  },
+  {
+    id: 'combatstim',
+    name: 'Combat Stimulant',
+    icon: '[STIM]',
+    description: 'Gain +6% fire rate and +0.08 speed, but lose 5 max HP per stack (Fire rate cap +40%)',
+    rarity: 'common',
+    apply: () => {
+      player.stimulantLevel = Math.min(7, player.stimulantLevel + 1);
+      player.maxHealth = Math.max(10, player.maxHealth - 5);
+      player.health = Math.min(player.maxHealth, player.health);
+    }
+  },
+  {
+    id: 'overclockedweapon',
+    name: 'Overclocked Weapon',
+    icon: '[OVER]',
+    description: 'Every 10th shot fires a +50% damage supercharged bullet (Stacks reduce to every 5th shot)',
+    rarity: 'epic',
+    apply: () => {
+      player.overclockLevel = Math.min(6, player.overclockLevel + 1);
+    }
+  },
+  {
+    id: 'killfrenzy',
+    name: 'Kill Frenzy',
+    icon: '[FRENZY]',
+    description: 'Defeating 5 zombies quickly grants +15% speed and +15% fire rate for 3s (Capped at 8s duration)',
+    rarity: 'rare',
+    apply: () => {
+      player.killFrenzyLevel = Math.min(6, player.killFrenzyLevel + 1);
+    }
   }
 ];
 
@@ -408,41 +536,91 @@ let toxicTrails = [];      // For chemical trail slowing and DoT pools
 let lightningArcs = []; // For chain lightning cyan arc drawings
 let gameParticles = []; // For muzzle flashes, blood splatters, and impact sparks
 let explosions = [];    // For high-fidelity animated radial explosions
+let activeMines = [];   // For dropped explosive mines in world bounds
+let pendingSummons = []; // Necromancer warning circles before summoned enemies appear
+
+// Patient Zero Boss Tracking
+let bossesDefeated = 0;
+let activeBoss = null; // Reference to the current boss zombie in the zombies array
+const bossSummonCooldown = 8000;  // Boss summons every 8 seconds
+const bossSummonCastTime = 1200;  // Red flash warning before summon
 
 // Spawning Variables
 let lastZombieSpawnTime = 0;
 const baseZombieSpawnDelay = 1500; // Wave 1 spawn pacing in milliseconds
+const necromancerSummonCooldown = 11000; // Slightly slower than before so summons are less spammy
+const necromancerSummonCastTime = 1400;  // Gives the player a clear visual warning before spawns
 
 // Wave Scaling Helpers
-// These formulas keep early waves fair, then add stronger horde pressure later.
+// These formulas keep waves 1-20 fair, then push the real horde pressure later.
 function getWaveZombieTotal(wave) {
-  const extraWaves = Math.max(0, wave - 1);
-  return Math.floor(5 + extraWaves * 3 + Math.pow(extraWaves, 1.35));
+  const safeWave = Math.max(1, wave);
+
+  if (safeWave <= 10) {
+    const progress = safeWave - 1;
+    return Math.floor(5 + progress * 2 + Math.pow(progress, 1.1));
+  }
+
+  if (safeWave <= 25) {
+    const progress = safeWave - 10;
+    return Math.floor(38 + progress * 3.5 + Math.pow(progress, 1.15));
+  }
+
+  const lateProgress = safeWave - 25;
+  return Math.floor(122 + lateProgress * 5.0 + Math.pow(lateProgress, 1.45));
 }
 
 function getZombieSpawnDelay(wave) {
-  const extraWaves = Math.max(0, wave - 1);
-  return Math.max(520, baseZombieSpawnDelay - extraWaves * 90);
+  const safeWave = Math.max(1, wave);
+
+  if (safeWave <= 10) {
+    return Math.max(1000, baseZombieSpawnDelay - (safeWave - 1) * 50);
+  }
+
+  if (safeWave <= 25) {
+    return Math.max(700, 1020 - (safeWave - 10) * 22);
+  }
+
+  return Math.max(400, 690 - (safeWave - 25) * 8);
 }
 
 function getZombieSpawnBatchSize(wave) {
-  const extraWaves = Math.max(0, wave - 1);
-  return Math.min(4, 1 + Math.floor(extraWaves / 4));
+  if (wave < 9) return 1;
+  if (wave < 19) return 2;
+  if (wave < 31) return 3;
+  return 4;
 }
 
 function getMaxActiveZombies(wave) {
-  return 10 + Math.floor(wave * 2.4);
+  const safeWave = Math.max(1, wave);
+
+  if (safeWave <= 20) {
+    return 10 + Math.floor(safeWave * 1.2);
+  }
+
+  return Math.min(60, 34 + Math.floor((safeWave - 20) * 1.5));
 }
 
 function getZombieStatScales(wave) {
   const extraWaves = Math.max(0, wave - 1);
+  const steadyWaves = Math.min(extraWaves, 14); // Waves 1 to 15 (gentle scaling)
+  const lateWaves = Math.max(0, extraWaves - 14); // Wave 16+ (late-game challenge)
+
+  // Post-boss permanent scaling: +8% health, +6% damage, +2% speed per boss defeated
+  const bossHealthBonus = 1 + bossesDefeated * 0.08;
+  const bossDamageBonus = 1 + bossesDefeated * 0.06;
+  const bossSpeedBonus = 1 + bossesDefeated * 0.02;
 
   return {
-    health: 1 + extraWaves * 0.07,
-    speed: 1 + Math.min(0.35, extraWaves * 0.018),
-    damage: 1 + extraWaves * 0.03,
-    score: 1 + extraWaves * 0.06
+    health: (1 + steadyWaves * 0.03 + lateWaves * 0.05 + Math.pow(lateWaves, 1.25) * 0.015) * bossHealthBonus,
+    speed: (1 + steadyWaves * 0.008 + Math.min(0.70, lateWaves * 0.012)) * bossSpeedBonus,
+    damage: (1 + steadyWaves * 0.012 + lateWaves * 0.025 + Math.pow(lateWaves, 1.1) * 0.003) * bossDamageBonus,
+    score: 1 + extraWaves * 0.055
   };
+}
+
+function isBossWave(wave) {
+  return wave >= 20 && wave % 20 === 0;
 }
 
 // Procedural ground features array
@@ -583,6 +761,204 @@ if (cheatCloseBtn) {
 
 // Initialize Cheat Panel once on file load
 populateCheatPanel();
+bindCheatPanelQuickControls();
+
+/**
+ * Binds click listeners to the developer panel quick action controls.
+ */
+function bindCheatPanelQuickControls() {
+  const prevWaveBtn = document.getElementById('cheat-prev-wave-btn');
+  const nextWaveBtn = document.getElementById('cheat-next-wave-btn');
+  const skip5Btn = document.getElementById('cheat-skip-5-btn');
+  const healBtn = document.getElementById('cheat-heal-btn');
+  const killAllBtn = document.getElementById('cheat-kill-all-btn');
+  const summonBtns = document.querySelectorAll('.cheat-summon-btn');
+
+  // helper function to skip wave and clean active threats
+  function changeWave(offset) {
+    if (!gameState.isRunning) return;
+    
+    // Adjust wave number
+    gameState.wave = Math.max(1, gameState.wave + offset);
+    
+    // Recalculate wave metrics
+    waveZombiesTotal = isBossWave(gameState.wave)
+      ? Math.floor(getWaveZombieTotal(gameState.wave) * 0.4)
+      : getWaveZombieTotal(gameState.wave);
+    waveZombiesSpawned = 0;
+    activeBoss = null;
+    
+    // Clear currently active entities on the board
+    zombies = [];
+    enemyProjectiles = [];
+    bullets = [];
+    toxicTrails = [];
+    lightningArcs = [];
+    explosions = [];
+    activeMines = [];
+    pendingSummons = [];
+
+    // Trigger visual/haptic response
+    startScreenShake(8, 12);
+    updateHUD();
+    console.log(`[CHEAT PANEL] Wave changed to ${gameState.wave}`);
+  }
+
+  if (prevWaveBtn) {
+    prevWaveBtn.addEventListener('click', () => changeWave(-1));
+  }
+  if (nextWaveBtn) {
+    nextWaveBtn.addEventListener('click', () => changeWave(1));
+  }
+  if (skip5Btn) {
+    skip5Btn.addEventListener('click', () => changeWave(5));
+  }
+
+  if (healBtn) {
+    healBtn.addEventListener('click', () => {
+      if (!gameState.isRunning) return;
+      player.health = player.maxHealth;
+      
+      // Spawn healing sparks
+      for (let s = 0; s < 15; s++) {
+        const a = Math.random() * Math.PI * 2;
+        const f = Math.random() * 3 + 1;
+        gameParticles.push({
+          x: player.x,
+          y: player.y,
+          vx: Math.cos(a) * f,
+          vy: Math.sin(a) * f,
+          size: Math.floor(Math.random() * 4) + 2,
+          color: '#39ff14', // heal emerald green
+          life: 0.8,
+          decay: 0.05
+        });
+      }
+      
+      startScreenShake(3, 6);
+      updateHUD();
+      console.log(`[CHEAT PANEL] Player fully healed.`);
+    });
+  }
+
+  if (killAllBtn) {
+    killAllBtn.addEventListener('click', () => {
+      if (!gameState.isRunning) return;
+      
+      zombies.forEach(z => {
+        // Spawn chiptune-like blood splash particles
+        for (let s = 0; s < 6; s++) {
+          gameParticles.push({
+            x: z.x,
+            y: z.y,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            size: Math.floor(Math.random() * 3) + 2,
+            color: '#a10b0b', // dark zombie blood
+            life: 0.7,
+            decay: Math.random() * 0.1 + 0.05
+          });
+        }
+      });
+      
+      zombies = [];
+      enemyProjectiles = [];
+      pendingSummons = [];
+      activeBoss = null;
+      
+      startScreenShake(12, 16);
+      updateHUD();
+      console.log(`[CHEAT PANEL] All enemies cleared.`);
+    });
+  }
+
+  summonBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      if (!gameState.isRunning) return;
+      const type = e.currentTarget.getAttribute('data-type');
+      spawnSpecificZombie(type);
+      startScreenShake(4, 6);
+      console.log(`[CHEAT PANEL] Summoned specific zombie: ${type}`);
+    });
+  });
+
+  // Boss summon button
+  const bossBtn = document.getElementById('cheat-summon-boss-btn');
+  if (bossBtn) {
+    bossBtn.addEventListener('click', () => {
+      if (!gameState.isRunning) return;
+      if (activeBoss) {
+        console.log('[CHEAT PANEL] Boss already active!');
+        return;
+      }
+      spawnPatientZero();
+      console.log('[CHEAT PANEL] Summoned Patient Zero boss!');
+    });
+  }
+}
+
+function spawnSpecificZombie(type) {
+  let zx, zy;
+  const side = Math.floor(Math.random() * 4);
+  const spawnBuffer = 90;
+
+  if (side === 0) {
+    zx = camera.x + Math.random() * canvas.width;
+    zy = camera.y - spawnBuffer;
+  } else if (side === 1) {
+    zx = camera.x + canvas.width + spawnBuffer;
+    zy = camera.y + Math.random() * canvas.height;
+  } else if (side === 2) {
+    zx = camera.x + Math.random() * canvas.width;
+    zy = camera.y + canvas.height + spawnBuffer;
+  } else {
+    zx = camera.x - spawnBuffer;
+    zy = camera.y + Math.random() * canvas.height;
+  }
+
+  zx = Math.max(16, Math.min(world.width - 16, zx));
+  zy = Math.max(16, Math.min(world.height - 16, zy));
+
+  const typesConfig = {
+    normal: { size: 42, health: 30, speed: 0.75, damage: 10, score: 10, attackCooldown: 1000 },
+    fast: { size: 34, health: 20, speed: 1.2, damage: 8, score: 15, attackCooldown: 1000 },
+    tank: { size: 54, health: 60, speed: 0.5, damage: 20, score: 30, attackCooldown: 1200 },
+    spitter: { size: 38, health: 25, speed: 0.7, damage: 10, score: 25, attackCooldown: 2000 },
+    necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 },
+    exploder: { size: 42, health: 15, speed: 1.45, damage: 45, score: 25, attackCooldown: 1000 }
+  };
+
+  const config = typesConfig[type] || typesConfig.normal;
+  addScaledZombie({
+    type: type,
+    x: zx,
+    y: zy,
+    size: config.size,
+    health: config.health,
+    maxHealth: config.health,
+    speed: config.speed,
+    damage: config.damage,
+    scoreValue: config.score,
+    lastAttackTime: 0,
+    attackCooldown: config.attackCooldown
+  });
+
+  // Spawn summon sparks
+  for (let p = 0; p < 10; p++) {
+    const pAngle = Math.random() * Math.PI * 2;
+    const pSpeed = Math.random() * 2 + 1;
+    gameParticles.push({
+      x: zx,
+      y: zy,
+      vx: Math.cos(pAngle) * pSpeed,
+      vy: Math.sin(pAngle) * pSpeed,
+      size: Math.floor(Math.random() * 3) + 2,
+      color: '#ff7700', // orange sparks
+      life: 0.7,
+      decay: 0.05
+    });
+  }
+}
 
 
 // Leaderboard
@@ -724,6 +1100,29 @@ function startGame() {
   player.dodgeChance = 0.0;
   player.waveHealPercentage = 0.15;
 
+  // Reset 11 New Upgrades properties
+  player.critChance = 0.0;
+  player.finisherDamage = 0.0;
+  player.secondWindLevel = 0;
+  player.secondWindTriggered = false;
+  player.bioShieldLevel = 0;
+  player.bioShieldActive = false;
+  player.bioShieldTimer = 0;
+  player.cryoCapsuleLevel = 0;
+  player.reflexDashLevel = 0;
+  player.reflexDashCooldown = 0;
+  player.reflexDashDuration = 0;
+  player.reflexDashVx = 0;
+  player.reflexDashVy = 0;
+  player.labMineLevel = 0;
+  player.labMineTimer = 0;
+  player.stimulantLevel = 0;
+  player.overclockLevel = 0;
+  player.overclockShotCounter = 0;
+  player.killFrenzyLevel = 0;
+  player.killFrenzyHistory = [];
+  player.killFrenzyTimer = 0;
+
   // Clear chosen upgrades
   upgradesChosen = [];
   gameTick = 0;
@@ -737,9 +1136,13 @@ function startGame() {
   gameParticles = [];
   floorStains = [];
   explosions = [];
+  activeMines = [];
+  pendingSummons = [];
   screenShake.amount = 0;
   screenShake.frames = 0;
   lastZombieSpawnTime = 0;
+  bossesDefeated = 0;
+  activeBoss = null;
 
   // Make sure the canvas is the right size and configured
   resizeCanvas();
@@ -803,6 +1206,65 @@ function update() {
     player.defenderAngle += 0.018;
   }
 
+  // Update Bio-Shield regeneration timer
+  if (player.bioShieldLevel > 0 && !player.bioShieldActive) {
+    player.bioShieldTimer -= 1;
+    if (player.bioShieldTimer <= 0) {
+      player.bioShieldActive = true;
+      player.bioShieldTimer = 0;
+      // Soft cyan activation sparks
+      for (let s = 0; s < 12; s++) {
+        const a = Math.random() * Math.PI * 2;
+        const f = Math.random() * 2 + 1;
+        gameParticles.push({
+          x: player.x,
+          y: player.y,
+          vx: Math.cos(a) * f,
+          vy: Math.sin(a) * f,
+          size: Math.floor(Math.random() * 3) + 2,
+          color: '#00ffff',
+          life: 0.6,
+          decay: 0.05
+        });
+      }
+    }
+  }
+
+  // Update Lab Mines dropping & lifetimes
+  if (player.labMineLevel > 0) {
+    player.labMineTimer = (player.labMineTimer || 0) - 1;
+    if (player.labMineTimer <= 0) {
+      activeMines.push({
+        x: player.x,
+        y: player.y,
+        size: 20,
+        damage: 40 + player.labMineLevel * 10
+      });
+      // Reset cooldown timer: reduces from 8s to 3s
+      const cdSec = Math.max(3.0, 8.0 - (player.labMineLevel - 1) * 1.0);
+      player.labMineTimer = cdSec * 60;
+    }
+  }
+
+  // Check Mines triggers against zombies
+  for (let mIdx = activeMines.length - 1; mIdx >= 0; mIdx--) {
+    const mine = activeMines[mIdx];
+    for (let zIdx = 0; zIdx < zombies.length; zIdx++) {
+      const z = zombies[zIdx];
+      const mDx = z.x - mine.x;
+      const mDy = z.y - mine.y;
+      const distSq = mDx * mDx + mDy * mDy;
+      const rangeSum = z.size / 2 + mine.size / 2;
+
+      if (distSq < rangeSum * rangeSum) {
+        // Boom! Explode the mine!
+        triggerExplosion(mine.x, mine.y, mine.damage);
+        activeMines.splice(mIdx, 1);
+        break; // break out of zombies loop for this mine
+      }
+    }
+  }
+
   // Update Toxic Trail puddle lifetimes
   for (let i = toxicTrails.length - 1; i >= 0; i--) {
     toxicTrails[i].life -= 1;
@@ -852,30 +1314,65 @@ function update() {
   let isRunnersHighActive = false;
   let isRetaliateActive = false;
 
+  // Combat Stimulant speed boost
+  if (player.stimulantLevel > 0) {
+    currentSpeed += player.stimulantLevel * 0.08;
+  }
+
+  // Kill Frenzy speed boost (+15% movement speed)
+  if (player.killFrenzyTimer > 0) {
+    player.killFrenzyTimer -= 1;
+    currentSpeed += player.speed * 0.15;
+  }
+
+  // Reflex Dash Cooldown decrement
+  if (player.reflexDashCooldown > 0) {
+    player.reflexDashCooldown -= 1;
+  }
+
   // Runner's High boost
   if (player.runnersHighLevel > 0 && player.movementStart !== null) {
     if (Date.now() - player.movementStart >= 3000) {
-      currentSpeed += Math.min(1.0, player.runnersHighLevel * 0.2);
+      currentSpeed += Math.min(1.0, player.runnersHighLevel * 0.04);
       isRunnersHighActive = true;
     }
   }
 
   // Retaliate boost
   if (player.retaliateLevel > 0 && Date.now() < player.retaliateExpiry) {
-    currentSpeed += 0.8;
+    currentSpeed += Math.min(1.5, player.retaliateLevel * 0.10);
     isRetaliateActive = true;
   }
 
-  // Normalize diagonal movement vector so diagonal travel isn't faster
-  if (dx !== 0 && dy !== 0) {
-    const length = Math.sqrt(dx * dx + dy * dy);
-    dx /= length;
-    dy /= length;
-  }
+  // Apply movement speed or active Dash surge
+  if (player.reflexDashDuration > 0) {
+    player.reflexDashDuration -= 1;
+    player.x += player.reflexDashVx;
+    player.y += player.reflexDashVy;
 
-  // Apply movement speed
-  player.x += dx * currentSpeed;
-  player.y += dy * currentSpeed;
+    // Spawn cyber-blue shadow particle trails trailing the player surge
+    gameParticles.push({
+      x: player.x,
+      y: player.y,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      size: player.size - 2,
+      color: '#00ddff', // bright cyber-blue shadow
+      life: 0.3,
+      decay: 0.03
+    });
+  } else {
+    // Normalize diagonal movement vector so diagonal travel isn't faster
+    if (dx !== 0 && dy !== 0) {
+      const length = Math.sqrt(dx * dx + dy * dy);
+      dx /= length;
+      dy /= length;
+    }
+
+    // Apply standard WASD movement speed
+    player.x += dx * currentSpeed;
+    player.y += dy * currentSpeed;
+  }
 
   // Spawn visual feedback trailing sparks if speed boosts are active
   if (isMoving) {
@@ -954,8 +1451,21 @@ function update() {
       b.trail.shift(); // Keep trail length capped for longer lasers
     }
 
-    // Spawn floating sparks in bullet wake (ash/embers/smoke)
-    if (b.isFire) {
+    // Spawn floating sparks in bullet wake (ash/embers/smoke/ice motes)
+    if (b.isCryo) {
+      if (Math.random() < 0.72) {
+        gameParticles.push({
+          x: b.x + (Math.random() - 0.5) * 7,
+          y: b.y + (Math.random() - 0.5) * 7,
+          vx: (Math.random() - 0.5) * 0.45,
+          vy: (Math.random() - 0.5) * 0.45,
+          size: Math.floor(Math.random() * 3) + 2,
+          color: Math.random() > 0.45 ? '#8ffcff' : '#00ddff',
+          life: 0.75,
+          decay: Math.random() * 0.08 + 0.05
+        });
+      }
+    } else if (b.isFire) {
       if (Math.random() < 0.80) {
         const isSmoke = Math.random() > 0.7;
         gameParticles.push({
@@ -999,7 +1509,7 @@ function update() {
 
         // Trigger Splinter Shot wall bounce shrapnel split
         if (player.splinterShotLevel > 0 && !b.isShrapnel) {
-          spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage);
+          spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, null, b.isFire, b.isCryo);
         }
 
         // Bounce horizontally
@@ -1025,7 +1535,7 @@ function update() {
       } else {
         // Trigger Splinter Shot shrapnel split on final death
         if (player.splinterShotLevel > 0 && !b.isShrapnel) {
-          spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage);
+          spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, null, b.isFire, b.isCryo);
         }
 
         bullets.splice(i, 1);
@@ -1082,6 +1592,12 @@ function update() {
 
   // 4. Spawn zombies. Later waves spawn faster and in small batches.
   const now = Date.now();
+
+  // Boss wave: spawn Patient Zero at the start of the wave
+  if (isBossWave(gameState.wave) && !activeBoss && waveZombiesSpawned === 0) {
+    spawnPatientZero();
+  }
+
   if (!isWaveIntermission && waveZombiesSpawned < waveZombiesTotal) {
     const spawnDelay = getZombieSpawnDelay(gameState.wave);
     const activeSlots = getMaxActiveZombies(gameState.wave) - zombies.length;
@@ -1099,6 +1615,9 @@ function update() {
     }
   }
 
+  // Finish any Necromancer casts whose warning circles have completed.
+  updatePendingSummons(now);
+
   // 5. Update zombie movement and player collision check
   for (let i = zombies.length - 1; i >= 0; i--) {
     let z = zombies[i];
@@ -1114,9 +1633,10 @@ function update() {
       const trail = toxicTrails[t];
       const tDx = z.x - trail.x;
       const tDy = z.y - trail.y;
-      const tDist = Math.sqrt(tDx * tDx + tDy * tDy);
+      const distSq = tDx * tDx + tDy * tDy;
+      const rangeSum = z.size / 2 + trail.size;
 
-      if (tDist < (z.size / 2 + trail.size)) {
+      if (distSq < rangeSum * rangeSum) {
         z.isOnToxicTrail = true;
         z.health -= (3 / 60) * trail.level; // Minor DoT: 3 HP/sec per stack level
 
@@ -1133,6 +1653,7 @@ function update() {
             decay: Math.random() * 0.08 + 0.05
           });
         }
+        break; // Optimize by breaking early once slowed/damaged on trail
       }
     }
 
@@ -1142,25 +1663,44 @@ function update() {
       z.stunTicks -= 1;
     } else {
       if (distance > 0) {
-        // Toxic Trail slow effect (10% slow per level, capped at 40% slow)
-        const slowFactor = z.isOnToxicTrail ? (1 - Math.min(0.40, 0.10 * player.toxicTrailLevel)) : 1.0;
+        // Toxic Trail slow effect (3% slow per level, capped at 50% slow)
+        let slowFactor = z.isOnToxicTrail ? (1 - Math.min(0.50, 0.03 * player.toxicTrailLevel)) : 1.0;
+
+        // Cryo Capsule slow effect (25% slow)
+        z.cryoSlowTicks = z.cryoSlowTicks || 0;
+        if (z.cryoSlowTicks > 0) {
+          z.cryoSlowTicks -= 1;
+          slowFactor *= 0.75;
+        }
+
         const desiredSpeed = z.speed * slowFactor;
 
         let vx = 0;
         let vy = 0;
 
-        // Intelligent Path Vector Selection for Acid Spitters & other zombies
-        if (z.type === 'spitter') {
-          if (distance > 340) {
+        z.wallFollowTicks = z.wallFollowTicks || 0;
+        if (z.wallFollowTicks > 0) {
+          z.wallFollowTicks -= 1;
+          vx = z.wallFollowVx || 0;
+          vy = z.wallFollowVy || 0;
+          const currentLen = Math.hypot(vx, vy);
+          if (currentLen > 0) {
+            vx = (vx / currentLen) * desiredSpeed;
+            vy = (vy / currentLen) * desiredSpeed;
+          }
+        } else if (z.type === 'spitter' || z.type === 'necromancer') {
+          const sweetSpotMax = z.type === 'necromancer' ? 450 : 340;
+          const sweetSpotMin = z.type === 'necromancer' ? 280 : 220;
+          if (distance > sweetSpotMax) {
             // Too far: Move towards the player to get into range
             vx = (zDx / distance) * desiredSpeed;
             vy = (zDy / distance) * desiredSpeed;
-          } else if (distance < 220) {
+          } else if (distance < sweetSpotMin) {
             // Too close: Kite and back away from the player
             vx = -(zDx / distance) * desiredSpeed;
             vy = -(zDy / distance) * desiredSpeed;
           } else {
-            // Sweet spot (220px - 340px): Stand still, aim, and shoot!
+            // Sweet spot: Stand still
             vx = 0;
             vy = 0;
           }
@@ -1260,6 +1800,11 @@ function update() {
               vx = (vx / newLen) * desiredSpeed;
               vy = (vy / newLen) * desiredSpeed;
             }
+
+            // Set wall circumvention memory to bypass local minimum stuckness
+            z.wallFollowVx = vx;
+            z.wallFollowVy = vy;
+            z.wallFollowTicks = 55; // 55 frames of continuous path kiting
           }
         }
 
@@ -1272,6 +1817,7 @@ function update() {
     if (player.orbitingDefenderLevel > 0) {
       const radius = 140; // Massive outer orbit radius (more further away from the player)
       const contactRadius = z.size / 2 + 38; // Twice as big collision footprint to match giant sawblades
+      const contactRadiusSq = contactRadius * contactRadius;
       for (let d = 0; d < player.orbitingDefenderLevel; d++) {
         const angleOffset = d * (Math.PI * 2 / player.orbitingDefenderLevel);
         const bladeX = player.x + Math.cos(player.defenderAngle + angleOffset) * radius;
@@ -1279,9 +1825,9 @@ function update() {
 
         const bDx = z.x - bladeX;
         const bDy = z.y - bladeY;
-        const bDist = Math.sqrt(bDx * bDx + bDy * bDy);
+        const distSq = bDx * bDx + bDy * bDy;
 
-        if (bDist < contactRadius) {
+        if (distSq < contactRadiusSq) {
           z.health -= 0.12 * player.orbitingDefenderLevel; // Nerfed damage again to prevent overly powerful passive kills (reduced from 0.35)
 
           // Spawn contact sparks
@@ -1312,7 +1858,7 @@ function update() {
     // Burn Bullet DoT check
     if (z.burnTicks > 0) {
       z.burnTicks -= 1;
-      z.health -= (2.5 / 60) * player.burnLevel; // Balanced burn DoT damage (nerfed from 5/sec to 2.5/sec)
+      z.health -= 3 / 60; // Fire bullets burn for a steady 3 HP/sec instead of scaling twice.
 
       // Spawn volatile rising ember/flame particles
       if (Math.random() < 0.15) {
@@ -1336,9 +1882,9 @@ function update() {
         enemyProjectiles.push({
           x: z.x,
           y: z.y,
-          vx: Math.cos(spitAngle) * 2.4, // Nerfed projectile velocity from 4.0 to 2.4 (giving players plenty of time to dodge)
-          vy: Math.sin(spitAngle) * 2.4,
-          size: 10,
+          vx: Math.cos(spitAngle) * 3.5, // Faster spitter projectile
+          vy: Math.sin(spitAngle) * 3.5,
+          size: 16, // Larger spitter projectile
           damage: z.damage,
           color: '#39ff14'
         });
@@ -1357,6 +1903,62 @@ function update() {
             decay: Math.random() * 0.1 + 0.08
           });
         }
+      }
+    }
+
+    // Necromancer Zombie ranged attack casting logic
+    if (z.type === 'necromancer') {
+      z.lastRangedAttackTime = z.lastRangedAttackTime || 0;
+      if (distance < 500 && now - z.lastRangedAttackTime >= 2500) {
+        z.lastRangedAttackTime = now;
+        const castAngle = Math.atan2(zDy, zDx);
+        enemyProjectiles.push({
+          x: z.x,
+          y: z.y,
+          vx: Math.cos(castAngle) * 3.2, // Ranged shadow bolt speed
+          vy: Math.sin(castAngle) * 3.2,
+          size: 13,
+          damage: z.damage + 3, // slightly higher shadow damage
+          color: '#ff00ff'
+        });
+
+        // Cast magic sparks
+        for (let s = 0; s < 4; s++) {
+          gameParticles.push({
+            x: z.x,
+            y: z.y,
+            vx: (Math.random() - 0.5) * 2.5 + Math.cos(castAngle) * 1.5,
+            vy: (Math.random() - 0.5) * 2.5 + Math.sin(castAngle) * 1.5,
+            size: Math.floor(Math.random() * 3) + 3,
+            color: '#ff00ff',
+            life: 0.8,
+            decay: Math.random() * 0.1 + 0.08
+          });
+        }
+      }
+    }
+
+    // Necromancer Zombie summoning logic
+    if (z.type === 'necromancer') {
+      if (!z.lastSummonTime) {
+        z.lastSummonTime = now;
+      }
+      z.summonCooldown = z.summonCooldown || necromancerSummonCooldown;
+
+      if (!z.isSummoning && now - z.lastSummonTime >= z.summonCooldown && gameState.isRunning) {
+        queueNecromancerSummon(z, now);
+        z.lastSummonTime = now;
+      }
+    }
+
+    // Patient Zero Boss summoning logic
+    if (z.type === 'patient_zero') {
+      if (!z.lastSummonTime) {
+        z.lastSummonTime = now;
+      }
+      if (!z.isSummoning && now - z.lastSummonTime >= bossSummonCooldown && gameState.isRunning) {
+        queueBossSummon(z, now);
+        z.lastSummonTime = now;
       }
     }
 
@@ -1384,6 +1986,11 @@ function update() {
           damagePlayer(z.damage);
           z.lastAttackTime = now;
 
+          // Screen shake on boss contact damage
+          if (z.type === 'patient_zero') {
+            startScreenShake(6, 10);
+          }
+
           if (player.health <= 0) {
             return; // Stop updating
           }
@@ -1400,10 +2007,11 @@ function update() {
 
       const sepDx = z2.x - z1.x;
       const sepDy = z2.y - z1.y;
-      const sepDist = Math.sqrt(sepDx * sepDx + sepDy * sepDy);
+      const distSq = sepDx * sepDx + sepDy * sepDy;
       const minSep = (z1.size + z2.size) / 2 - 4; // Keep larger bodies from stacking
 
-      if (sepDist < minSep && sepDist > 0) {
+      if (distSq < minSep * minSep && distSq > 0) {
+        const sepDist = Math.sqrt(distSq); // Only compute Math.sqrt when overlapping
         const overlap = minSep - sepDist;
         // Push both zombies away from each other
         const pushX = (sepDx / sepDist) * (overlap / 2);
@@ -1450,6 +2058,31 @@ function update() {
         triggerExplosion(z.x, z.y, z.damage);
       }
 
+      // Patient Zero boss defeated: apply permanent scaling and bonus score
+      if (z.type === 'patient_zero') {
+        bossesDefeated += 1;
+        activeBoss = null;
+        startScreenShake(12, 20);
+
+        // Big death explosion burst
+        for (let bp = 0; bp < 25; bp++) {
+          const bAngle = Math.random() * Math.PI * 2;
+          const bForce = Math.random() * 4 + 1.5;
+          gameParticles.push({
+            x: z.x,
+            y: z.y,
+            vx: Math.cos(bAngle) * bForce,
+            vy: Math.sin(bAngle) * bForce,
+            size: Math.floor(Math.random() * 5) + 3,
+            color: bp % 3 === 0 ? '#ff2222' : bp % 3 === 1 ? '#ff8800' : '#ffee00',
+            life: 1.2,
+            decay: 0.03
+          });
+        }
+
+        console.log(`[BOSS] Patient Zero defeated! Bosses killed: ${bossesDefeated}. Future zombies buffed.`);
+      }
+
       // Remove the zombie
       zombies.splice(zIdx, 1);
 
@@ -1468,14 +2101,70 @@ function update() {
       // Prevent hitting the same zombie twice with a single piercing bullet
       if (b.hitZombies && b.hitZombies.includes(z)) continue;
 
-      // Calculate radial distance
+      // Calculate radial distance using squared calculations to avoid heavy Math.sqrt
       const hitDx = b.x - z.x;
       const hitDy = b.y - z.y;
-      const hitDist = Math.sqrt(hitDx * hitDx + hitDy * hitDy);
+      const distSq = hitDx * hitDx + hitDy * hitDy;
+      const radiusSum = b.size / 2 + z.size / 2;
 
       // Hit detected!
-      if (hitDist < (b.size / 2 + z.size / 2)) {
-        z.health -= b.damage;
+      if (distSq < radiusSum * radiusSum) {
+        // Calculate base and upgrades damage
+        let damageDealt = b.damage;
+
+        // Weak Point Scan (Critical Hit chance)
+        let isCrit = false;
+        if (player.critChance > 0 && Math.random() < player.critChance) {
+          isCrit = true;
+          damageDealt = Math.round(damageDealt * 1.75);
+        }
+
+        // Finisher Rounds (+8% execute damage per stack to target below 35% HP)
+        if (player.finisherDamage > 0 && z.health < z.maxHealth * 0.35) {
+          damageDealt = Math.round(damageDealt * (1 + player.finisherDamage));
+        }
+
+        // Apply damage to zombie
+        z.health -= damageDealt;
+        z.flashTicks = 5; // Trigger white hit flash
+
+        // Cryo rounds slow zombies only when this specific bullet rolled cryo.
+        if (b.isCryo) {
+          z.cryoSlowTicks = 90; // 1.5 seconds at 60 fps
+
+          for (let cs = 0; cs < 6; cs++) {
+            const cAngle = Math.random() * Math.PI * 2;
+            const cForce = Math.random() * 2.5 + 1.2;
+            gameParticles.push({
+              x: b.x,
+              y: b.y,
+              vx: Math.cos(cAngle) * cForce,
+              vy: Math.sin(cAngle) * cForce,
+              size: Math.floor(Math.random() * 3) + 2,
+              color: cs % 2 === 0 ? '#8ffcff' : '#ffffff',
+              life: 0.65,
+              decay: Math.random() * 0.08 + 0.05
+            });
+          }
+        }
+
+        // Spawn custom critical hit visual effects (golden sparks)
+        if (isCrit) {
+          for (let cs = 0; cs < 8; cs++) {
+            const cAngle = Math.random() * Math.PI * 2;
+            const cForce = Math.random() * 4 + 2;
+            gameParticles.push({
+              x: b.x,
+              y: b.y,
+              vx: Math.cos(cAngle) * cForce,
+              vy: Math.sin(cAngle) * cForce,
+              size: Math.floor(Math.random() * 3) + 3,
+              color: '#ffee00', // glowing critical gold spark
+              life: 0.8,
+              decay: Math.random() * 0.08 + 0.04
+            });
+          }
+        }
 
         // Apply physical knockback pushback force (Knockback Rounds)
         const travelAngle = Math.atan2(b.vy, b.vx);
@@ -1485,12 +2174,12 @@ function update() {
 
         // Trigger Splinter Shot bullet split
         if (player.splinterShotLevel > 0 && !b.isShrapnel) {
-          spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, z);
+          spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, z, b.isFire, b.isCryo);
         }
 
-        // Apply Burn Bullet DoT if player has upgrade
-        if (player.burnLevel > 0) {
-          z.burnTicks = 180; // 3 seconds at 60 fps
+        // Fire rounds apply burn only when this specific bullet rolled fire.
+        if (b.isFire) {
+          z.burnTicks = Math.max(z.burnTicks || 0, 180); // 3 seconds at 60 fps
         }
 
         // Keep track of hit zombies on this bullet
@@ -1510,6 +2199,11 @@ function update() {
         break; // Stop checking other zombies for this bullet in this frame
       }
     }
+  }
+
+  // Cap active particles to prevent performance degradation on high density swarms
+  if (gameParticles.length > 400) {
+    gameParticles.splice(0, gameParticles.length - 400);
   }
 
   // 7. Update pixel particles (muzzle flashes, blood, sparks)
@@ -1560,7 +2254,9 @@ function update() {
   }
 
   // 9. Scan for wave completed
-  if (!isWaveIntermission && waveZombiesSpawned === waveZombiesTotal && zombies.length === 0) {
+  // Boss wave requires boss to be dead too
+  const bossAlive = isBossWave(gameState.wave) && activeBoss !== null;
+  if (!isWaveIntermission && waveZombiesSpawned === waveZombiesTotal && zombies.length === 0 && !bossAlive) {
     clearWave();
   }
 }
@@ -1686,7 +2382,10 @@ function renderUpgradeChoices() {
       // 3. Increment wave and set next wave stats
       gameState.wave += 1;
       waveZombiesSpawned = 0;
-      waveZombiesTotal = getWaveZombieTotal(gameState.wave);
+      activeBoss = null;
+      waveZombiesTotal = isBossWave(gameState.wave)
+        ? Math.floor(getWaveZombieTotal(gameState.wave) * 0.4)
+        : getWaveZombieTotal(gameState.wave);
 
       // 4. Reset screen and combat arrays for next wave
       bullets = [];
@@ -1695,6 +2394,7 @@ function renderUpgradeChoices() {
       toxicTrails = [];
       lightningArcs = [];
       gameParticles = [];
+      pendingSummons = [];
       isWaveIntermission = false;
       lastZombieSpawnTime = Date.now(); // breathing room before spawn
 
@@ -1790,6 +2490,21 @@ function spawnZombie() {
       lastAttackTime: 0,
       attackCooldown: 2000 // spits every 2 seconds
     });
+  } else if (zombieType === 'necromancer') {
+    // Spawn Necromancer Zombie (Summoner threat)
+    addScaledZombie({
+      type: 'necromancer',
+      x: zx,
+      y: zy,
+      size: 46, // Slender and tall
+      health: 40,
+      maxHealth: 40,
+      speed: 0.6, // Moves slowly
+      damage: 12,
+      scoreValue: 50,
+      lastAttackTime: 0,
+      attackCooldown: 1000
+    });
   } else if (zombieType === 'exploder') {
     // Spawn Exploder Bomber Zombie (Kamikaze threat)
     addScaledZombie({
@@ -1799,9 +2514,9 @@ function spawnZombie() {
       size: 42, // Swollen shape
       health: 15,
       maxHealth: 15,
-      speed: 0.95, // Decreased base speed from 1.3
-      damage: 25,
-      scoreValue: 20,
+      speed: 1.45, // UPGRADED speed so it's extremely fast and dangerous!
+      damage: 45, // UPGRADED base damage so it deals high blast damage to player!
+      scoreValue: 25, // slightly more score for difficulty
       lastAttackTime: 0,
       attackCooldown: 1000
     });
@@ -1823,44 +2538,164 @@ function spawnZombie() {
   }
 }
 
+function spawnPatientZero() {
+  // Pick spawn position off-screen from a random edge
+  let bx, by;
+  const side = Math.floor(Math.random() * 4);
+  const buf = 120;
+  if (side === 0) { bx = camera.x + Math.random() * canvas.width; by = camera.y - buf; }
+  else if (side === 1) { bx = camera.x + canvas.width + buf; by = camera.y + Math.random() * canvas.height; }
+  else if (side === 2) { bx = camera.x + Math.random() * canvas.width; by = camera.y + canvas.height + buf; }
+  else { bx = camera.x - buf; by = camera.y + Math.random() * canvas.height; }
+  bx = Math.max(30, Math.min(world.width - 30, bx));
+  by = Math.max(30, Math.min(world.height - 30, by));
+
+  // Scale boss HP with wave and previous boss defeats (+10% HP per defeated boss)
+  const bossHealthScale = 1 + bossesDefeated * 0.10;
+  const baseHP = Math.ceil((600 + gameState.wave * 60) * bossHealthScale);
+
+  const boss = {
+    type: 'patient_zero',
+    x: bx,
+    y: by,
+    size: 140,
+    health: baseHP,
+    maxHealth: baseHP,
+    speed: 0.75,
+    damage: 25,
+    scoreValue: 500,
+    lastAttackTime: 0,
+    attackCooldown: 800,
+    lastSummonTime: Date.now(),
+    isSummoning: false,
+    summonCastEndsAt: 0
+  };
+
+  zombies.push(boss);
+  activeBoss = boss;
+  startScreenShake(10, 15);
+  console.log(`[BOSS] Patient Zero spawned on wave ${gameState.wave}! HP: ${baseHP}`);
+}
+
+function queueBossSummon(boss, now) {
+  const spots = [];
+  for (let s = 0; s < 2; s++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 100 + Math.random() * 80;
+    spots.push({
+      x: Math.max(20, Math.min(world.width - 20, boss.x + Math.cos(angle) * radius)),
+      y: Math.max(20, Math.min(world.height - 20, boss.y + Math.sin(angle) * radius)),
+      type: 'necromancer'
+    });
+  }
+
+  boss.isSummoning = true;
+  boss.summonCastEndsAt = now + bossSummonCastTime;
+
+  pendingSummons.push({
+    summoner: boss,
+    startTime: now,
+    spawnTime: now + bossSummonCastTime,
+    spots,
+    isBossSummon: true
+  });
+
+  // Red warning sparks
+  for (let p = 0; p < 10; p++) {
+    const pAngle = Math.random() * Math.PI * 2;
+    const pSpeed = Math.random() * 2 + 0.8;
+    gameParticles.push({
+      x: boss.x,
+      y: boss.y,
+      vx: Math.cos(pAngle) * pSpeed,
+      vy: Math.sin(pAngle) * pSpeed,
+      size: Math.floor(Math.random() * 4) + 2,
+      color: p % 2 === 0 ? '#ff2222' : '#ff8800',
+      life: 0.9,
+      decay: 0.04
+    });
+  }
+}
+
 function chooseZombieType(wave) {
   const roll = Math.random();
 
+  // Wave 1: Only standard normal zombies
   if (wave === 1) {
     return 'normal';
   }
 
+  // Wave 2-3: Debut FAST zombies
   if (wave === 2) {
-    return roll < 0.30 ? 'fast' : 'normal';
+    return roll < 0.25 ? 'fast' : 'normal';
+  }
+  if (wave === 3) {
+    return roll < 0.35 ? 'fast' : 'normal';
   }
 
-  if (wave === 3) {
-    if (roll < 0.12) return 'spitter';
-    if (roll < 0.27) return 'tank';
-    if (roll < 0.57) return 'fast';
+  // Wave 4-5: Debut TANK zombies
+  if (wave === 4) {
+    if (roll < 0.20) return 'tank';
+    if (roll < 0.50) return 'fast';
+    return 'normal';
+  }
+  if (wave === 5) {
+    if (roll < 0.25) return 'tank';
+    if (roll < 0.55) return 'fast';
     return 'normal';
   }
 
-  if (wave < 7) {
-    if (roll < 0.12) return 'exploder';
-    if (roll < 0.28) return 'spitter';
-    if (roll < 0.44) return 'tank';
+  // Wave 6-7: Debut SPITTER zombies
+  if (wave < 8) {
+    if (roll < 0.15) return 'spitter';
+    if (roll < 0.35) return 'tank';
+    if (roll < 0.65) return 'fast';
+    return 'normal';
+  }
+
+  // Wave 8-9: Debut NECROMANCER zombies
+  if (wave < 10) {
+    if (roll < 0.08) return 'necromancer'; // 8% chance to spawn Necromancer
+    if (roll < 0.24) return 'spitter';
+    if (roll < 0.42) return 'tank';
     if (roll < 0.70) return 'fast';
     return 'normal';
   }
 
-  if (wave < 11) {
-    if (roll < 0.16) return 'exploder';
-    if (roll < 0.34) return 'spitter';
-    if (roll < 0.54) return 'tank';
-    if (roll < 0.78) return 'fast';
+  // Wave 10+: Debut EXPLOSION (exploder) zombies
+  if (wave < 16) { // Waves 10-15
+    if (roll < 0.10) return 'exploder';
+    if (roll < 0.18) return 'necromancer';
+    if (roll < 0.32) return 'spitter';
+    if (roll < 0.47) return 'tank';
+    if (roll < 0.71) return 'fast';
     return 'normal';
   }
 
-  if (roll < 0.20) return 'exploder';
-  if (roll < 0.40) return 'spitter';
-  if (roll < 0.62) return 'tank';
-  if (roll < 0.84) return 'fast';
+  if (wave < 21) { // Waves 16-20
+    if (roll < 0.12) return 'exploder';
+    if (roll < 0.21) return 'necromancer';
+    if (roll < 0.35) return 'spitter';
+    if (roll < 0.51) return 'tank';
+    if (roll < 0.73) return 'fast';
+    return 'normal';
+  }
+
+  if (wave < 31) { // Waves 21-30
+    if (roll < 0.14) return 'exploder';
+    if (roll < 0.24) return 'necromancer';
+    if (roll < 0.41) return 'spitter';
+    if (roll < 0.59) return 'tank';
+    if (roll < 0.81) return 'fast';
+    return 'normal';
+  }
+
+  // Wave 31+
+  if (roll < 0.18) return 'exploder';
+  if (roll < 0.29) return 'necromancer';
+  if (roll < 0.48) return 'spitter';
+  if (roll < 0.69) return 'tank';
+  if (roll < 0.90) return 'fast';
   return 'normal';
 }
 
@@ -1875,6 +2710,124 @@ function addScaledZombie(zombie) {
   zombie.scoreValue = Math.round(zombie.scoreValue * scales.score);
 
   zombies.push(zombie);
+}
+
+function getSummonedZombieConfig(type) {
+  const configMap = {
+    normal: { size: 42, health: 30, speed: 0.75, damage: 10, score: 10, attackCooldown: 1000 },
+    fast: { size: 34, health: 20, speed: 1.2, damage: 8, score: 15, attackCooldown: 1000 },
+    tank: { size: 54, health: 60, speed: 0.5, damage: 20, score: 30, attackCooldown: 1200 },
+    spitter: { size: 38, health: 25, speed: 0.7, damage: 10, score: 25, attackCooldown: 2000 },
+    necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 }
+  };
+
+  return configMap[type] || configMap.normal;
+}
+
+function queueNecromancerSummon(necromancer, now) {
+  const possibleTypes = ['normal', 'fast', 'tank', 'spitter'];
+  const spots = [];
+
+  for (let sIdx = 0; sIdx < 3; sIdx++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 70 + Math.random() * 70;
+    const chosenType = possibleTypes[Math.floor(Math.random() * possibleTypes.length)];
+
+    spots.push({
+      x: Math.max(20, Math.min(world.width - 20, necromancer.x + Math.cos(angle) * radius)),
+      y: Math.max(20, Math.min(world.height - 20, necromancer.y + Math.sin(angle) * radius)),
+      type: chosenType
+    });
+  }
+
+  necromancer.isSummoning = true;
+  necromancer.summonCastEndsAt = now + necromancerSummonCastTime;
+
+  pendingSummons.push({
+    summoner: necromancer,
+    startTime: now,
+    spawnTime: now + necromancerSummonCastTime,
+    spots
+  });
+
+  // Small casting sparks tell the player this enemy is doing something dangerous.
+  for (let p = 0; p < 8; p++) {
+    const pAngle = Math.random() * Math.PI * 2;
+    const pSpeed = Math.random() * 1.6 + 0.5;
+    gameParticles.push({
+      x: necromancer.x,
+      y: necromancer.y,
+      vx: Math.cos(pAngle) * pSpeed,
+      vy: Math.sin(pAngle) * pSpeed,
+      size: Math.floor(Math.random() * 3) + 2,
+      color: p % 2 === 0 ? '#39ff14' : '#ff00ff',
+      life: 0.75,
+      decay: 0.045
+    });
+  }
+}
+
+function updatePendingSummons(now) {
+  for (let i = pendingSummons.length - 1; i >= 0; i--) {
+    const summon = pendingSummons[i];
+    const summonerAlive = zombies.includes(summon.summoner) && summon.summoner.health > 0;
+
+    if (!summonerAlive) {
+      if (summon.summoner) {
+        summon.summoner.isSummoning = false;
+        summon.summoner.summonCastEndsAt = 0;
+      }
+      pendingSummons.splice(i, 1);
+      continue;
+    }
+
+    if (now < summon.spawnTime) {
+      continue;
+    }
+
+    summon.spots.forEach(spot => {
+      spawnSummonedZombie(spot.type, spot.x, spot.y);
+    });
+
+    summon.summoner.isSummoning = false;
+    summon.summoner.summonCastEndsAt = 0;
+    pendingSummons.splice(i, 1);
+    startScreenShake(3, 7);
+  }
+}
+
+function spawnSummonedZombie(type, x, y) {
+  const config = getSummonedZombieConfig(type);
+
+  addScaledZombie({
+    type,
+    x,
+    y,
+    size: config.size,
+    health: config.health,
+    maxHealth: config.health,
+    speed: config.speed,
+    damage: config.damage,
+    scoreValue: config.score,
+    lastAttackTime: 0,
+    attackCooldown: config.attackCooldown
+  });
+
+  // Toxic lab portal particles at each warned spawn point.
+  for (let p = 0; p < 6; p++) {
+    const pAngle = Math.random() * Math.PI * 2;
+    const pSpeed = Math.random() * 2 + 1;
+    gameParticles.push({
+      x,
+      y,
+      vx: Math.cos(pAngle) * pSpeed,
+      vy: Math.sin(pAngle) * pSpeed,
+      size: Math.floor(Math.random() * 3) + 3,
+      color: p % 2 === 0 ? '#39ff14' : '#cc00ff',
+      life: 0.8,
+      decay: Math.random() * 0.08 + 0.04
+    });
+  }
 }
 
 function circleRectCollision(cx, cy, radius, rect) {
@@ -1930,7 +2883,7 @@ function handleBulletObstacleCollision(bullet, bulletIndex, prevX, prevY) {
       bullet.bounceLeft -= 1;
 
       if (player.splinterShotLevel > 0 && !bullet.isShrapnel) {
-        spawnSplinterShrapnel(bullet.x, bullet.y, bullet.vx, bullet.vy, bullet.damage);
+        spawnSplinterShrapnel(bullet.x, bullet.y, bullet.vx, bullet.vy, bullet.damage, null, bullet.isFire, bullet.isCryo);
       }
 
       bounceBulletFromObstacle(bullet, obstacle, prevX, prevY);
@@ -1940,7 +2893,7 @@ function handleBulletObstacleCollision(bullet, bulletIndex, prevX, prevY) {
     }
 
     if (player.splinterShotLevel > 0 && !bullet.isShrapnel) {
-      spawnSplinterShrapnel(bullet.x, bullet.y, bullet.vx, bullet.vy, bullet.damage);
+      spawnSplinterShrapnel(bullet.x, bullet.y, bullet.vx, bullet.vy, bullet.damage, null, bullet.isFire, bullet.isCryo);
     }
 
     spawnObstacleImpactSparks(bullet.x, bullet.y, '#ff7700');
@@ -2053,6 +3006,35 @@ function spawnEvadeParticles(x, y) {
 function damagePlayer(rawAmount) {
   if (player.health <= 0) return;
 
+  // Bio-Shield hit blocking (Epic upgrade)
+  if (player.bioShieldLevel > 0 && player.bioShieldActive) {
+    player.bioShieldActive = false;
+    
+    // Cooldown reduces by 1s per stack above level 1, capped at 6s minimum (from 12s)
+    const cdSec = Math.max(6.0, 12.0 - (player.bioShieldLevel - 1) * 1.0);
+    player.bioShieldTimer = cdSec * 60; // 60 ticks per second
+
+    // Spawn cyan absorption energy sparks around player
+    for (let s = 0; s < 15; s++) {
+      const a = Math.random() * Math.PI * 2;
+      const f = Math.random() * 3 + 1;
+      gameParticles.push({
+        x: player.x,
+        y: player.y,
+        vx: Math.cos(a) * f,
+        vy: Math.sin(a) * f,
+        size: Math.floor(Math.random() * 4) + 2,
+        color: '#00ffff', // bright cyan energy
+        life: 0.8,
+        decay: Math.random() * 0.08 + 0.05
+      });
+    }
+
+    // Trigger subtle screen shake visual response
+    startScreenShake(3, 5);
+    return; // Block hit completely!
+  }
+
   // 1. Evade check (Phase Shift)
   if (player.dodgeChance > 0) {
     if (Math.random() < player.dodgeChance) {
@@ -2078,12 +3060,41 @@ function damagePlayer(rawAmount) {
 
   // 4. Trigger Retaliate speed boost
   if (player.retaliateLevel > 0) {
-    const duration = Math.min(4000, 2000 * player.retaliateLevel); // 2s per stack, cap 4s
+    const duration = Math.min(6000, 2000 * player.retaliateLevel); // 2s per stack, cap 6s
     player.retaliateExpiry = Date.now() + duration;
   }
 
-  // 5. Check player death state
+  // 5. Check player death state & trigger Second Wind revive rescue if available
   if (player.health <= 0) {
+    if (player.secondWindLevel > 0 && !player.secondWindTriggered) {
+      player.secondWindTriggered = true;
+
+      // Restores 40 HP, +15 HP per level above 1, capped at 100 HP max
+      const reviveHP = Math.min(100, 40 + (player.secondWindLevel - 1) * 15);
+      player.health = reviveHP;
+      updateHUD();
+
+      // Trigger high-intensity screen shake on revive
+      startScreenShake(15, 24);
+
+      // Spawn gold and green healing explosion rings
+      for (let s = 0; s < 30; s++) {
+        const a = Math.random() * Math.PI * 2;
+        const f = Math.random() * 6 + 2;
+        gameParticles.push({
+          x: player.x,
+          y: player.y,
+          vx: Math.cos(a) * f,
+          vy: Math.sin(a) * f,
+          size: Math.floor(Math.random() * 5) + 3,
+          color: Math.random() > 0.5 ? '#ffee00' : '#39ff14', // gold or lime green sparks
+          life: 1.0,
+          decay: Math.random() * 0.05 + 0.02
+        });
+      }
+      return; // Player survived!
+    }
+
     gameOver();
   }
 }
@@ -2097,12 +3108,12 @@ function damagePlayer(rawAmount) {
  * @param {number} vy - Original bullet velocity y
  * @param {number} parentDamage - Original bullet damage
  */
-function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null) {
+function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null, isFire = false, isCryo = false) {
   const angle = Math.atan2(vy, vx);
   const speed = Math.sqrt(vx * vx + vy * vy) * 0.8; // slightly slower shrapnel
   const shrapnelDamage = Math.max(1, Math.round(parentDamage * 0.40)); // Capped damage to exactly 40% of parent bullet damage
 
-  const numSplits = Math.min(4, player.splinterShotLevel + 1); // Caps at 4 bullet split fanned symmetrically
+  const numSplits = Math.min(10, player.splinterShotLevel + 1); // Caps at 10 bullet split fanned symmetrically
   const totalSpread = Math.PI / 2; // 90 degrees total fanning spread
   const angleStep = numSplits > 1 ? totalSpread / (numSplits - 1) : 0;
   const startAngle = angle - totalSpread / 2;
@@ -2122,7 +3133,8 @@ function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null) {
       hitZombies: hitZombie ? [hitZombie] : [], // Pre-exclude the target zombie that got hit to prevent instant double-hits!
       isShrapnel: true,
       life: 45, // Shrapnel expires in 45 frames (~0.75 seconds)
-      isFire: player.burnLevel > 0 // Inherit fire bullet properties
+      isFire,
+      isCryo
     });
   }
 }
@@ -2130,17 +3142,49 @@ function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null) {
 
 // Shooting Weapon System
 
+function rollBulletElement() {
+  const fireChance = Math.min(0.30, player.burnLevel * 0.05);
+  const cryoChance = Math.min(0.30, player.cryoCapsuleLevel * 0.05);
+  const roll = Math.random();
+
+  return {
+    isFire: roll < fireChance,
+    isCryo: roll >= fireChance && roll < fireChance + cryoChance
+  };
+}
+
 function shootWeapon() {
   const now = Date.now();
 
+  // Calculate dynamic fire rate cooldown
+  let currentFireRate = player.fireRate;
+  if (player.stimulantLevel > 0) {
+    const stimBonus = Math.min(0.40, player.stimulantLevel * 0.06);
+    currentFireRate *= (1 - stimBonus);
+  }
+  if (player.killFrenzyTimer > 0) {
+    currentFireRate *= 0.85; // +15% fire rate reduction (faster firing)
+  }
+
   // Bullet spawn rate cooldown check
-  if (now - player.lastShotTime >= player.fireRate) {
+  if (now - player.lastShotTime >= currentFireRate) {
     // 1. Calculate angle from player's screen position to mouse cursor screen coordinates
     const playerScreenX = player.x - camera.x;
     const playerScreenY = player.y - camera.y;
     const aimDx = mouse.x - playerScreenX;
     const aimDy = mouse.y - playerScreenY;
     const angle = Math.atan2(aimDy, aimDx);
+
+    // Increment and check Overclocked Weapon count
+    let isOverclocked = false;
+    if (player.overclockLevel > 0) {
+      player.overclockShotCounter += 1;
+      const threshold = Math.max(5, 10 - (player.overclockLevel - 1));
+      if (player.overclockShotCounter >= threshold) {
+        player.overclockShotCounter = 0;
+        isOverclocked = true;
+      }
+    }
 
     // 2. Spawn bullets (combining stackable Parallel Multi-Shot and Epic fanned Spread Shots)
     const totalBullets = 1 + player.spreadShotCount + player.doubleShotCount;
@@ -2149,9 +3193,14 @@ function shootWeapon() {
     const isPlayerMoving = (keys.w || keys.a || keys.s || keys.d);
     let finalDamage = player.bulletDamage;
     if (!isPlayerMoving && player.steadyAimLevel > 0) {
-      finalDamage += Math.min(30, player.steadyAimLevel * 6); // Capped at +30 damage
+      finalDamage += Math.min(50, player.steadyAimLevel * 2); // Capped at +50 damage
     }
-    const finalSize = 10 * (1 + player.bulletSizeModifier); // Giant Bullets modifier
+    let finalSize = 10 * (1 + player.bulletSizeModifier); // Giant Bullets modifier
+
+    if (isOverclocked) {
+      finalDamage = Math.round(finalDamage * 1.5); // +50% damage
+      finalSize *= 1.5; // larger projectile visual
+    }
 
     if (totalBullets < 4) {
       // Perfectly parallel side-by-side bullets for 1, 2, or 3 bullets
@@ -2163,6 +3212,7 @@ function shootWeapon() {
         const parallelOffset = p - (totalBullets - 1) / 2;
         const ox = parallelOffset * parallelSpacing * perpX;
         const oy = parallelOffset * parallelSpacing * perpY;
+        const element = rollBulletElement();
 
         bullets.push({
           x: player.x + ox,
@@ -2177,7 +3227,9 @@ function shootWeapon() {
           hitZombies: [],
           isShrapnel: false,
           life: 150, // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
-          isFire: player.burnLevel > 0
+          isFire: element.isFire,
+          isCryo: element.isCryo,
+          isOverclocked: isOverclocked
         });
 
         // Spawn barrel flash at each starting muzzle point offset
@@ -2190,6 +3242,7 @@ function shootWeapon() {
       for (let i = 0; i < totalBullets; i++) {
         const offsetIndex = i - (totalBullets - 1) / 2;
         const currentAngle = angle + offsetIndex * fanAngleSpacing;
+        const element = rollBulletElement();
 
         bullets.push({
           x: player.x,
@@ -2204,7 +3257,9 @@ function shootWeapon() {
           hitZombies: [],
           isShrapnel: false,
           life: 150, // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
-          isFire: player.burnLevel > 0
+          isFire: element.isFire,
+          isCryo: element.isCryo,
+          isOverclocked: isOverclocked
         });
 
         // Spawn barrel flash at each muzzle direction
@@ -2255,6 +3310,7 @@ function triggerChainLightning() {
       // Hit zombie!
       targetsChain.push(closestZ);
       closestZ.health -= damage;
+      closestZ.flashTicks = 5; // Trigger white hit flash
       closestZ.stunTicks = 60; // 1 second stun at 60 fps
 
       // Save segment into lightning arcs for rendering
@@ -2483,23 +3539,6 @@ function triggerExplosion(ex, ey, maxDamage) {
     }
   }
 
-  // Splash damage to *other* active zombies within upgraded 140px radius (restored to full powerful 75 value)
-  const maxZombieSplashDamage = 75;
-  zombies.forEach(zTarget => {
-    const tDx = zTarget.x - ex;
-    const tDy = zTarget.y - ey;
-    const tDist = Math.sqrt(tDx * tDx + tDy * tDy);
-    if (tDist < explosionRadius && tDist > 1) { // tDist > 1 prevents damaging the source itself
-      const factor = (explosionRadius - tDist) / explosionRadius;
-      const splashDamage = Math.floor(maxZombieSplashDamage * factor);
-      if (splashDamage > 0) {
-        zTarget.health -= splashDamage;
-        if (zTarget.health <= 0) {
-          zTarget.killedByNecroBomb = true; // Mark as killed by explosion so it won't drop / chain Necro-Bomb
-        }
-      }
-    }
-  });
 }
 
 /**
@@ -2589,6 +3628,7 @@ function triggerNecroBombExplosion(ex, ey) {
       const splashDamage = Math.floor(damage * factor);
       if (splashDamage > 0) {
         zTarget.health -= splashDamage;
+        zTarget.flashTicks = 5; // Trigger white hit flash
         if (zTarget.health <= 0) {
           zTarget.killedByNecroBomb = true; // Mark as killed by Necro-Bomb to prevent recursive explosions
         }
@@ -2706,6 +3746,12 @@ function render() {
   // 3.6. Draw Toxic Trails (Translucent Floor Pools)
   drawToxicTrails();
 
+  // 3.65. Draw Necromancer summon warnings before enemies appear.
+  drawPendingSummonTelegraphs();
+
+  // 3.7. Draw dropped Lab Mines
+  drawMines();
+
   // 4. Draw Dotted Aim Guide Sight
   drawAimGuide();
 
@@ -2747,6 +3793,9 @@ function render() {
 
   // 10. Screen-space darkness, vignette, and player-focused visibility.
   drawLightingOverlay();
+
+  // 11. Boss health bar HUD (screen-space, drawn after vignette so it's always visible)
+  drawBossHealthBar();
 }
 
 function drawLightingOverlay() {
@@ -2772,6 +3821,47 @@ function drawLightingOverlay() {
   // Thin emergency monitor tint keeps the lab sterile and synthetic.
   ctx.fillStyle = 'rgba(43, 255, 125, 0.025)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.restore();
+}
+
+function drawBossHealthBar() {
+  if (!activeBoss || activeBoss.health <= 0) return;
+
+  ctx.save();
+
+  const barWidth = Math.min(500, canvas.width * 0.45);
+  const barHeight = 16;
+  const barX = (canvas.width - barWidth) / 2;
+  const barY = 30;
+  const healthRatio = Math.max(0, activeBoss.health / activeBoss.maxHealth);
+
+  // Dark background bar
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
+
+  // Health fill (pulses brighter red when summoning)
+  const summonPulse = activeBoss.isSummoning ? (Math.sin(gameTick * 0.35) + 1) / 2 * 0.3 : 0;
+  const r = Math.floor(200 + summonPulse * 55);
+  const g = Math.floor(25 + summonPulse * 15);
+  ctx.fillStyle = `rgb(${r}, ${g}, 20)`;
+  ctx.fillRect(barX, barY, barWidth * healthRatio, barHeight);
+
+  // Thin bright border
+  ctx.strokeStyle = '#ff4444';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
+
+  // Boss name label
+  ctx.fillStyle = '#ff4444';
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('PATIENT ZERO', canvas.width / 2, barY - 6);
+
+  // Health percentage text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText(`${Math.ceil(healthRatio * 100)}%`, canvas.width / 2, barY + barHeight + 14);
 
   ctx.restore();
 }
@@ -3353,6 +4443,42 @@ function drawPlayer() {
   ctx.strokeRect(-12, -12, 22, 24);
 
   ctx.restore();
+
+  // Draw Bio-Shield aura if active
+  if (player.bioShieldActive) {
+    ctx.save();
+    // Soft rotating outer cyan energy field
+    const bubbleRadius = size * 0.8;
+    const pulse = Math.sin(gameTick * 0.1) * 2;
+    const rotationAngle = gameTick * 0.03;
+    
+    ctx.translate(player.x, player.y);
+    ctx.rotate(rotationAngle);
+    
+    // Outer shield glow
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+    ctx.lineWidth = 4 + pulse;
+    ctx.beginPath();
+    ctx.arc(0, 0, bubbleRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner shield shell line
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, bubbleRadius - 2, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Segmented rotating panels
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([8, 12]);
+    ctx.beginPath();
+    ctx.arc(0, 0, bubbleRadius + 1, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    ctx.restore();
+  }
 }
 
 /**
@@ -3362,7 +4488,44 @@ function drawBullets() {
   bullets.forEach(b => {
     // 1. Render continuous nested vector trails if we have historical points
     if (b.trail.length > 1) {
-      if (b.isFire) {
+      if (b.isOverclocked) {
+        // Red neon energy sheath (outer glow)
+        ctx.strokeStyle = 'rgba(255, 0, 50, 0.35)';
+        ctx.lineWidth = b.size * 1.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Intense crimson-red envelope (mid glow)
+        ctx.strokeStyle = '#ff0033';
+        ctx.lineWidth = b.size * 0.9;
+        ctx.beginPath();
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Superheated hot-white core (inner bullet trail)
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = b.size * 0.4;
+        ctx.beginPath();
+        const startIdx = Math.floor(b.trail.length / 2);
+        ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
+        for (let j = startIdx + 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      } else if (b.isFire) {
         // Red-Orange fire sheath (outer glow)
         ctx.strokeStyle = 'rgba(255, 69, 0, 0.35)';
         ctx.lineWidth = b.size * 1.25;
@@ -3391,6 +4554,43 @@ function drawBullets() {
         // Superheated gold core (inner bullet trail)
         ctx.strokeStyle = '#ffee00';
         ctx.lineWidth = b.size * 0.35;
+        ctx.beginPath();
+        const startIdx = Math.floor(b.trail.length / 2);
+        ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
+        for (let j = startIdx + 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      } else if (b.isCryo) {
+        // Frost-blue cryo sheath (outer chill bloom)
+        ctx.strokeStyle = 'rgba(80, 220, 255, 0.32)';
+        ctx.lineWidth = b.size * 1.2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Sharp cyan energy envelope
+        ctx.strokeStyle = '#00d9ff';
+        ctx.lineWidth = b.size * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Frozen white core
+        ctx.strokeStyle = '#e9ffff';
+        ctx.lineWidth = b.size * 0.32;
         ctx.beginPath();
         const startIdx = Math.floor(b.trail.length / 2);
         ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
@@ -3442,7 +4642,20 @@ function drawBullets() {
     // 2. Render bullet main projectile head block
     const half = b.size / 2;
 
-    if (b.isFire) {
+    if (b.isOverclocked) {
+      // Outer fiery outline (Vibrant crimson neon)
+      ctx.fillStyle = '#ff0033';
+      ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+
+      // Inner molten core (Pure white)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
+
+      // High-contrast outline border (dark ruby crimson)
+      ctx.strokeStyle = '#3a000a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+    } else if (b.isFire) {
       // Outer fiery outline (Vibrant red-orange plasma)
       ctx.fillStyle = '#ff3c00';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
@@ -3453,6 +4666,19 @@ function drawBullets() {
 
       // High-contrast outline border (dark fire crimson)
       ctx.strokeStyle = '#3d0800';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+    } else if (b.isCryo) {
+      // Outer cryo shell (electric cyan ice)
+      ctx.fillStyle = '#00d9ff';
+      ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+
+      // Inner frozen core (cold white)
+      ctx.fillStyle = '#e9ffff';
+      ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
+
+      // High-contrast outline border (deep lab blue)
+      ctx.strokeStyle = '#002b3d';
       ctx.lineWidth = 2;
       ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
     } else {
@@ -3478,13 +4704,14 @@ function drawBullets() {
 function drawEnemyProjectiles() {
   enemyProjectiles.forEach(ep => {
     const half = ep.size / 2;
+    const isShadow = ep.color === '#ff00ff';
 
-    // Outer toxic lime glow (Wide green energy sheath)
-    ctx.fillStyle = '#73ff00';
+    // Outer glow (Wide energy sheath)
+    ctx.fillStyle = isShadow ? '#ff00ff' : '#73ff00';
     ctx.fillRect(Math.floor(ep.x - half), Math.floor(ep.y - half), ep.size, ep.size);
 
-    // Inner bright fusing neon green core
-    ctx.fillStyle = '#39ff14';
+    // Inner bright fusing neon core
+    ctx.fillStyle = isShadow ? '#ffffff' : '#39ff14';
     ctx.fillRect(Math.floor(ep.x - ep.size / 4), Math.floor(ep.y - ep.size / 4), ep.size / 2, ep.size / 2);
 
     // High-contrast black outline border
@@ -3516,6 +4743,55 @@ function drawToxicTrails() {
     ctx.beginPath();
     ctx.arc(trail.x, trail.y, trail.size * 0.6, 0, Math.PI * 2);
     ctx.fill();
+  });
+  ctx.restore();
+}
+
+/**
+ * Renders dropped, flashing Lab Mines on the canvas floor.
+ */
+function drawMines() {
+  ctx.save();
+  activeMines.forEach(m => {
+    // Pulse rate depends on mine size/level
+    const isPulsing = (gameTick % 20 < 10);
+    
+    // Outer shadow
+    drawObjectShadow(m.x - m.size * 0.6, m.y - m.size * 0.4, m.size * 1.2, m.size * 0.8, 0.4);
+
+    // Mine base cylinder (dark industrial grey with metallic edges)
+    ctx.fillStyle = '#2f2f3a';
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, m.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Metallic border outline
+    ctx.strokeStyle = '#1c1c24';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, m.size / 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Central yellow/orange hazard pattern
+    ctx.fillStyle = '#ff7700';
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, m.size * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Blinking red central diode
+    ctx.fillStyle = isPulsing ? '#ff0033' : '#550000';
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, m.size * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Glowing aura if diode is active
+    if (isPulsing) {
+      ctx.strokeStyle = 'rgba(255, 0, 50, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.size * 0.2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   });
   ctx.restore();
 }
@@ -3693,6 +4969,109 @@ function drawOrbitingDefender() {
  * Renders all active zombies in detailed matching 8-bit blocky styles.
  * Pivots dynamically to face the player.
  */
+function drawPendingSummonTelegraphs() {
+  if (pendingSummons.length === 0) return;
+
+  const now = Date.now();
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  pendingSummons.forEach(summon => {
+    const castLength = Math.max(1, summon.spawnTime - summon.startTime);
+    const progress = Math.max(0, Math.min(1, (now - summon.startTime) / castLength));
+    const pulse = (Math.sin(gameTick * 0.25) + 1) / 2;
+    const warningAlpha = 0.24 + progress * 0.5 + pulse * 0.08;
+
+    if (summon.summoner) {
+      const casterRadius = summon.isBossSummon ? (72 + progress * 22 + pulse * 6) : (58 + progress * 18 + pulse * 5);
+
+      // Boss summons use red, necromancer uses green
+      const mainR = summon.isBossSummon ? 255 : 57;
+      const mainG = summon.isBossSummon ? 34 : 255;
+      const mainB = summon.isBossSummon ? 34 : 20;
+      const accentR = summon.isBossSummon ? 255 : 255;
+      const accentG = summon.isBossSummon ? 136 : 0;
+      const accentB = summon.isBossSummon ? 0 : 255;
+
+      ctx.fillStyle = `rgba(${mainR}, ${mainG}, ${mainB}, 0.055)`;
+      ctx.beginPath();
+      ctx.arc(summon.summoner.x, summon.summoner.y, casterRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Keep this telegraph cheap: no shadowBlur or dashed circles, because those can tank FPS.
+      ctx.strokeStyle = `rgba(${mainR}, ${mainG}, ${mainB}, ${warningAlpha * 0.55})`;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(summon.summoner.x, summon.summoner.y, casterRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(${mainR}, ${mainG}, ${mainB}, ${warningAlpha})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(summon.summoner.x, summon.summoner.y, casterRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${0.16 + pulse * 0.18})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(summon.summoner.x, summon.summoner.y, casterRadius * 0.58, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    summon.spots.forEach((spot, index) => {
+      const spotRadius = 24 + progress * 16 + pulse * 3;
+      const tickAngle = gameTick * 0.035 + index * 1.8;
+
+      // Boss summon spots use red, necromancer uses green
+      const sR = summon.isBossSummon ? 255 : 57;
+      const sG = summon.isBossSummon ? 34 : 255;
+      const sB = summon.isBossSummon ? 34 : 20;
+
+      ctx.fillStyle = `rgba(${sR}, ${sG}, ${sB}, ${0.04 + progress * 0.08})`;
+      ctx.beginPath();
+      ctx.arc(spot.x, spot.y, spotRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = `rgba(${sR}, ${sG}, ${sB}, ${warningAlpha * 0.45})`;
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.arc(spot.x, spot.y, spotRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(${sR}, ${sG}, ${sB}, ${warningAlpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(spot.x, spot.y, spotRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.18 + progress * 0.25})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(spot.x - spotRadius * 0.45, spot.y);
+      ctx.lineTo(spot.x + spotRadius * 0.45, spot.y);
+      ctx.moveTo(spot.x, spot.y - spotRadius * 0.45);
+      ctx.lineTo(spot.x, spot.y + spotRadius * 0.45);
+      ctx.stroke();
+
+      for (let t = 0; t < 4; t++) {
+        const angle = tickAngle + t * Math.PI / 2;
+        const inner = spotRadius * 0.72;
+        const outer = spotRadius * 1.08;
+        ctx.strokeStyle = `rgba(${summon.isBossSummon ? '255, 136, 0' : '255, 119, 0'}, ${0.32 + progress * 0.32})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(spot.x + Math.cos(angle) * inner, spot.y + Math.sin(angle) * inner);
+        ctx.lineTo(spot.x + Math.cos(angle) * outer, spot.y + Math.sin(angle) * outer);
+        ctx.stroke();
+      }
+    });
+  });
+
+  ctx.restore();
+}
+
 function drawZombies() {
   zombies.forEach(z => {
     const size = z.size;
@@ -3701,7 +5080,9 @@ function drawZombies() {
       fast: 24,
       spitter: 28,
       exploder: 30,
-      tank: 40
+      tank: 40,
+      necromancer: 36,
+      patient_zero: 112
     };
     const spriteScale = size / (baseSpriteSizes[z.type] || baseSpriteSizes.normal);
 
@@ -3717,8 +5098,18 @@ function drawZombies() {
     ctx.rotate(angle); // Pivot zombie space towards player
     ctx.scale(spriteScale, spriteScale); // Match the sprite to its larger hitbox
 
+    // Apply bright white hit flash filter if recently damaged
+    let isFlashed = false;
+    if (z.flashTicks > 0) {
+      z.flashTicks -= 1;
+      isFlashed = true;
+      if (typeof ctx.filter === 'string') {
+        ctx.filter = 'brightness(0) invert(1)';
+      }
+    }
+
     if (z.type === 'tank') {
-      // ==================== HEAVY TANK ZOMBIE SPRITE DESIGN (40px) ====================
+      // Heavy Tank Zombie Sprite Design (40px)
 
       // 1. Floor Drop Shadow (larger offset block)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
@@ -3772,7 +5163,7 @@ function drawZombies() {
       ctx.strokeRect(-14, -14, 24, 28);
 
     } else if (z.type === 'fast') {
-      // ==================== FAST ZOMBIE SPRITE DESIGN (24px) ====================
+      // Fast Zombie Sprite Design (24px)
 
       // 1. Floor Drop Shadow (smaller offset block)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
@@ -3822,7 +5213,7 @@ function drawZombies() {
       ctx.strokeRect(-9, -9, 16, 18);
 
     } else if (z.type === 'spitter') {
-      // ==================== ACID SPITTER ZOMBIE SPRITE DESIGN (28px) ====================
+      // Acid Spitter Zombie Sprite Design (28px)
       // 1. Floor Drop Shadow (slender block shadow)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fillRect(-12, -10, 22, 20);
@@ -3869,7 +5260,7 @@ function drawZombies() {
       ctx.strokeRect(-10, -10, 18, 20);
 
     } else if (z.type === 'exploder') {
-      // ==================== EXPLODER BOMBER ZOMBIE SPRITE DESIGN (30px) ====================
+      // Exploder Bomber Zombie Sprite Design (30px)
       // 1. Floor Drop Shadow (chunky round block shadow)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fillRect(-14, -13, 26, 26);
@@ -3919,8 +5310,315 @@ function drawZombies() {
       ctx.lineWidth = 3;
       ctx.strokeRect(-11, -12, 22, 24);
 
+    } else if (z.type === 'patient_zero') {
+      // Patient Zero Boss Sprite (112px base, scaled up)
+
+      // ==========================================
+      // PASS 1: SOLID BLACK OUTLINE PASS
+      // (Draws a slightly larger black silhouette of all parts to create a unified 4px outline)
+      // ==========================================
+      ctx.fillStyle = '#000000';
+
+      // 1. Spiky Tail Outline Silhouette
+      ctx.fillRect(-57, -13, 22, 26);
+      ctx.fillRect(-65, -9, 16, 18);
+      ctx.fillRect(-71, -5, 14, 10);
+      // Spikes on tail
+      ctx.fillRect(-61, -17, 10, 10);
+      ctx.fillRect(-61, 7, 10, 10);
+      ctx.fillRect(-67, -11, 8, 8);
+      ctx.fillRect(-67, 3, 8, 8);
+      ctx.fillRect(-73, -6, 7, 7);
+
+      // 2. Back Plate Spikes Outline Silhouette
+      ctx.fillRect(-47, -43, 20, 18);
+      ctx.fillRect(-51, -23, 22, 18);
+      ctx.fillRect(-51, 5, 22, 18);
+      ctx.fillRect(-47, 25, 20, 18);
+
+      // 3. Mutant Shoulders Outline Silhouette
+      ctx.fillRect(-19, -45, 34, 24);
+      ctx.fillRect(-19, 21, 34, 24);
+
+      // 4. Torso Carapace Outline Silhouette
+      ctx.fillRect(-31, -21, 18, 42);
+      ctx.fillRect(-23, -31, 44, 62);
+      ctx.fillRect(-15, -35, 36, 70);
+      ctx.fillRect(7, -23, 16, 46);
+
+      // 5. Head & Spiked Crown Outline Silhouette
+      ctx.fillRect(7, -21, 26, 42);
+      // Spikes
+      ctx.fillRect(3, -29, 14, 14);
+      ctx.fillRect(-1, -33, 10, 10);
+      ctx.fillRect(3, 15, 14, 14);
+      ctx.fillRect(-1, 23, 10, 10);
+      // Horns
+      ctx.fillRect(25, -15, 12, 10);
+      ctx.fillRect(31, -13, 12, 9);
+      ctx.fillRect(25, 5, 12, 10);
+      ctx.fillRect(31, 4, 12, 9);
+
+      // 6. Leviathan Arms & Claws Outline Silhouette
+      // Right Arm (Top)
+      ctx.fillRect(9, -37, 26, 18);
+      ctx.fillRect(25, -43, 22, 20);
+      ctx.fillRect(41, -46, 16, 10); // Claw 1
+      ctx.fillRect(41, -38, 20, 11); // Claw 2
+      ctx.fillRect(41, -29, 16, 10); // Claw 3
+      // Left Arm (Bottom)
+      ctx.fillRect(9, 19, 26, 18);
+      ctx.fillRect(25, 23, 22, 20);
+      ctx.fillRect(41, 19, 16, 10); // Claw 1
+      ctx.fillRect(41, 27, 20, 11); // Claw 2
+      ctx.fillRect(41, 36, 16, 10); // Claw 3
+
+
+      // ==========================================
+      // PASS 2: COLOR DETAIL PASS
+      // (Draws the actual colored layers over the black silhouette, forming perfect outlines)
+      // ==========================================
+
+      // 1. Spiky Tail / Spine Appendage
+      ctx.fillStyle = '#221515';
+      ctx.fillRect(-54, -10, 16, 20);
+      ctx.fillRect(-62, -6, 10, 12);
+      ctx.fillRect(-68, -2, 8, 4);
+      // Glowing tail tips / spikes
+      ctx.fillStyle = '#ff0033';
+      ctx.fillRect(-58, -14, 4, 4);
+      ctx.fillRect(-58, 10, 4, 4);
+      ctx.fillRect(-64, -8, 3, 2);
+      ctx.fillRect(-64, 6, 3, 2);
+      ctx.fillRect(-70, -3, 2, 2);
+
+      // 2. Mutated Spikes & Heavy Obsidian Back Plates
+      // Back Plate 1 (Top Spikes)
+      ctx.fillStyle = '#111111';
+      ctx.fillRect(-44, -40, 14, 12);
+      ctx.fillStyle = '#ff2222'; // Bio-reactor red tips
+      ctx.fillRect(-48, -36, 4, 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-46, -35, 2, 2);
+
+      // Back Plate 2 (Mid-Top Spikes)
+      ctx.fillStyle = '#181212';
+      ctx.fillRect(-48, -20, 16, 12);
+      ctx.fillStyle = '#ff2222';
+      ctx.fillRect(-54, -16, 6, 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-52, -15, 2, 2);
+
+      // Back Plate 3 (Mid-Bottom Spikes)
+      ctx.fillStyle = '#181212';
+      ctx.fillRect(-48, 8, 16, 12);
+      ctx.fillStyle = '#ff2222';
+      ctx.fillRect(-54, 12, 6, 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-52, 13, 2, 2);
+
+      // Back Plate 4 (Bottom Spikes)
+      ctx.fillStyle = '#111111';
+      ctx.fillRect(-44, 28, 14, 12);
+      ctx.fillStyle = '#ff2222';
+      ctx.fillRect(-48, 32, 4, 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-46, 33, 2, 2);
+
+      // 3. Armored Mutant Shoulders (rounded out)
+      // Right Mutant Shoulder (Top side)
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(-16, -42, 28, 18);
+      ctx.fillStyle = '#3a0c0c'; // Infected flesh veins
+      ctx.fillRect(-10, -38, 18, 4);
+      ctx.fillStyle = '#ff2222';
+      ctx.fillRect(-4, -37, 4, 2);
+
+      // Left Mutant Shoulder (Bottom side)
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(-16, 24, 28, 18);
+      ctx.fillStyle = '#3a0c0c';
+      ctx.fillRect(-10, 34, 18, 4);
+      ctx.fillStyle = '#ff2222';
+      ctx.fillRect(-4, 35, 4, 2);
+
+      // 4. Contoured Heavy Torso Carapace (Tapered, layered overlapping segments)
+      // Layer 1: Rear Back Plate (Obsidian armor, tapered narrow)
+      ctx.fillStyle = '#101010';
+      ctx.fillRect(-28, -18, 12, 36);
+
+      // Layer 2: Main Shoulder Carapace (Obsidian armor, broad middle)
+      ctx.fillStyle = '#151515';
+      ctx.fillRect(-20, -28, 38, 56);
+
+      // Layer 3: Chest Carapace (Armored core breastplates, broad chest)
+      ctx.fillStyle = '#1b1b1b';
+      ctx.fillRect(-12, -32, 30, 64);
+
+      // Layer 4: Neck Plate (Connects to head)
+      ctx.fillStyle = '#222222';
+      ctx.fillRect(10, -20, 10, 40);
+
+      // Infected hyper-mutated flesh under-layer showing through armor seams
+      ctx.fillStyle = '#2e1c3b'; 
+      ctx.fillRect(-20, -24, 34, 48);
+      ctx.fillStyle = '#3a0c0c'; // Infected veins
+      ctx.fillRect(-14, -20, 24, 40);
+
+      // 5. Exposed Ribcage & Pulsing Reactor Core
+      const bossFlash = z.isSummoning ? (Math.sin(gameTick * 0.45) + 1) / 2 : 0;
+      ctx.fillStyle = '#4a0000'; // Chest cavity depth shadow (tapered)
+      ctx.fillRect(-10, -16, 20, 32);
+
+      // Reactor Core (Dynamic color shift & pulsing glow)
+      const r = 180 + Math.floor(bossFlash * 75);
+      const g = 10 + Math.floor(bossFlash * 60) + (z.isSummoning ? 20 : 0);
+      const b = 10 + Math.floor(bossFlash * 20);
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.fillRect(-6, -12, 12, 24);
+      ctx.fillStyle = '#ffaa00'; // Inner hot glow
+      ctx.fillRect(-3, -8, 6, 16);
+      ctx.fillStyle = '#ffffff'; // Super-hot central chamber
+      ctx.fillRect(-1, -4, 2, 8);
+
+      // Ribcage bone plates wrapping around core (tapered sizes for rounded look)
+      ctx.fillStyle = '#d4c5b3';
+      ctx.fillRect(-10, -12, 14, 3); // Top rib
+      ctx.fillRect(-11, -5, 17, 3);  // Mid ribs
+      ctx.fillRect(-11, 2, 17, 3);
+      ctx.fillRect(-10, 9, 14, 3);   // Bottom rib
+      // Ribcage connections
+      ctx.fillStyle = '#a69784';
+      ctx.fillRect(-12, -14, 3, 28);
+
+      // 6. Gigantic Asymmetric Leviathan Arms
+      // Right Leviathan Arm (Top Side)
+      ctx.fillStyle = '#2d1515'; // Rotting hyper-dense shoulder joint
+      ctx.fillRect(12, -34, 20, 12);
+      ctx.fillStyle = '#4a1111'; // Forearm bone plate
+      ctx.fillRect(28, -40, 16, 14);
+      // 3 Razor Claws
+      ctx.fillStyle = '#ff1111'; // Glowing blood-soaked claws
+      ctx.fillRect(44, -43, 10, 4); // Claw 1
+      ctx.fillRect(44, -35, 14, 5); // Claw 2 (Longest center digit)
+      ctx.fillRect(44, -26, 10, 4); // Claw 3
+      // Claws white hardened tips
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(54, -43, 2, 4);
+      ctx.fillRect(58, -35, 3, 5);
+      ctx.fillRect(54, -26, 2, 4);
+      // Bio-electric/plasma hand core
+      ctx.fillStyle = '#ff9900';
+      ctx.fillRect(38, -36, 6, 7);
+
+      // Left Leviathan Arm (Bottom Side)
+      ctx.fillStyle = '#2d1515';
+      ctx.fillRect(12, 22, 20, 12);
+      ctx.fillStyle = '#4a1111';
+      ctx.fillRect(28, 26, 16, 14);
+      // 3 Razor Claws
+      ctx.fillStyle = '#ff1111';
+      ctx.fillRect(44, 22, 10, 4); // Claw 1
+      ctx.fillRect(44, 30, 14, 5); // Claw 2
+      ctx.fillRect(44, 39, 10, 4); // Claw 3
+      // Claws white hardened tips
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(54, 22, 2, 4);
+      ctx.fillRect(58, 30, 3, 5);
+      ctx.fillRect(54, 39, 2, 4);
+      // Bio-electric/plasma hand core
+      ctx.fillStyle = '#ff9900';
+      ctx.fillRect(38, 29, 6, 7);
+
+      // 7. Heavy Mutated Skull with Spiked Crown
+      ctx.fillStyle = '#0f0f0f'; // Dark obsidian skull
+      ctx.fillRect(10, -18, 20, 36);
+      ctx.fillStyle = '#3a3a3a'; // Hardened forehead plate
+      ctx.fillRect(14, -14, 18, 28);
+      // Crown Spikes
+      ctx.fillStyle = '#2d1515';
+      ctx.fillRect(6, -26, 8, 8);
+      ctx.fillRect(2, -30, 4, 4);
+      ctx.fillRect(6, 18, 8, 8);
+      ctx.fillRect(2, 26, 4, 4);
+      // Dual Massive Front Horns
+      ctx.fillStyle = '#ff3333';
+      ctx.fillRect(28, -12, 6, 4);
+      ctx.fillRect(34, -10, 6, 3);
+      ctx.fillRect(28, 8, 6, 4);
+      ctx.fillRect(34, 7, 6, 3);
+
+      // 8. Hellish Bio-Illuminated Visor & Glowing Eyes
+      ctx.fillStyle = '#ff0033';
+      ctx.fillRect(26, -10, 4, 4);
+      ctx.fillRect(28, -4, 4, 4);
+      ctx.fillRect(28, 0, 4, 4);
+      ctx.fillRect(26, 6, 4, 4);
+      // Visor white energy glints
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(28, -3, 2, 2);
+      ctx.fillRect(28, 1, 2, 2);
+      // Glowing toxic magma jaw detail
+      ctx.fillStyle = '#ff9900';
+      ctx.fillRect(24, -6, 2, 12);
+      ctx.fillRect(26, -2, 2, 4);
+
+    } else if (z.type === 'necromancer') {
+      // Necromancer Zombie Sprite Design (36px)
+      // 1. Floor Drop Shadow (slender block shadow)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fillRect(-12, -12, 24, 24);
+
+      // 2. Hooded Cowl Robe (Deep mystic purple and dark velvet highlights)
+      ctx.fillStyle = '#3a1a4a'; // Royal dark purple
+      ctx.fillRect(-12, -12, 20, 24);
+      
+      ctx.fillStyle = '#1f0d2b'; // Darker folds
+      ctx.fillRect(-12, -8, 6, 16);
+
+      // 3. Exposed skeletal spine/back ridge (decayed bone)
+      ctx.fillStyle = '#d8d8c8';
+      ctx.fillRect(-14, -4, 2, 8);
+
+      // 4. Glowing Runic Sigil/Heart (Vibrant neon purple core)
+      ctx.fillStyle = '#ff00ff'; // neon magenta/purple rune
+      ctx.fillRect(-4, -6, 8, 12);
+      ctx.fillStyle = '#ffffff'; // hot white magical core
+      ctx.fillRect(-2, -3, 4, 6);
+
+      // 5. Left Wizard Sleeves & Skeletal Hand (reaching to cast - bottom right)
+      ctx.fillStyle = '#3a1a4a'; // Purple sleeve
+      ctx.fillRect(4, 5, 8, 4);
+      ctx.fillStyle = '#d8d8c8'; // Skeletal claw
+      ctx.fillRect(12, 5, 4, 3);
+      ctx.fillStyle = '#ff00ff'; // Magic residue sparks at fingertips
+      ctx.fillRect(16, 5, 2, 2);
+
+      // 6. Right Wizard Sleeves & Skeletal Hand (reaching to cast - top right)
+      ctx.fillStyle = '#1f0d2b'; // Darker purple sleeve
+      ctx.fillRect(4, -9, 8, 4);
+      ctx.fillStyle = '#d8d8c8'; // Skeletal claw
+      ctx.fillRect(12, -9, 4, 3);
+      ctx.fillStyle = '#ff00ff'; // Magic residue sparks at fingertips
+      ctx.fillRect(16, -9, 2, 2);
+
+      // 7. Hooded Skull/Face (shrouded in shadows)
+      ctx.fillStyle = '#0c0612'; // deep black hood interior
+      ctx.fillRect(-4, -7, 10, 14);
+
+      // 8. Glowing Magic Cyber Visor Eyes (neon pink/magenta)
+      ctx.fillStyle = '#ff00ff';
+      ctx.fillRect(1, -4, 3, 8);
+      ctx.fillStyle = '#ffffff'; // visor reflection dot
+      ctx.fillRect(3, -2, 1, 2);
+
+      // 9. Outer Black Pixel Art Outline Border
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(-12, -12, 20, 24);
+
     } else {
-      // ==================== NORMAL ZOMBIE SPRITE DESIGN (32px) ====================
+      // Normal Zombie Sprite Design (32px)
 
       // 1. Floor Drop Shadow (flat offset block)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
@@ -3974,6 +5672,11 @@ function drawZombies() {
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 3;
       ctx.strokeRect(-12, -12, 22, 24);
+    }
+
+    // Restore canvas filter if it was set
+    if (isFlashed && typeof ctx.filter === 'string') {
+      ctx.filter = 'none';
     }
 
     ctx.restore();
@@ -4337,6 +6040,14 @@ function gameOver() {
 
 // Keyboard Input Event Listeners
 window.addEventListener('keydown', function(event) {
+  // Handle Spacebar Dashing
+  if (event.key === ' ' && gameState.isRunning) {
+    if (player.reflexDashLevel > 0 && player.reflexDashCooldown <= 0) {
+      event.preventDefault();
+      triggerReflexDash();
+    }
+  }
+
   const key = event.key.toLowerCase();
   activeKeys[key] = true;
 
@@ -4352,6 +6063,42 @@ window.addEventListener('keydown', function(event) {
     requestCheatPanelAccess();
   }
 });
+
+function triggerReflexDash() {
+  // Determine dash direction from movement inputs, default to aiming angle if stationary
+  let dx = 0;
+  let dy = 0;
+  if (keys.w) dy -= 1;
+  if (keys.s) dy += 1;
+  if (keys.a) dx -= 1;
+  if (keys.d) dx += 1;
+
+  let angle;
+  if (dx !== 0 || dy !== 0) {
+    angle = Math.atan2(dy, dx);
+  } else {
+    // Aiming direction towards mouse
+    const playerScreenX = player.x - camera.x;
+    const playerScreenY = player.y - camera.y;
+    const aimDx = mouse.x - playerScreenX;
+    const aimDy = mouse.y - playerScreenY;
+    angle = Math.atan2(aimDy, aimDx);
+  }
+
+  // Configure dash surge
+  const dashMultiplier = 3.5;
+  const desiredSpeed = player.speed * (player.isOnToxicTrail ? 0.7 : 1.0); // slight trail slow
+  player.reflexDashVx = Math.cos(angle) * desiredSpeed * dashMultiplier;
+  player.reflexDashVy = Math.sin(angle) * desiredSpeed * dashMultiplier;
+  player.reflexDashDuration = 9; // Dash lasts 9 frames (~0.15 seconds of invulnerable surge)
+  
+  // Cooldown reduces by 0.5s per stack level above 1, capped at 3s minimum (from 6s)
+  const cooldownSec = Math.max(3.0, 6.0 - (player.reflexDashLevel - 1) * 0.5);
+  player.reflexDashCooldown = cooldownSec * 60; // 60 ticks per second
+
+  // Trigger high weight screen shake on dash start
+  startScreenShake(4, 6);
+}
 
 window.addEventListener('keyup', function(event) {
   const key = event.key.toLowerCase();

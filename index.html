@@ -103,6 +103,17 @@
         >
       </div>
 
+      <!-- Tactical Mission Instructions -->
+      <div class="instructions-panel">
+        <h3 class="instructions-title">SURVIVAL PROTOCOLS</h3>
+        <ul class="instructions-list">
+          <li><span class="key-cap">WASD</span> to move</li>
+          <li><span class="key-cap">MOUSE</span> to aim</li>
+          <li><span class="key-cap">HOLD CLICK</span> to shoot</li>
+          <li><span class="key-cap">SURVIVE WAVES</span> & choose upgrades</li>
+        </ul>
+      </div>
+
       <!-- Menu buttons -->
       <div class="menu-buttons">
         <button id="start-btn" class="btn btn-primary">
@@ -294,6 +305,33 @@
       </div>
 
       <p class="cheat-desc">Select any upgrade below to apply it instantly for testing. Press <strong>O + P</strong> again to close.</p>
+
+      <!-- Quick Command Bar -->
+      <div class="cheat-quick-bar">
+        <div class="cheat-quick-group">
+          <span class="cheat-quick-label">WAVE ACTIONS:</span>
+          <button id="cheat-prev-wave-btn" class="cheat-action-btn common-text">-1 WAVE</button>
+          <button id="cheat-next-wave-btn" class="cheat-action-btn epic-text">+1 WAVE</button>
+          <button id="cheat-skip-5-btn" class="cheat-action-btn legendary-text">+5 WAVES</button>
+        </div>
+        
+        <div class="cheat-quick-group">
+          <span class="cheat-quick-label">SUMMON ZOMBIES:</span>
+          <button class="cheat-summon-btn" data-type="normal">NORMAL</button>
+          <button class="cheat-summon-btn" data-type="fast">FAST</button>
+          <button class="cheat-summon-btn" data-type="tank">TANK</button>
+          <button class="cheat-summon-btn" data-type="spitter">SPITTER</button>
+          <button class="cheat-summon-btn" data-type="necromancer">NECRO</button>
+          <button class="cheat-summon-btn" data-type="exploder">EXPLODER</button>
+          <button id="cheat-summon-boss-btn" class="cheat-action-btn" style="background:#8a0000;color:#ff4444;border:1px solid #ff4444;">BOSS</button>
+        </div>
+
+        <div class="cheat-quick-group">
+          <span class="cheat-quick-label">SURVIVOR UTILITY:</span>
+          <button id="cheat-heal-btn" class="cheat-action-btn heal-text">HEAL FULL</button>
+          <button id="cheat-kill-all-btn" class="cheat-action-btn kill-text">KILL ALL</button>
+        </div>
+      </div>
 
       <div class="cheat-sections">
         <div class="cheat-column">
