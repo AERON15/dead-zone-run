@@ -6311,31 +6311,68 @@ function drawZombies() {
 
     // 9.5 Draw Icy/Fiery visual indicators on top of the zombie sprite
     if (z.burnTicks > 0 && !isFlashed) {
-      // Draw fiery orange glow overlay on top of body
-      ctx.fillStyle = 'rgba(255, 69, 0, 0.28)';
+      // 1. Draw animated layered waving fluid flames
+      // Red base layer
+      ctx.fillStyle = 'rgba(230, 30, 0, 0.4)';
       ctx.beginPath();
-      ctx.arc(0, 0, size * 0.4, 0, Math.PI * 2);
+      ctx.arc(Math.sin(gameTick * 0.1) * size * 0.08, -Math.cos(gameTick * 0.08) * size * 0.08 - size * 0.08, size * 0.44, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Orange middle layer
+      ctx.fillStyle = 'rgba(255, 120, 0, 0.52)';
+      ctx.beginPath();
+      ctx.arc(Math.cos(gameTick * 0.12) * size * 0.06, Math.sin(gameTick * 0.1) * size * 0.06 - size * 0.15, size * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Yellow/White radiant core layer
+      ctx.fillStyle = 'rgba(255, 235, 100, 0.72)';
+      ctx.beginPath();
+      ctx.arc(Math.sin(gameTick * 0.15) * size * 0.04, -size * 0.22, size * 0.18, 0, Math.PI * 2);
       ctx.fill();
       
       // Draw subtle flickering flame sparks
-      ctx.fillStyle = 'rgba(255, 165, 0, 0.6)';
+      ctx.fillStyle = 'rgba(255, 165, 0, 0.75)';
       for (let f = 0; f < 3; f++) {
         const fx = (Math.random() - 0.5) * size * 0.6;
-        const fy = (Math.random() - 0.5) * size * 0.6;
+        const fy = -Math.random() * size * 0.7; // drift upwards locally
         ctx.fillRect(fx, fy, 4, 4);
       }
     } else if (z.cryoSlowTicks > 0 && !isFlashed) {
-      // Draw icy cyan glow overlay on top of body
-      ctx.fillStyle = 'rgba(0, 221, 255, 0.28)';
+      // 2. Draw rotating hexagonal frosted glacier shield
+      const radius = size * 0.48;
+      ctx.fillStyle = 'rgba(0, 200, 255, 0.26)';
+      ctx.strokeStyle = 'rgba(143, 252, 255, 0.85)';
+      ctx.lineWidth = 2.2;
+      
       ctx.beginPath();
-      ctx.arc(0, 0, size * 0.4, 0, Math.PI * 2);
+      const sides = 6;
+      for (let s = 0; s <= sides; s++) {
+        const a = (s * Math.PI * 2 / sides) + (gameTick * 0.008); // slowly rotating shell
+        const x = Math.cos(a) * radius;
+        const y = Math.sin(a) * radius;
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
       ctx.fill();
+      ctx.stroke();
+      
+      // Draw glistening frost inner lines
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (let s = 0; s < 3; s++) {
+        const a = (s * Math.PI * 2 / 3) + (gameTick * 0.008);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * radius * 0.75, Math.sin(a) * radius * 0.75);
+      }
+      ctx.stroke();
       
       // Draw subtle glistening ice crystals
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      for (let c = 0; c < 3; c++) {
-        const cx = (Math.random() - 0.5) * size * 0.6;
-        const cy = (Math.random() - 0.5) * size * 0.6;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      for (let c = 0; c < 2; c++) {
+        const cx = (Math.random() - 0.5) * size * 0.5;
+        const cy = (Math.random() - 0.5) * size * 0.5;
         ctx.fillRect(cx, cy, 3, 3);
       }
     }
