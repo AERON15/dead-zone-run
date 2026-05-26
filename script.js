@@ -2327,6 +2327,23 @@ function update() {
         queueBossSummon(z, now);
         z.lastSummonTime = now;
       }
+
+      // Patient Zero Boss custom shooting logic (every 10 seconds, fires a consecutive burst of 3 bullets from each claw)
+      if (!z.lastRangedAttackTime) {
+        z.lastRangedAttackTime = now;
+        z.rangedAttackBurstLeft = 0;
+        z.nextRangedShotTime = 0;
+      }
+      if (now - z.lastRangedAttackTime >= 10000 && gameState.isRunning && !z.isSummoning && (z.rangedAttackBurstLeft || 0) <= 0) {
+        z.lastRangedAttackTime = now;
+        z.rangedAttackBurstLeft = 3; // 3 rapid shots in the burst
+        z.nextRangedShotTime = now;   // Fire first shot immediately
+      }
+      if ((z.rangedAttackBurstLeft || 0) > 0 && now >= (z.nextRangedShotTime || 0) && gameState.isRunning && !z.isSummoning) {
+        z.rangedAttackBurstLeft -= 1;
+        z.nextRangedShotTime = now + 160; // 160ms delay between consecutive shots in the burst (~10 frames)
+        fireSingleBossClawShot(z, zDx, zDy);
+      }
     }
 
     // Exploder Bomber kamikaze proximity detonation
@@ -2998,12 +3015,13 @@ function spawnPatientZero() {
     size: 140,
     health: baseHP,
     maxHealth: baseHP,
-    speed: 0.75,
+    speed: 1.15, // Increased speed from 0.75 to 1.15 to make the boss highly active and threatening!
     damage: 25,
     scoreValue: 500,
     lastAttackTime: 0,
     attackCooldown: 800,
     lastSummonTime: Date.now(),
+    lastRangedAttackTime: Date.now() - 5000, // 5 seconds breathing room before first claws projectile barrage!
     isSummoning: false,
     summonCastEndsAt: 0
   };
@@ -3014,6 +3032,69 @@ function spawnPatientZero() {
   startScreenShake(10, 15);
   console.log(`[BOSS] Patient Zero spawned on wave ${gameState.wave}! HP: ${baseHP}`);
 }
+
+/**
+ * Fires a single pair of massive radioactive projectiles (one from the left claw, one from the right claw)
+ * directly towards the player's position, representing a rapid-fire consecutive burst.
+ */
+function fireSingleBossClawShot(boss, zDx, zDy) {
+  const bossAngle = Math.atan2(zDy, zDx);
+  const dirX = Math.cos(bossAngle);
+  const dirY = Math.sin(bossAngle);
+  const perpX = -Math.sin(bossAngle);
+  const perpY = Math.cos(bossAngle);
+
+  // Claw Positions (Aligning mathematically with the rendered leviathan arms)
+  const rightClawX = boss.x + dirX * 36 + perpX * -36;
+  const rightClawY = boss.y + dirY * 36 + perpY * -36;
+  const leftClawX  = boss.x + dirX * 36 + perpX * 28;
+  const leftClawY  = boss.y + dirY * 36 + perpY * 28;
+
+  // Play a sharp, satisfying weapon discharge sound for each shot in the burst!
+  audio.playSfx('shoot');
+
+  // Spawn right claw projectile (fired straight toward the player)
+  enemyProjectiles.push({
+    x: rightClawX,
+    y: rightClawY,
+    vx: Math.cos(bossAngle) * 4.6, // Heavy, fast projectile speed
+    vy: Math.sin(bossAngle) * 4.6,
+    size: 24, // Massive biological radioactive orb!
+    damage: 30, // Highly threatening!
+    isBoss: true,
+    color: '#ffff00'
+  });
+
+  // Spawn left claw projectile (fired straight toward the player)
+  enemyProjectiles.push({
+    x: leftClawX,
+    y: leftClawY,
+    vx: Math.cos(bossAngle) * 4.6,
+    vy: Math.sin(bossAngle) * 4.6,
+    size: 24,
+    damage: 30,
+    isBoss: true,
+    color: '#ffff00'
+  });
+
+  // Spawn toxic chemical muzzle flash particles at each claw muzzle point!
+  [ {x: rightClawX, y: rightClawY}, {x: leftClawX, y: leftClawY} ].forEach(muzzle => {
+    for (let p = 0; p < 6; p++) {
+      const pAngle = bossAngle + (Math.random() - 0.5) * 0.8;
+      const speed = Math.random() * 2 + 1;
+      gameParticles.push({
+        x: muzzle.x,
+        y: muzzle.y,
+        vx: Math.cos(pAngle) * speed + (Math.random() - 0.5) * 0.3,
+        vy: Math.sin(pAngle) * speed + (Math.random() - 0.5) * 0.3,
+        size: Math.floor(Math.random() * 3) + 3,
+        color: Math.random() > 0.4 ? '#39ff14' : '#ffff00', // glowing neon slime-green/yellow sparks
+        life: 0.7,
+      });
+    }
+  });
+}
+
 
 function queueBossSummon(boss, now) {
   const spots = [];
@@ -5273,7 +5354,61 @@ function drawBullets() {
  */
 function drawEnemyProjectiles() {
   enemyProjectiles.forEach(ep => {
-    if (!isInView(ep.x, ep.y, ep.size + 10)) return;
+    if (!isInView(ep.x, ep.y, ep.size + 30)) return;
+
+    if (ep.isBoss) {
+      // Widescreen boss projectile rendering: a heavy radioactive plasma orb
+      ctx.save();
+      
+      // Outer neon shadow aura
+      ctx.fillStyle = '#63238a'; // Necrotic purple outer halo
+      ctx.beginPath();
+      ctx.arc(ep.x, ep.y, ep.size, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Mid toxic slime shell
+      ctx.fillStyle = '#39ff14'; // Slime green main plasma body
+      ctx.beginPath();
+      ctx.arc(ep.x, ep.y, ep.size * 0.75, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Inner pulsing bio-active core
+      ctx.fillStyle = '#ffff00'; // Neon yellow core
+      ctx.beginPath();
+      ctx.arc(ep.x, ep.y, ep.size * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Bright white central hot fusion chamber
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(ep.x, ep.y, ep.size * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // High-contrast block outlines
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(ep.x, ep.y, ep.size * 0.75, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Draw three orbiting micro-pustules for a biological radioactive chemical design!
+      const pulseAngle = (gameTick * 0.08);
+      ctx.fillStyle = '#ffff00';
+      for (let orb = 0; orb < 3; orb++) {
+        const angle = pulseAngle + orb * (Math.PI * 2 / 3);
+        const ox = Math.cos(angle) * (ep.size * 0.9);
+        const oy = Math.sin(angle) * (ep.size * 0.9);
+        
+        ctx.beginPath();
+        ctx.arc(ep.x + ox, ep.y + oy, ep.size * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      
+      ctx.restore();
+      return;
+    }
+
     const half = ep.size / 2;
     const isShadow = ep.color === '#ff00ff';
 
@@ -5949,7 +6084,7 @@ function drawZombies() {
       ctx.fillRect(22, -2, 2, 4);
 
     } else if (z.type === 'patient_zero') {
-      // Patient Zero Boss Sprite (112px base, scaled up)
+      // Patient Zero Redesigned: The Bio-Hazard Toxic Abomination (112px base, scaled up)
 
       // ==========================================
       // PASS 1: SOLID BLACK OUTLINE PASS
@@ -5957,7 +6092,7 @@ function drawZombies() {
       // ==========================================
       ctx.fillStyle = '#000000';
 
-      // 1. Spiky Tail Outline Silhouette
+      // 1. Spiky Tail Outline Silhouette (Bloated Plague Appendage)
       ctx.fillRect(-57, -13, 22, 26);
       ctx.fillRect(-65, -9, 16, 18);
       ctx.fillRect(-71, -5, 14, 10);
@@ -5968,7 +6103,7 @@ function drawZombies() {
       ctx.fillRect(-67, 3, 8, 8);
       ctx.fillRect(-73, -6, 7, 7);
 
-      // 2. Back Plate Spikes Outline Silhouette
+      // 2. Back Plate Spikes / Acid Pods Outline Silhouette
       ctx.fillRect(-47, -43, 20, 18);
       ctx.fillRect(-51, -23, 22, 18);
       ctx.fillRect(-51, 5, 22, 18);
@@ -6011,193 +6146,193 @@ function drawZombies() {
       ctx.fillRect(41, 27, 20, 11); // Claw 2
       ctx.fillRect(41, 36, 16, 10); // Claw 3
 
-
       // ==========================================
-      // PASS 2: COLOR DETAIL PASS
+      // PASS 2: COLOR DETAIL PASS (Toxic Bio-Hazard Theme)
       // (Draws the actual colored layers over the black silhouette, forming perfect outlines)
       // ==========================================
 
-      // 1. Spiky Tail / Spine Appendage
-      ctx.fillStyle = '#221515';
+      // 1. Decaying Plague Tail
+      ctx.fillStyle = '#1c2e1c'; // Deep rotting green
       ctx.fillRect(-54, -10, 16, 20);
       ctx.fillRect(-62, -6, 10, 12);
       ctx.fillRect(-68, -2, 8, 4);
-      // Glowing tail tips / spikes
-      ctx.fillStyle = '#ff0033';
+      // Glowing toxic slime pustules / tail tips
+      ctx.fillStyle = '#39ff14'; // Slime green glows
       ctx.fillRect(-58, -14, 4, 4);
       ctx.fillRect(-58, 10, 4, 4);
+      ctx.fillStyle = '#ffff00'; // Neon yellow chemical tips
       ctx.fillRect(-64, -8, 3, 2);
       ctx.fillRect(-64, 6, 3, 2);
       ctx.fillRect(-70, -3, 2, 2);
 
-      // 2. Mutated Spikes & Heavy Obsidian Back Plates
+      // 2. Weeping Acid Boils & Toxic Nodule Plates (Back Spikes)
       // Back Plate 1 (Top Spikes)
-      ctx.fillStyle = '#111111';
+      ctx.fillStyle = '#2d4022'; // Necrotic green-gray shell
       ctx.fillRect(-44, -40, 14, 12);
-      ctx.fillStyle = '#ff2222'; // Bio-reactor red tips
+      ctx.fillStyle = '#39ff14'; // Bulging toxic slime pustule
       ctx.fillRect(-48, -36, 4, 4);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = '#ffffff'; // Acid reflection glint
       ctx.fillRect(-46, -35, 2, 2);
 
       // Back Plate 2 (Mid-Top Spikes)
-      ctx.fillStyle = '#181212';
+      ctx.fillStyle = '#2d4022';
       ctx.fillRect(-48, -20, 16, 12);
-      ctx.fillStyle = '#ff2222';
+      ctx.fillStyle = '#ffff00'; // Weeping yellow chemical boil
       ctx.fillRect(-54, -16, 6, 4);
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(-52, -15, 2, 2);
 
       // Back Plate 3 (Mid-Bottom Spikes)
-      ctx.fillStyle = '#181212';
+      ctx.fillStyle = '#2d4022';
       ctx.fillRect(-48, 8, 16, 12);
-      ctx.fillStyle = '#ff2222';
+      ctx.fillStyle = '#ffff00';
       ctx.fillRect(-54, 12, 6, 4);
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(-52, 13, 2, 2);
 
       // Back Plate 4 (Bottom Spikes)
-      ctx.fillStyle = '#111111';
+      ctx.fillStyle = '#2d4022';
       ctx.fillRect(-44, 28, 14, 12);
-      ctx.fillStyle = '#ff2222';
+      ctx.fillStyle = '#39ff14';
       ctx.fillRect(-48, 32, 4, 4);
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(-46, 33, 2, 2);
 
-      // 3. Armored Mutant Shoulders (rounded out)
+      // 3. Mutated Infected Shoulders (with pulsing vents)
       // Right Mutant Shoulder (Top side)
-      ctx.fillStyle = '#0a0a0a';
+      ctx.fillStyle = '#182215'; // Decayed carcass gray-green
       ctx.fillRect(-16, -42, 28, 18);
-      ctx.fillStyle = '#3a0c0c'; // Infected flesh veins
+      ctx.fillStyle = '#63238a'; // Purple necrotic plague veins
       ctx.fillRect(-10, -38, 18, 4);
-      ctx.fillStyle = '#ff2222';
+      ctx.fillStyle = '#39ff14'; // Bulging bio-hazard slime vent
       ctx.fillRect(-4, -37, 4, 2);
 
       // Left Mutant Shoulder (Bottom side)
-      ctx.fillStyle = '#0a0a0a';
+      ctx.fillStyle = '#182215';
       ctx.fillRect(-16, 24, 28, 18);
-      ctx.fillStyle = '#3a0c0c';
+      ctx.fillStyle = '#63238a';
       ctx.fillRect(-10, 34, 18, 4);
-      ctx.fillStyle = '#ff2222';
+      ctx.fillStyle = '#39ff14';
       ctx.fillRect(-4, 35, 4, 2);
 
-      // 4. Contoured Heavy Torso Carapace (Tapered, layered overlapping segments)
-      // Layer 1: Rear Back Plate (Obsidian armor, tapered narrow)
-      ctx.fillStyle = '#101010';
+      // 4. Bloated Plague Carapace & Necrotic Muscle Segments
+      // Layer 1: Rear Back Plate (Decayed shell, tapered narrow)
+      ctx.fillStyle = '#1e291d';
       ctx.fillRect(-28, -18, 12, 36);
 
-      // Layer 2: Main Shoulder Carapace (Obsidian armor, broad middle)
-      ctx.fillStyle = '#151515';
+      // Layer 2: Main Shoulder Carapace (Rotting armored tissue, broad middle)
+      ctx.fillStyle = '#2b3e2b';
       ctx.fillRect(-20, -28, 38, 56);
 
-      // Layer 3: Chest Carapace (Armored core breastplates, broad chest)
-      ctx.fillStyle = '#1b1b1b';
+      // Layer 3: Chest Carapace (Armored bone breastplates, broad chest)
+      ctx.fillStyle = '#401f5c'; // Rotting purplish muscle growths
       ctx.fillRect(-12, -32, 30, 64);
 
       // Layer 4: Neck Plate (Connects to head)
-      ctx.fillStyle = '#222222';
+      ctx.fillStyle = '#334c33';
       ctx.fillRect(10, -20, 10, 40);
 
-      // Infected hyper-mutated flesh under-layer showing through armor seams
-      ctx.fillStyle = '#2e1c3b'; 
+      // Infected hyper-mutated flesh under-layer showing through carapace seams
+      ctx.fillStyle = '#63238a'; // Glowing purple veins
       ctx.fillRect(-20, -24, 34, 48);
-      ctx.fillStyle = '#3a0c0c'; // Infected veins
+      ctx.fillStyle = '#3c0a1a'; // Dark infected bloody seams
       ctx.fillRect(-14, -20, 24, 40);
 
-      // 5. Exposed Ribcage & Pulsing Reactor Core
+      // 5. Exposed Ribcage & Beating Acid Bladder (Heart Core)
       const bossFlash = z.isSummoning ? (Math.sin(gameTick * 0.45) + 1) / 2 : 0;
-      ctx.fillStyle = '#4a0000'; // Chest cavity depth shadow (tapered)
+      ctx.fillStyle = '#0b1a0a'; // Deep toxic shadow inside cavity
       ctx.fillRect(-10, -16, 20, 32);
 
-      // Reactor Core (Dynamic color shift & pulsing glow)
-      const r = 180 + Math.floor(bossFlash * 75);
-      const g = 10 + Math.floor(bossFlash * 60) + (z.isSummoning ? 20 : 0);
-      const b = 10 + Math.floor(bossFlash * 20);
+      // Beating Bio-Hazard Heart Core (Dynamic color shift & pulsing glow)
+      const r = 20 + Math.floor(bossFlash * 40);
+      const g = 190 + Math.floor(bossFlash * 65) + (z.isSummoning ? 30 : 0);
+      const b = 10 + Math.floor(bossFlash * 30);
       ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.fillRect(-6, -12, 12, 24);
-      ctx.fillStyle = '#ffaa00'; // Inner hot glow
+      ctx.fillStyle = '#ccff00'; // High-concentrate lime-yellow acid core
       ctx.fillRect(-3, -8, 6, 16);
-      ctx.fillStyle = '#ffffff'; // Super-hot central chamber
+      ctx.fillStyle = '#ffffff'; // Biophosphorescent super-hot central chamber
       ctx.fillRect(-1, -4, 2, 8);
 
-      // Ribcage bone plates wrapping around core (tapered sizes for rounded look)
-      ctx.fillStyle = '#d4c5b3';
+      // Ribcage bone plates wrapping around core (Acid-bleached pale green bones)
+      ctx.fillStyle = '#d1e0d1';
       ctx.fillRect(-10, -12, 14, 3); // Top rib
       ctx.fillRect(-11, -5, 17, 3);  // Mid ribs
       ctx.fillRect(-11, 2, 17, 3);
       ctx.fillRect(-10, 9, 14, 3);   // Bottom rib
-      // Ribcage connections
-      ctx.fillStyle = '#a69784';
+      // Ribcage mossy bone connections
+      ctx.fillStyle = '#9aa89a';
       ctx.fillRect(-12, -14, 3, 28);
 
-      // 6. Gigantic Asymmetric Leviathan Arms
+      // 6. Acid-Drenched Leviathan Arms
       // Right Leviathan Arm (Top Side)
-      ctx.fillStyle = '#2d1515'; // Rotting hyper-dense shoulder joint
+      ctx.fillStyle = '#1e351e'; // Rotten mutated mossy joint
       ctx.fillRect(12, -34, 20, 12);
-      ctx.fillStyle = '#4a1111'; // Forearm bone plate
+      ctx.fillStyle = '#3a0c4f'; // Forearm plague growth plate
       ctx.fillRect(28, -40, 16, 14);
-      // 3 Razor Claws
-      ctx.fillStyle = '#ff1111'; // Glowing blood-soaked claws
+      // 3 Glowing Toxic Razor Claws
+      ctx.fillStyle = '#39ff14'; // Bright green glowing acid claws
       ctx.fillRect(44, -43, 10, 4); // Claw 1
       ctx.fillRect(44, -35, 14, 5); // Claw 2 (Longest center digit)
       ctx.fillRect(44, -26, 10, 4); // Claw 3
-      // Claws white hardened tips
-      ctx.fillStyle = '#ffffff';
+      // Claws yellow acid-hardened tips
+      ctx.fillStyle = '#ffff00';
       ctx.fillRect(54, -43, 2, 4);
       ctx.fillRect(58, -35, 3, 5);
       ctx.fillRect(54, -26, 2, 4);
-      // Bio-electric/plasma hand core
-      ctx.fillStyle = '#ff9900';
+      // Bio-active chemical pod on hand
+      ctx.fillStyle = '#ffff00';
       ctx.fillRect(38, -36, 6, 7);
 
       // Left Leviathan Arm (Bottom Side)
-      ctx.fillStyle = '#2d1515';
+      ctx.fillStyle = '#1e351e';
       ctx.fillRect(12, 22, 20, 12);
-      ctx.fillStyle = '#4a1111';
+      ctx.fillStyle = '#3a0c4f';
       ctx.fillRect(28, 26, 16, 14);
-      // 3 Razor Claws
-      ctx.fillStyle = '#ff1111';
+      // 3 Glowing Toxic Razor Claws
+      ctx.fillStyle = '#39ff14';
       ctx.fillRect(44, 22, 10, 4); // Claw 1
       ctx.fillRect(44, 30, 14, 5); // Claw 2
       ctx.fillRect(44, 39, 10, 4); // Claw 3
-      // Claws white hardened tips
-      ctx.fillStyle = '#ffffff';
+      // Claws yellow acid-hardened tips
+      ctx.fillStyle = '#ffff00';
       ctx.fillRect(54, 22, 2, 4);
       ctx.fillRect(58, 30, 3, 5);
       ctx.fillRect(54, 39, 2, 4);
-      // Bio-electric/plasma hand core
-      ctx.fillStyle = '#ff9900';
+      // Bio-active chemical pod on hand
+      ctx.fillStyle = '#ffff00';
       ctx.fillRect(38, 29, 6, 7);
 
-      // 7. Heavy Mutated Skull with Spiked Crown
-      ctx.fillStyle = '#0f0f0f'; // Dark obsidian skull
+      // 7. Bloated Mossy Armored Skull
+      ctx.fillStyle = '#2a382a'; // Deep moldy green bone skull
       ctx.fillRect(10, -18, 20, 36);
-      ctx.fillStyle = '#3a3a3a'; // Hardened forehead plate
+      ctx.fillStyle = '#4f2070'; // Plague bloated armored crown nodes
       ctx.fillRect(14, -14, 18, 28);
       // Crown Spikes
-      ctx.fillStyle = '#2d1515';
+      ctx.fillStyle = '#1c2e1c';
       ctx.fillRect(6, -26, 8, 8);
       ctx.fillRect(2, -30, 4, 4);
       ctx.fillRect(6, 18, 8, 8);
       ctx.fillRect(2, 26, 4, 4);
-      // Dual Massive Front Horns
-      ctx.fillStyle = '#ff3333';
+      // Dual Acid-Coated Glowing Horns
+      ctx.fillStyle = '#39ff14';
       ctx.fillRect(28, -12, 6, 4);
       ctx.fillRect(34, -10, 6, 3);
       ctx.fillRect(28, 8, 6, 4);
       ctx.fillRect(34, 7, 6, 3);
 
-      // 8. Hellish Bio-Illuminated Visor & Glowing Eyes
-      ctx.fillStyle = '#ff0033';
+      // 8. Cluster of Glowing Yellow Spider-like Eyes & Dripping Acid Maw
+      ctx.fillStyle = '#ffff00'; // Neon yellow arachnid eyes cluster
       ctx.fillRect(26, -10, 4, 4);
       ctx.fillRect(28, -4, 4, 4);
       ctx.fillRect(28, 0, 4, 4);
       ctx.fillRect(26, 6, 4, 4);
-      // Visor white energy glints
+      // Eye white energy highlights
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(28, -3, 2, 2);
       ctx.fillRect(28, 1, 2, 2);
-      // Glowing toxic magma jaw detail
-      ctx.fillStyle = '#ff9900';
+      // Dripping chemical acid jaw details
+      ctx.fillStyle = '#39ff14'; // Slime green saliva drops
       ctx.fillRect(24, -6, 2, 12);
       ctx.fillRect(26, -2, 2, 4);
 

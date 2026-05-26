@@ -1759,7 +1759,7 @@ html, body {
   justify-content: center;
   gap: 2rem;
   width: 95%;
-  max-width: 1240px;
+  max-width: 1480px; /* Widened to 1480px to accommodate a massive, detailed leaderboard */
   max-height: 92vh;
   margin: 0 auto;
   box-sizing: border-box;
@@ -1768,9 +1768,9 @@ html, body {
 .side-panel {
   position: relative;
   flex: 1;
-  max-width: 330px;
+  max-width: 460px; /* Default side panels */
   background: var(--bg-panel);
-  padding: 1.5rem 1.2rem;
+  padding: 1.6rem 1.4rem;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -1783,6 +1783,17 @@ html, body {
   
   max-height: 92vh;
   overflow-y: auto;
+}
+
+/* Widen right panel extensively to 600px to guarantee full statistics display with zero truncation */
+.right-panel {
+  max-width: 600px !important;
+  flex: 1.4 !important; /* Grant more flex weight to the leaderboard */
+}
+
+/* Left panel can be slightly more compact and elegant */
+.left-panel {
+  max-width: 380px !important;
 }
 
 .side-panel::-webkit-scrollbar {
@@ -1801,7 +1812,7 @@ html, body {
 
 .side-panel-title {
   font-family: var(--font-pixel);
-  font-size: 1rem;
+  font-size: 1.1rem; /* Scaled up for readability */
   color: var(--pixel-orange);
   text-shadow: 2px 2px 0px #000;
   text-align: center;
@@ -1820,13 +1831,13 @@ html, body {
 
 .side-panel-list li {
   font-family: var(--font-terminal);
-  font-size: 0.8rem;
+  font-size: 0.85rem; /* Scaled up slightly */
   color: var(--text-primary);
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   background: rgba(0, 0, 0, 0.4);
-  padding: 0.5rem 0.6rem;
+  padding: 0.6rem 0.8rem; /* Added spacing */
   border-left: 4px solid var(--pixel-green);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -1840,7 +1851,7 @@ html, body {
 
 .side-panel-list li .key-cap {
   font-family: var(--font-pixel);
-  font-size: 0.5rem;
+  font-size: 0.55rem;
   background: #242430;
   color: var(--pixel-green);
   padding: 2px 6px;
@@ -1851,7 +1862,7 @@ html, body {
 
 .action-desc {
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   line-height: 1.3;
 }
 
@@ -1915,6 +1926,68 @@ html, body {
     max-height: none;
     overflow-y: visible;
   }
+}
+
+/* Custom Leaderboard Table Styles for Side Panel */
+.side-panel .leaderboard-table-wrap {
+  width: 100%;
+  overflow-x: hidden !important; /* Force prevent horizontal scrollbar */
+  margin: 0.5rem 0;
+  border: 2px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.side-panel .leaderboard-table {
+  width: 100% !important;
+  table-layout: fixed !important; /* Enforce column widths strictly */
+  font-size: 0.92rem !important; /* Scaled up to 0.92rem for full legibility */
+  color: var(--text-primary);
+}
+
+.side-panel .leaderboard-table th {
+  font-size: 0.7rem !important; /* Scaled up th titles to prevent overlapping */
+  padding: 0.6rem 0.35rem !important;
+  text-align: center !important;
+}
+
+.side-panel .leaderboard-table td {
+  padding: 0.5rem 0.35rem !important; /* Spacious, clean, premium cell sizing */
+  text-align: center !important;
+  border-bottom: 1px solid #1a1a24 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: clip !important; /* Do not truncate names if we have enough space */
+}
+
+/* Explicit tactical column sizing for the panel table (Adds up to 100%) */
+.side-panel .leaderboard-table th:nth-child(1),
+.side-panel .leaderboard-table td:nth-child(1) {
+  width: 15% !important; /* Widen Rank column to 15% to fully split RANKSURVIVOR headers */
+}
+
+.side-panel .leaderboard-table th:nth-child(2),
+.side-panel .leaderboard-table td:nth-child(2) {
+  width: 40% !important; /* 40% of 560px is 224px, completely showing full survivor names */
+  text-align: left !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+}
+
+.side-panel .leaderboard-table th:nth-child(3),
+.side-panel .leaderboard-table td:nth-child(3) {
+  width: 21% !important; /* Score column */
+  color: var(--pixel-orange) !important;
+  font-weight: bold !important;
+}
+
+.side-panel .leaderboard-table th:nth-child(4),
+.side-panel .leaderboard-table td:nth-child(4) {
+  width: 12% !important; /* Wave column */
+}
+
+.side-panel .leaderboard-table th:nth-child(5),
+.side-panel .leaderboard-table td:nth-child(5) {
+  width: 12% !important; /* Kills column */
 }
 
 
