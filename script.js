@@ -136,6 +136,7 @@ const keys = {
   d: false
 };
 const activeKeys = {};
+const cheatPanelPassword = ['2', '0', '0', '5'].join('');
 
 // Mouse Input Tracker
 const mouse = {
@@ -497,6 +498,27 @@ function toggleCheatPanel() {
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
     }
+  }
+}
+
+/**
+ * Asks for the developer password before opening the cheat panel.
+ * Closing an already-open panel never requires the password.
+ */
+function requestCheatPanelAccess() {
+  if (!cheatPanel) return;
+
+  if (cheatPanel.classList.contains('active')) {
+    toggleCheatPanel();
+    return;
+  }
+
+  const enteredPassword = window.prompt('Developer access code:');
+
+  if (enteredPassword === cheatPanelPassword) {
+    toggleCheatPanel();
+  } else if (enteredPassword !== null) {
+    console.warn('Developer cheat panel access denied.');
   }
 }
 
@@ -4327,7 +4349,7 @@ window.addEventListener('keydown', function(event) {
     // Reset key states immediately to prevent rapid multiple toggling
     activeKeys['o'] = false;
     activeKeys['p'] = false;
-    toggleCheatPanel();
+    requestCheatPanelAccess();
   }
 });
 
