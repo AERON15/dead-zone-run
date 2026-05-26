@@ -55,9 +55,9 @@ html, body {
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  background: 
+  background:
     linear-gradient(
-      rgba(18, 16, 16, 0) 50%, 
+      rgba(18, 16, 16, 0) 50%,
       rgba(0, 0, 0, 0.18) 50%
     ),
     radial-gradient(
@@ -75,6 +75,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.2s steps(3), visibility 0.2s steps(3);
@@ -521,12 +523,15 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem;
-  padding: 2.5rem 2rem;
+  gap: 1.2rem;
+  padding: 2.2rem 1.8rem;
   max-width: 440px;
   width: 90%;
+  max-height: 92vh; /* Guarantee it fits on any screen height! */
+  overflow-y: auto;  /* Enable vertical scrollbar inside container if content exceeds height */
+  box-sizing: border-box;
   background: var(--bg-panel);
-  
+
   /* Double block retro-borders */
   border: 6px solid #000;
   outline: 6px solid var(--panel-border);
@@ -754,16 +759,31 @@ html, body {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 3rem;
-  padding: 0.8rem 2rem;
-  background: #000;
-  border-bottom: 6px solid var(--panel-border);
+  gap: 2.2rem;
+  padding: 0.75rem 2rem;
+  background: linear-gradient(180deg, rgba(16, 20, 24, 0.96) 0%, rgba(9, 11, 13, 0.85) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 3px solid rgba(92, 130, 136, 0.16);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .hud-item {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.3rem;
+  padding: 0.45rem 1.1rem;
+  background: rgba(28, 34, 39, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.035);
+  border-radius: 4px;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.48);
+  min-width: 140px;
+  transition: all 0.2s ease;
+}
+
+.hud-item:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(34, 42, 48, 0.55);
 }
 
 .hud-topline {
@@ -774,56 +794,66 @@ html, body {
 }
 
 .hud-label {
-  font-family: var(--font-pixel);
-  font-size: 0.65rem;
-  color: var(--text-secondary);
+  font-family: var(--font-terminal);
+  font-size: 0.6rem;
+  color: #8c9fa8;
   text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 0 0 8px rgba(140, 159, 168, 0.15);
 }
 
 .hud-value {
   font-family: var(--font-pixel);
-  font-size: 1.1rem;
+  font-size: 1.35rem;
+  font-weight: bold;
   min-width: 2ch;
 }
 
 /* Color codes */
 #hud-health .hud-value {
   color: var(--pixel-red-glow);
+  text-shadow: 0 0 3px rgba(255, 50, 50, 0.3);
 }
 
 #hud-score .hud-value {
   color: var(--pixel-orange);
+  text-shadow: 0 0 3px rgba(255, 170, 0, 0.3);
 }
 
 #hud-wave .hud-value {
   color: var(--pixel-green);
+  text-shadow: 0 0 3px rgba(57, 255, 20, 0.3);
 }
 
 /* Segmented Retro Health Meter */
 .health-meter {
-  width: 120px;
-  height: 10px;
-  background: #000;
-  border: 2px solid var(--panel-border);
+  width: 100%;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 50, 50, 0.25);
+  border-radius: 2px;
   padding: 1px;
   position: relative;
   overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
 }
 
 #health-fill {
   display: block;
   height: 100%;
   width: 100%;
-  background: var(--pixel-red);
-  background-image: linear-gradient(
-    90deg,
-    transparent 0px,
-    transparent 4px,
-    #000 4px,
-    #000 6px
-  );
-  background-size: 6px 100%;
-  transition: width 0.1s steps(20);
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 4px,
+      #000 4px,
+      #000 6px
+    ),
+    linear-gradient(90deg, #ff1111 0%, #ff5533 100%);
+  background-size: 6px 100%, 100% 100%;
+  box-shadow: 0 0 3px rgba(255, 30, 30, 0.35);
+  transition: width 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 /* Game Over Screen */
@@ -1008,7 +1038,7 @@ html, body {
 
 .upgrade-card:hover .upgrade-card-title {
   color: #ffaa00;
-  text-shadow: 0 0 8px rgba(255, 170, 0, 0.45);
+  text-shadow: 0 0 3px rgba(255, 170, 0, 0.3);
 }
 
 .upgrade-card-desc {
@@ -1110,11 +1140,11 @@ html, body {
 @keyframes legendary-pulse {
   0%, 100% {
     color: var(--pixel-orange);
-    text-shadow: 0 0 4px rgba(255, 119, 0, 0.4);
+    text-shadow: 0 0 3px rgba(255, 119, 0, 0.3);
   }
   50% {
     color: #ffaa00;
-    text-shadow: 0 0 10px rgba(255, 170, 0, 0.7);
+    text-shadow: 0 0 5px rgba(255, 170, 0, 0.45);
   }
 }
 
@@ -1128,7 +1158,7 @@ html, body {
 .leaderboard-title {
   color: var(--pixel-green);
   text-shadow:
-    0 0 6px rgba(57, 255, 20, 0.4),
+    0 0 3px rgba(57, 255, 20, 0.3),
     4px 4px 0px #000;
   animation: leaderboard-glow 2s infinite steps(4);
 }
@@ -1136,12 +1166,12 @@ html, body {
 @keyframes leaderboard-glow {
   0%, 100% {
     text-shadow:
-      0 0 6px rgba(57, 255, 20, 0.4),
+      0 0 3px rgba(57, 255, 20, 0.3),
       4px 4px 0px #000;
   }
   50% {
     text-shadow:
-      0 0 14px rgba(57, 255, 20, 0.7),
+      0 0 5px rgba(57, 255, 20, 0.45),
       4px 4px 0px #000;
   }
 }
@@ -1201,21 +1231,21 @@ html, body {
 /* Top 3 rank highlight colors */
 .leaderboard-table tbody tr.rank-1 td:first-child {
   color: #ffd700;
-  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+  text-shadow: 0 0 3px rgba(255, 215, 0, 0.35);
   font-family: var(--font-pixel);
   font-size: 0.75rem;
 }
 
 .leaderboard-table tbody tr.rank-2 td:first-child {
   color: #c0c0c0;
-  text-shadow: 0 0 4px rgba(192, 192, 192, 0.4);
+  text-shadow: 0 0 2px rgba(192, 192, 192, 0.25);
   font-family: var(--font-pixel);
   font-size: 0.75rem;
 }
 
 .leaderboard-table tbody tr.rank-3 td:first-child {
   color: #cd7f32;
-  text-shadow: 0 0 4px rgba(205, 127, 50, 0.4);
+  text-shadow: 0 0 2px rgba(205, 127, 50, 0.25);
   font-family: var(--font-pixel);
   font-size: 0.75rem;
 }
@@ -1246,5 +1276,282 @@ html, body {
 
   .leaderboard-table th {
     font-size: 0.5rem;
+  }
+}
+
+/* ==========================================================================
+   DEVELOPER CHEAT PANEL MODAL
+   ========================================================================== */
+.cheat-panel-modal {
+  display: none; /* Hidden by default */
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(4, 8, 10, 0.94);
+  z-index: 99999; /* Higher than everything else */
+  justify-content: center;
+  align-items: flex-start; /* Align start so the top of modal is never cut off on small heights */
+  overflow-y: auto;
+  padding: 4vh 1.5rem; /* Flexible margin top/bottom */
+  box-sizing: border-box;
+}
+
+.cheat-panel-modal.active {
+  display: flex;
+}
+
+.cheat-panel-content {
+  position: relative;
+  width: 95%;
+  max-width: 1200px;
+  background: var(--pixel-gray-dark);
+  border: 6px solid var(--panel-border);
+  outline: 6px solid #1a2228;
+  padding: 2.2rem;
+  max-height: 92vh; /* Never exceeds viewport height */
+  overflow-y: auto;  /* Enable vertical scroll inside modal content if needed */
+  box-shadow: 15px 15px 0px #000;
+  box-sizing: border-box;
+  animation: retro-slide-in 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+@keyframes retro-slide-in {
+  from { transform: translateY(-40px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.cheat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 4px solid var(--panel-border-light);
+  padding-bottom: 0.8rem;
+  margin-bottom: 1.2rem;
+}
+
+.cheat-title {
+  font-family: var(--font-pixel);
+  font-size: 1.3rem;
+  color: var(--pixel-orange);
+  text-shadow: 0px 0px 3px rgba(255, 119, 0, 0.3);
+  margin: 0;
+}
+
+.cheat-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 2.4rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.1s, transform 0.1s;
+}
+
+.cheat-close-btn:hover {
+  color: var(--pixel-red);
+  transform: scale(1.1);
+}
+
+.cheat-desc {
+  font-family: var(--font-terminal);
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  margin-bottom: 1.8rem;
+  line-height: 1.4;
+}
+
+.cheat-sections {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.2rem;
+}
+
+.cheat-column {
+  background: #0d1114;
+  border: 4px solid var(--panel-border-light);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.rarity-title {
+  font-family: var(--font-pixel);
+  font-size: 0.72rem;
+  margin: 0 0 0.5rem 0;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+.common-text { color: var(--rarity-common); }
+.rare-text { color: var(--rarity-rare); }
+.epic-text { color: var(--rarity-epic); }
+.legendary-text { color: var(--rarity-legendary); }
+
+.cheat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Upgrade cheat buttons */
+.cheat-upgrade-btn {
+  font-family: var(--font-terminal);
+  font-size: 1.05rem;
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  background: #1c2227;
+  color: var(--text-primary);
+  border: 2px solid var(--panel-border-light);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  width: 100%;
+}
+
+.cheat-upgrade-btn:hover {
+  background: var(--pixel-gray-light);
+  transform: translateX(4px);
+}
+
+.cheat-upgrade-btn.common-hover:hover { border-color: var(--rarity-common); color: var(--rarity-common); }
+.cheat-upgrade-btn.rare-hover:hover { border-color: var(--rarity-rare); color: var(--rarity-rare); }
+.cheat-upgrade-btn.epic-hover:hover { border-color: var(--rarity-epic); color: var(--rarity-epic); }
+.cheat-upgrade-btn.legendary-hover:hover { border-color: var(--rarity-legendary); color: var(--rarity-legendary); }
+
+.cheat-upgrade-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.cheat-upgrade-name {
+  font-weight: bold;
+}
+
+.cheat-upgrade-icon {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.cheat-upgrade-desc {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  line-height: 1.25;
+  font-weight: normal;
+  pointer-events: none;
+}
+
+@media (max-width: 1024px) {
+  .cheat-sections {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .cheat-sections {
+    grid-template-columns: 1fr;
+  }
+  .cheat-panel-content {
+    padding: 1.2rem;
+  }
+}
+
+/* ==========================================================================
+   CUSTOM RETRO LABORATORY SCROLLBARS
+   ========================================================================== */
+.menu-container::-webkit-scrollbar,
+.cheat-panel-content::-webkit-scrollbar,
+.leaderboard-table-wrap::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.menu-container::-webkit-scrollbar-track,
+.cheat-panel-content::-webkit-scrollbar-track,
+.leaderboard-table-wrap::-webkit-scrollbar-track {
+  background: #080c0e;
+  border: 2px solid #000;
+}
+.menu-container::-webkit-scrollbar-thumb,
+.cheat-panel-content::-webkit-scrollbar-thumb,
+.leaderboard-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--pixel-orange);
+  border: 2px solid #000;
+}
+.menu-container::-webkit-scrollbar-thumb:hover,
+.cheat-panel-content::-webkit-scrollbar-thumb:hover,
+.leaderboard-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: #ff8800;
+}
+
+/* ==========================================================================
+   FLUID RESPONSIVE HEIGHT MEDIA QUERIES (Anti-Overflow for short screens)
+   ========================================================================== */
+@media (max-height: 750px) {
+  .menu-container {
+    padding: 1.2rem 1.2rem !important;
+    gap: 0.8rem !important;
+  }
+  .title {
+    font-size: 1.4rem !important;
+    margin-bottom: 0.1rem !important;
+  }
+  .tagline {
+    font-size: 0.8rem !important;
+    margin-bottom: 0.4rem !important;
+  }
+  .hazard-bar {
+    height: 8px !important;
+  }
+  .gameover-stats {
+    gap: 0.4rem !important;
+    margin: 0.4rem 0 !important;
+  }
+  .upgrade-subtitle {
+    font-size: 0.9rem !important;
+    margin-top: 0.1rem !important;
+  }
+  .upgrade-options {
+    margin: 0.5rem 0 !important;
+    gap: 0.5rem !important;
+  }
+  .upgrade-card {
+    padding: 0.6rem 0.5rem !important;
+    gap: 0.3rem !important;
+  }
+  .upgrade-card-icon {
+    font-size: 1.3rem !important;
+    margin-bottom: 0.1rem !important;
+  }
+  .upgrade-card-title {
+    font-size: 0.95rem !important;
+  }
+  .upgrade-card-desc {
+    font-size: 0.8rem !important;
+  }
+  .cheat-panel-content {
+    padding: 1.2rem !important;
+  }
+  .cheat-title {
+    font-size: 1.1rem !important;
+  }
+  .cheat-desc {
+    font-size: 0.9rem !important;
+    margin-bottom: 0.8rem !important;
+  }
+  .cheat-sections {
+    gap: 0.6rem !important;
+  }
+  .cheat-upgrade-btn {
+    padding: 0.4rem 0.5rem !important;
+    font-size: 0.95rem !important;
   }
 }

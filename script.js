@@ -40,6 +40,10 @@ const menuBtn    = document.getElementById('menu-btn');
 const clearedWaveNum   = document.getElementById('cleared-wave-num');
 const nextWaveZombies  = document.getElementById('next-wave-zombies');
 
+// Cheat Panel elements
+const cheatPanel    = document.getElementById('cheat-panel');
+const cheatCloseBtn = document.getElementById('cheat-close-btn');
+
 
 // Game State and Settings
 let gameState = {
@@ -86,8 +90,8 @@ let player = {
   size: 32, // blocky size for retro aesthetic
   health: 100,
   maxHealth: 100,
-  speed: 2.2,
-  
+  speed: 1.7, // Decreased base player speed for high-tension survival gameplay
+
   // Weapon Stats
   bulletDamage: 10,
   fireRate: 500, // Cooldown in milliseconds (slower base rate for better upgrade value)
@@ -131,6 +135,7 @@ const keys = {
   s: false,
   d: false
 };
+const activeKeys = {};
 
 // Mouse Input Tracker
 const mouse = {
@@ -157,10 +162,10 @@ const UPGRADES_REGISTRY = [
     id: 'speed',
     name: 'Speed Up',
     icon: '[MOVE]',
-    description: 'Increase player speed by 0.4',
+    description: 'Increase player speed by 0.25',
     rarity: 'common',
     apply: () => {
-      player.speed += 0.4;
+      player.speed += 0.25;
     }
   },
   {
@@ -188,10 +193,10 @@ const UPGRADES_REGISTRY = [
     id: 'bulletspeed',
     name: 'Bullet Speed Up',
     icon: '[AMMO]',
-    description: 'Increase bullet speed by 1',
+    description: 'Increase bullet speed by 1 (Capped at 16 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSpeed += 1;
+      player.bulletSpeed = Math.min(16, player.bulletSpeed + 1);
     }
   },
   {
@@ -240,10 +245,10 @@ const UPGRADES_REGISTRY = [
     id: 'firerate',
     name: 'Fire Rate Up',
     icon: '[FAST]',
-    description: 'Reduce fire rate cooldown by 40ms (min 100ms)',
+    description: 'Reduce fire rate cooldown by 40ms (min 250ms)',
     rarity: 'rare',
     apply: () => {
-      player.fireRate = Math.max(100, player.fireRate - 40);
+      player.fireRate = Math.max(250, player.fireRate - 40);
     }
   },
   {
@@ -260,10 +265,10 @@ const UPGRADES_REGISTRY = [
     id: 'knockbackrounds',
     name: 'Knockback Rounds',
     icon: '[PUSH]',
-    description: 'Increases pushback distance on hit by 10% (Stackable, capped at +50% max pushback)',
+    description: 'Increases pushback distance on hit by 10% (Stackable, capped at +100% max pushback)',
     rarity: 'rare',
     apply: () => {
-      player.knockbackModifier = Math.min(0.50, player.knockbackModifier + 0.10);
+      player.knockbackModifier = Math.min(1.0, player.knockbackModifier + 0.10);
     }
   },
   {
@@ -290,10 +295,10 @@ const UPGRADES_REGISTRY = [
     id: 'splintershot',
     name: 'Splinter Shot',
     icon: '[CHIP]',
-    description: 'Bullets split into 2 small, low-damage shrapnel pieces upon hitting walls or enemies (Stackable, shrapnel damage caps at 50% max)',
+    description: 'Bullets split into fanned shrapnel pieces upon hitting walls/enemies. Each stack adds +1 split bullet (Caps at 4 splits, damage capped at 40%)',
     rarity: 'rare',
     apply: () => {
-      player.splinterShotLevel += 1;
+      player.splinterShotLevel = Math.min(3, player.splinterShotLevel + 1); // Caps at level 3 (yields 4 split bullets)
     }
   },
   {
@@ -401,6 +406,7 @@ let enemyProjectiles = []; // For Acid Spitter projectile blobs
 let toxicTrails = [];      // For chemical trail slowing and DoT pools
 let lightningArcs = []; // For chain lightning cyan arc drawings
 let gameParticles = []; // For muzzle flashes, blood splatters, and impact sparks
+let explosions = [];    // For high-fidelity animated radial explosions
 
 // Spawning Variables
 let lastZombieSpawnTime = 0;
@@ -470,6 +476,92 @@ function showScreen(screen) {
   screen.classList.add('active');
 }
 
+/**
+ * Toggles the developer cheat panel visibility and handles pausing the game loop.
+ */
+function toggleCheatPanel() {
+  if (!cheatPanel) return;
+
+  if (cheatPanel.classList.contains('active')) {
+    cheatPanel.classList.remove('active');
+    // Resume core loop if gameplay is active and not showing wave intermission
+    if (gameState.isRunning && !isWaveIntermission) {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      gameLoop();
+    }
+  } else {
+    cheatPanel.classList.add('active');
+    // Pause the game loops during developer configuration
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+    }
+  }
+}
+
+/**
+ * Procedurally populates the Developer Cheat Panel with all registry upgrades.
+ */
+function populateCheatPanel() {
+  const commonList = document.getElementById('cheat-common-list');
+  const rareList = document.getElementById('cheat-rare-list');
+  const epicList = document.getElementById('cheat-epic-list');
+  const legendaryList = document.getElementById('cheat-legendary-list');
+
+  if (!commonList || !rareList || !epicList || !legendaryList) return;
+
+  commonList.innerHTML = '';
+  rareList.innerHTML = '';
+  epicList.innerHTML = '';
+  legendaryList.innerHTML = '';
+
+  UPGRADES_REGISTRY.forEach(upgrade => {
+    const btn = document.createElement('button');
+    btn.className = `cheat-upgrade-btn ${upgrade.rarity}-hover`;
+    btn.innerHTML = `
+      <div class="cheat-upgrade-header">
+        <span class="cheat-upgrade-icon">${upgrade.icon}</span>
+        <strong class="cheat-upgrade-name">${upgrade.name}</strong>
+      </div>
+      <div class="cheat-upgrade-desc">${upgrade.description}</div>
+    `;
+
+    btn.addEventListener('click', () => {
+      // 1. Apply the upgrade immediately
+      upgrade.apply();
+
+      // 2. Save chosen upgrade in active list (demarcated as cheat for transparency)
+      upgradesChosen.push(upgrade.name + ' [CHEAT]');
+      console.log(`[CHEAT PANEL] Applied upgrade: ${upgrade.name}`);
+
+      // 3. Screen shake visual feedback
+      startScreenShake(5, 8);
+
+      // 4. Update core HUD
+      updateHUD();
+    });
+
+    if (upgrade.rarity === 'common') {
+      commonList.appendChild(btn);
+    } else if (upgrade.rarity === 'rare') {
+      rareList.appendChild(btn);
+    } else if (upgrade.rarity === 'epic') {
+      epicList.appendChild(btn);
+    } else if (upgrade.rarity === 'legendary') {
+      legendaryList.appendChild(btn);
+    }
+  });
+}
+
+// Bind Cheat Panel Close Button
+if (cheatCloseBtn) {
+  cheatCloseBtn.addEventListener('click', toggleCheatPanel);
+}
+
+// Initialize Cheat Panel once on file load
+populateCheatPanel();
+
 
 // Leaderboard
 // Data is loaded from Supabase. This array holds the current data to render.
@@ -517,9 +609,8 @@ function renderLeaderboard(data) {
       tr.classList.add('rank-' + rank);
     }
 
-    // Rank medal for top 3
-    const rankSymbols = { 1: '👑', 2: '🥈', 3: '🥉' };
-    const rankDisplay = rankSymbols[rank] || rank;
+    // Rank display for top 3 (numbers only, emoji-free)
+    const rankDisplay = rank;
 
     tr.innerHTML =
       '<td>' + rankDisplay + '</td>' +
@@ -546,7 +637,7 @@ function escapeHTML(str) {
 function resizeCanvas() {
   canvas.width  = window.innerWidth;
   canvas.height = window.innerHeight;
-  
+
   // Keep pixel renderings super crisp (disable anti-aliasing)
   ctx.imageSmoothingEnabled = false;
   ctx.mozImageSmoothingEnabled = false;
@@ -571,7 +662,7 @@ function startGame() {
   gameState.score = 0;
   gameState.wave = 1;
   gameState.kills = 0;
-  
+
   // Reset active wave parameters
   waveZombiesTotal = getWaveZombieTotal(gameState.wave);
   waveZombiesSpawned = 0;
@@ -580,7 +671,7 @@ function startGame() {
   // Reset player configuration
   player.health = 100;
   player.maxHealth = 100;
-  player.speed = 2.2;
+  player.speed = 1.7; // Decreased base player speed
   player.lastShotTime = 0;
   player.bulletDamage = 10;
   player.fireRate = 500;
@@ -623,6 +714,7 @@ function startGame() {
   lightningArcs = [];
   gameParticles = [];
   floorStains = [];
+  explosions = [];
   screenShake.amount = 0;
   screenShake.frames = 0;
   lastZombieSpawnTime = 0;
@@ -684,9 +776,9 @@ function gameLoop() {
 function update() {
   gameTick += 1;
 
-  // Update Orbiting Defender rotating blades angle
+  // Update Orbiting Defender rotating blades angle (slower, heavy orbit)
   if (player.orbitingDefenderLevel > 0) {
-    player.defenderAngle += 0.04;
+    player.defenderAngle += 0.018;
   }
 
   // Update Toxic Trail puddle lifetimes
@@ -702,6 +794,14 @@ function update() {
     lightningArcs[i].life -= lightningArcs[i].decay;
     if (lightningArcs[i].life <= 0) {
       lightningArcs.splice(i, 1);
+    }
+  }
+
+  // Update Explosions lifespans
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    explosions[i].life -= explosions[i].decay;
+    if (explosions[i].life <= 0) {
+      explosions.splice(i, 1);
     }
   }
 
@@ -832,18 +932,34 @@ function update() {
       b.trail.shift(); // Keep trail length capped for longer lasers
     }
 
-    // Spawn floating sparks in bullet wake (ash/embers)
-    if (Math.random() < 0.65) {
-      gameParticles.push({
-        x: b.x + (Math.random() - 0.5) * 6,
-        y: b.y + (Math.random() - 0.5) * 6,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        size: Math.floor(Math.random() * 3) + 2, // Tiny blocky sparks (2-5px)
-        color: Math.random() > 0.45 ? '#ff5500' : '#ffaa00', // Crimson orange or gold
-        life: 0.8,
-        decay: Math.random() * 0.08 + 0.05 // Fades quickly
-      });
+    // Spawn floating sparks in bullet wake (ash/embers/smoke)
+    if (b.isFire) {
+      if (Math.random() < 0.80) {
+        const isSmoke = Math.random() > 0.7;
+        gameParticles.push({
+          x: b.x + (Math.random() - 0.5) * 6,
+          y: b.y + (Math.random() - 0.5) * 6,
+          vx: (Math.random() - 0.5) * 0.6,
+          vy: (Math.random() - 0.5) * 0.6,
+          size: Math.floor(Math.random() * 4) + 3,
+          color: isSmoke ? 'rgba(90, 90, 90, 0.35)' : '#ff4500', // Grey smoke or bright orange-red fire
+          life: 0.7,
+          decay: Math.random() * 0.12 + 0.07
+        });
+      }
+    } else {
+      if (Math.random() < 0.65) {
+        gameParticles.push({
+          x: b.x + (Math.random() - 0.5) * 6,
+          y: b.y + (Math.random() - 0.5) * 6,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: (Math.random() - 0.5) * 0.4,
+          size: Math.floor(Math.random() * 3) + 2, // Tiny blocky sparks (2-5px)
+          color: Math.random() > 0.45 ? '#ff5500' : '#ffaa00', // Crimson orange or gold
+          life: 0.8,
+          decay: Math.random() * 0.08 + 0.05 // Fades quickly
+        });
+      }
     }
 
     b.x += b.vx;
@@ -1006,15 +1122,134 @@ function update() {
       if (distance > 0) {
         // Toxic Trail slow effect (10% slow per level, capped at 40% slow)
         const slowFactor = z.isOnToxicTrail ? (1 - Math.min(0.40, 0.10 * player.toxicTrailLevel)) : 1.0;
-        z.x += (zDx / distance) * z.speed * slowFactor;
-        z.y += (zDy / distance) * z.speed * slowFactor;
+        const desiredSpeed = z.speed * slowFactor;
+
+        let vx = 0;
+        let vy = 0;
+
+        // Intelligent Path Vector Selection for Acid Spitters & other zombies
+        if (z.type === 'spitter') {
+          if (distance > 340) {
+            // Too far: Move towards the player to get into range
+            vx = (zDx / distance) * desiredSpeed;
+            vy = (zDy / distance) * desiredSpeed;
+          } else if (distance < 220) {
+            // Too close: Kite and back away from the player
+            vx = -(zDx / distance) * desiredSpeed;
+            vy = -(zDy / distance) * desiredSpeed;
+          } else {
+            // Sweet spot (220px - 340px): Stand still, aim, and shoot!
+            vx = 0;
+            vy = 0;
+          }
+        } else {
+          // Regular zombies always chase directly
+          vx = (zDx / distance) * desiredSpeed;
+          vy = (zDy / distance) * desiredSpeed;
+        }
+
+        // Advanced AABB Look-Ahead Sliding Vector Obstacle Avoidance
+        if (vx !== 0 || vy !== 0) {
+          const currentSpeed = Math.hypot(vx, vy);
+          const dirX = vx / currentSpeed;
+          const dirY = vy / currentSpeed;
+
+          const lookAhead = 40; // Pixels to look ahead
+          let avoidanceX = 0;
+          let avoidanceY = 0;
+          let isBlocked = false;
+
+          for (let o = 0; o < obstacles.length; o++) {
+            const obs = obstacles[o];
+
+            // 1. Closest point on AABB obstacle to current zombie position
+            const closestX = Math.max(obs.x, Math.min(z.x, obs.x + obs.width));
+            const closestY = Math.max(obs.y, Math.min(z.y, obs.y + obs.height));
+            const distCurrent = Math.hypot(z.x - closestX, z.y - closestY);
+
+            // 2. Closest point on AABB obstacle to anticipated look-ahead position
+            const aheadX = z.x + dirX * lookAhead;
+            const aheadY = z.y + dirY * lookAhead;
+            const closestAheadX = Math.max(obs.x, Math.min(aheadX, obs.x + obs.width));
+            const closestAheadY = Math.max(obs.y, Math.min(aheadY, obs.y + obs.height));
+            const distAhead = Math.hypot(aheadX - closestAheadX, aheadY - closestAheadY);
+
+            // 3. Collision footprint threshold
+            const safetyRadius = z.size / 2 + 12;
+
+            if (distCurrent < safetyRadius || distAhead < safetyRadius) {
+              isBlocked = true;
+
+              // Vector pointing outward from closest point on obstacle face
+              let dx = z.x - closestX;
+              let dy = z.y - closestY;
+
+              if (dx === 0 && dy === 0) {
+                // If center is somehow fully inside, resolve using obstacle center
+                const obsCenterX = obs.x + obs.width / 2;
+                const obsCenterY = obs.y + obs.height / 2;
+                dx = z.x - obsCenterX;
+                dy = z.y - obsCenterY;
+                if (dx === 0 && dy === 0) {
+                  dx = 1;
+                  dy = 0;
+                }
+              }
+
+              const dist = Math.hypot(dx, dy);
+              const nx = dist > 0 ? dx / dist : 1;
+              const ny = dist > 0 ? dy / dist : 0;
+
+              // sliding vector projection: cancel component going straight into the wall
+              const dotNormal = vx * nx + vy * ny;
+              if (dotNormal < 0) {
+                vx -= dotNormal * nx;
+                vy -= dotNormal * ny;
+              }
+
+              // Target-Aligned Tangential Steering: select tangent pointing closest to destination
+              const tx1 = -ny;
+              const ty1 = nx;
+              const tx2 = ny;
+              const ty2 = -nx;
+
+              // The original chase direction we wanted to head towards
+              const origVx = (z.type === 'spitter' && distance < 220) ? -zDx : zDx;
+              const origVy = (z.type === 'spitter' && distance < 220) ? -zDy : zDy;
+
+              const dot1 = origVx * tx1 + origVy * ty1;
+              const dot2 = origVx * tx2 + origVy * ty2;
+
+              const tx = dot1 >= dot2 ? tx1 : tx2;
+              const ty = dot1 >= dot2 ? ty1 : ty2;
+
+              // Accumulate active steering force
+              avoidanceX += tx * desiredSpeed;
+              avoidanceY += ty * desiredSpeed;
+            }
+          }
+
+          // If blocked, blend sliding velocity (30%) with active steering deflection (70%)
+          if (isBlocked) {
+            vx = vx * 0.3 + avoidanceX * 0.7;
+            vy = vy * 0.3 + avoidanceY * 0.7;
+            const newLen = Math.hypot(vx, vy);
+            if (newLen > 0) {
+              vx = (vx / newLen) * desiredSpeed;
+              vy = (vy / newLen) * desiredSpeed;
+            }
+          }
+        }
+
+        z.x += vx;
+        z.y += vy;
       }
     }
 
     // Orbiting Defender contact damage shredding (Legendary)
     if (player.orbitingDefenderLevel > 0) {
-      const radius = 45;
-      const contactRadius = z.size / 2 + 10;
+      const radius = 140; // Massive outer orbit radius (more further away from the player)
+      const contactRadius = z.size / 2 + 38; // Twice as big collision footprint to match giant sawblades
       for (let d = 0; d < player.orbitingDefenderLevel; d++) {
         const angleOffset = d * (Math.PI * 2 / player.orbitingDefenderLevel);
         const bladeX = player.x + Math.cos(player.defenderAngle + angleOffset) * radius;
@@ -1025,7 +1260,7 @@ function update() {
         const bDist = Math.sqrt(bDx * bDx + bDy * bDy);
 
         if (bDist < contactRadius) {
-          z.health -= 1.8 * player.orbitingDefenderLevel; // dealing shred tick damage
+          z.health -= 0.12 * player.orbitingDefenderLevel; // Nerfed damage again to prevent overly powerful passive kills (reduced from 0.35)
 
           // Spawn contact sparks
           if (Math.random() < 0.25) {
@@ -1055,7 +1290,7 @@ function update() {
     // Burn Bullet DoT check
     if (z.burnTicks > 0) {
       z.burnTicks -= 1;
-      z.health -= (5 / 60) * player.burnLevel; // 5 damage/sec per burn level
+      z.health -= (2.5 / 60) * player.burnLevel; // Balanced burn DoT damage (nerfed from 5/sec to 2.5/sec)
 
       // Spawn volatile rising ember/flame particles
       if (Math.random() < 0.15) {
@@ -1079,8 +1314,8 @@ function update() {
         enemyProjectiles.push({
           x: z.x,
           y: z.y,
-          vx: Math.cos(spitAngle) * 4.0,
-          vy: Math.sin(spitAngle) * 4.0,
+          vx: Math.cos(spitAngle) * 2.4, // Nerfed projectile velocity from 4.0 to 2.4 (giving players plenty of time to dodge)
+          vy: Math.sin(spitAngle) * 2.4,
           size: 10,
           damage: z.damage,
           color: '#39ff14'
@@ -1155,6 +1390,10 @@ function update() {
         z1.y -= pushY;
         z2.x += pushX;
         z2.y += pushY;
+
+        // Reinforce obstacle boundary conditions and clamps instantly so separation doesn't clip them inside walls
+        resolveEntityObstacleCollision(z1);
+        resolveEntityObstacleCollision(z2);
       }
     }
   }
@@ -1173,7 +1412,7 @@ function update() {
         }
 
         // Necro-Bomb triggering (Legendary upgrade)
-        if (player.necroBombLevel > 0) {
+        if (player.necroBombLevel > 0 && !z.killedByNecroBomb) {
           const chance = player.necroBombLevel * 0.20;
           if (Math.random() < chance) {
             triggerNecroBombExplosion(z.x, z.y);
@@ -1224,7 +1463,7 @@ function update() {
 
         // Trigger Splinter Shot bullet split
         if (player.splinterShotLevel > 0 && !b.isShrapnel) {
-          spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage);
+          spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, z);
         }
 
         // Apply Burn Bullet DoT if player has upgrade
@@ -1318,7 +1557,7 @@ function clearWave() {
 
   // Set statistical metrics inside modal
   clearedWaveNum.textContent = gameState.wave;
-  
+
   // Show the stronger horde size for the upcoming wave.
   const nextSize = getWaveZombieTotal(gameState.wave + 1);
   nextWaveZombies.textContent = nextSize;
@@ -1493,7 +1732,7 @@ function spawnZombie() {
       size: 54, // Massive broad frame
       health: 60,
       maxHealth: 60,
-      speed: 0.7, // Heavy, rumbling stride
+      speed: 0.5, // Decreased base speed from 0.7
       damage: 20,
       scoreValue: 30,
       lastAttackTime: 0,
@@ -1508,7 +1747,7 @@ function spawnZombie() {
       size: 34, // Easier to track, still the smallest threat
       health: 20,
       maxHealth: 20,
-      speed: 1.6, // Rapid charging dash speed!
+      speed: 1.2, // Decreased base speed from 1.6
       damage: 8,
       scoreValue: 15,
       lastAttackTime: 0,
@@ -1523,7 +1762,7 @@ function spawnZombie() {
       size: 38, // Slender but more visible
       health: 25,
       maxHealth: 25,
-      speed: 0.9, // Slower kiting speed
+      speed: 0.7, // Decreased base speed from 0.9
       damage: 10,
       scoreValue: 25,
       lastAttackTime: 0,
@@ -1538,7 +1777,7 @@ function spawnZombie() {
       size: 42, // Swollen shape
       health: 15,
       maxHealth: 15,
-      speed: 1.3, // Swift approach speed
+      speed: 0.95, // Decreased base speed from 1.3
       damage: 25,
       scoreValue: 20,
       lastAttackTime: 0,
@@ -1553,7 +1792,7 @@ function spawnZombie() {
       size: 42,
       health: 30,
       maxHealth: 30,
-      speed: 1.0, // Slow kiting pace
+      speed: 0.75, // Decreased base speed from 1.0
       damage: 10,
       scoreValue: 10,
       lastAttackTime: 0,
@@ -1836,30 +2075,34 @@ function damagePlayer(rawAmount) {
  * @param {number} vy - Original bullet velocity y
  * @param {number} parentDamage - Original bullet damage
  */
-function spawnSplinterShrapnel(x, y, vx, vy, parentDamage) {
+function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null) {
   const angle = Math.atan2(vy, vx);
   const speed = Math.sqrt(vx * vx + vy * vy) * 0.8; // slightly slower shrapnel
-  const shrapnelDamage = Math.min(player.bulletDamage * 0.5, parentDamage * 0.15 * player.splinterShotLevel);
+  const shrapnelDamage = Math.max(1, Math.round(parentDamage * 0.40)); // Capped damage to exactly 40% of parent bullet damage
 
-  const angle1 = angle + Math.PI / 4;
-  const angle2 = angle - Math.PI / 4;
+  const numSplits = Math.min(4, player.splinterShotLevel + 1); // Caps at 4 bullet split fanned symmetrically
+  const totalSpread = Math.PI / 2; // 90 degrees total fanning spread
+  const angleStep = numSplits > 1 ? totalSpread / (numSplits - 1) : 0;
+  const startAngle = angle - totalSpread / 2;
 
-  [angle1, angle2].forEach(a => {
+  for (let s = 0; s < numSplits; s++) {
+    const a = startAngle + s * angleStep;
     bullets.push({
       x: x,
       y: y,
       vx: Math.cos(a) * speed,
       vy: Math.sin(a) * speed,
       size: 6, // smaller shrapnel size
-      damage: Math.max(1, Math.round(shrapnelDamage)),
+      damage: shrapnelDamage,
       trail: [],
       pierceLeft: 1, // pierces 1 zombie then dies
       bounceLeft: 0, // shrapnel does not bounce to avoid infinite recursion
-      hitZombies: [],
+      hitZombies: hitZombie ? [hitZombie] : [], // Pre-exclude the target zombie that got hit to prevent instant double-hits!
       isShrapnel: true,
-      life: 45 // Shrapnel expires in 45 frames (~0.75 seconds)
+      life: 45, // Shrapnel expires in 45 frames (~0.75 seconds)
+      isFire: player.burnLevel > 0 // Inherit fire bullet properties
     });
-  });
+  }
 }
 
 
@@ -1911,7 +2154,8 @@ function shootWeapon() {
           bounceLeft: player.bounceLimit, // Bouncing Casings Limit
           hitZombies: [],
           isShrapnel: false,
-          life: 150 // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
+          life: 150, // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
+          isFire: player.burnLevel > 0
         });
 
         // Spawn barrel flash at each starting muzzle point offset
@@ -1937,7 +2181,8 @@ function shootWeapon() {
           bounceLeft: player.bounceLimit,
           hitZombies: [],
           isShrapnel: false,
-          life: 150 // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
+          life: 150, // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
+          isFire: player.burnLevel > 0
         });
 
         // Spawn barrel flash at each muzzle direction
@@ -2108,58 +2353,116 @@ function spawnPlayerBloodSpray(px, py) {
   }
 }
 
-/**
- * Triggers a massive fiery pixel explosion.
- * Deals splash damage to player and surrounding zombies.
- */
 function triggerExplosion(ex, ey, maxDamage) {
-  startExplosionShake(ex, ey, 14);
-  addFloorScorch(ex, ey, 54);
+  startExplosionShake(ex, ey, 20); // Upgraded screen shake to 20 for massive weight
+  addFloorScorch(ex, ey, 90, 'fire'); // Perfect circle crater with glowing cracks
 
-  // 1. Spawn a large circular blast of particles (orange, red, yellow, and smoky gray)
-  const numParticles = 30 + Math.floor(Math.random() * 15);
-  for (let i = 0; i < numParticles; i++) {
+  // Push an active animated radial gradient fireball
+  explosions.push({
+    type: 'fire',
+    x: ex,
+    y: ey,
+    radius: 140,
+    life: 1.0,
+    decay: 0.045
+  });
+
+  // Spawn nested glowing expanding shockwave rings
+  gameParticles.push({
+    type: 'shockwave',
+    x: ex,
+    y: ey,
+    maxRadius: 140,
+    lineWidth: 5,
+    color: '#ff4400',
+    life: 1.0,
+    decay: 0.04
+  });
+  gameParticles.push({
+    type: 'shockwave',
+    x: ex,
+    y: ey,
+    maxRadius: 100,
+    lineWidth: 3,
+    color: '#ffee00',
+    life: 1.0,
+    decay: 0.05
+  });
+
+  // Spawn chunky fiery debris particles (35-50 particles) in orange/yellow hues
+  const numDebris = 35 + Math.floor(Math.random() * 15);
+  for (let i = 0; i < numDebris; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const force = Math.random() * 5 + 2;
+    const force = Math.random() * 6 + 3;
+    const size = Math.floor(Math.random() * 6) + 4;
     const colorRoll = Math.random();
-    let color = '#ff3300'; // Pure bright hot red-orange
-    if (colorRoll < 0.3) {
-      color = '#ffaa00'; // fiery gold
-    } else if (colorRoll < 0.6) {
-      color = '#ffee00'; // hot yellow
-    } else if (colorRoll < 0.8) {
-      color = '#555555'; // smoky charcoal gray
-    }
+    let color = '#ff4500'; // Hot orange
+    if (colorRoll < 0.4) color = '#ffee00'; // Hot yellow
+    else if (colorRoll < 0.7) color = '#ff8c00'; // Dark orange
 
     gameParticles.push({
       x: ex,
       y: ey,
       vx: Math.cos(angle) * force,
       vy: Math.sin(angle) * force,
-      size: Math.floor(Math.random() * 6) + 4,
+      size: size,
       color: color,
       life: 1.0,
-      decay: Math.random() * 0.05 + 0.03
+      decay: Math.random() * 0.05 + 0.02
     });
   }
 
-  // 2. Damage player if within 90px radius
+  // Spawn slow-rising charcoal smoke clouds (15-25 particles) drifting upward
+  const numSmoke = 15 + Math.floor(Math.random() * 10);
+  for (let i = 0; i < numSmoke; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const force = Math.random() * 1.5 + 0.5;
+    const size = Math.floor(Math.random() * 8) + 6;
+    gameParticles.push({
+      x: ex,
+      y: ey,
+      vx: Math.cos(angle) * force,
+      vy: Math.sin(angle) * force - 0.5, // Float slightly upwards
+      size: size,
+      color: '#555555', // Charcoal smoke
+      life: 0.8,
+      decay: Math.random() * 0.03 + 0.02
+    });
+  }
+
+  // Spawn high-velocity golden sparks (20 particles)
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const force = Math.random() * 8 + 4;
+    gameParticles.push({
+      x: ex,
+      y: ey,
+      vx: Math.cos(angle) * force,
+      vy: Math.sin(angle) * force,
+      size: Math.floor(Math.random() * 2) + 1,
+      color: '#ffea00',
+      life: 0.9,
+      decay: Math.random() * 0.08 + 0.06
+    });
+  }
+
+  // Damage player if within upgraded 140px radius
   const pDx = player.x - ex;
   const pDy = player.y - ey;
   const pDist = Math.sqrt(pDx * pDx + pDy * pDy);
-  const explosionRadius = 90;
+  const explosionRadius = 140;
 
   if (pDist < explosionRadius) {
     const factor = (explosionRadius - pDist) / explosionRadius;
-    const taken = Math.floor(maxDamage * factor);
+    const taken = Math.floor(maxDamage * factor); // Restored Exploder Zombie full blast damage to player
     if (taken > 0) {
       damagePlayer(taken);
       if (player.health <= 0) return;
     }
   }
 
-  // 3. Splash damage to *other* active zombies within 90px radius
-  const maxZombieSplashDamage = 40;
+  // Splash damage to *other* active zombies within upgraded 140px radius (restored to full powerful 75 value)
+  const maxZombieSplashDamage = 75;
   zombies.forEach(zTarget => {
     const tDx = zTarget.x - ex;
     const tDy = zTarget.y - ey;
@@ -2169,6 +2472,9 @@ function triggerExplosion(ex, ey, maxDamage) {
       const splashDamage = Math.floor(maxZombieSplashDamage * factor);
       if (splashDamage > 0) {
         zTarget.health -= splashDamage;
+        if (zTarget.health <= 0) {
+          zTarget.killedByNecroBomb = true; // Mark as killed by explosion so it won't drop / chain Necro-Bomb
+        }
       }
     }
   });
@@ -2179,27 +2485,75 @@ function triggerExplosion(ex, ey, maxDamage) {
  * Deals splash damage to nearby zombies.
  */
 function triggerNecroBombExplosion(ex, ey) {
-  const radius = 70 + player.necroBombLevel * 15;
-  const damage = 20 + player.necroBombLevel * 10;
-  startExplosionShake(ex, ey, 9 + player.necroBombLevel * 2);
-  addFloorScorch(ex, ey, radius * 0.45);
+  const radius = 110 + player.necroBombLevel * 25; // Massive upgraded base radius
+  const damage = Math.floor((18 + player.necroBombLevel * 6) * 0.8); // Nerfed by an additional 20% to keep damage highly controlled
+  startExplosionShake(ex, ey, 12 + player.necroBombLevel * 2);
+  addFloorScorch(ex, ey, radius * 0.55, 'necro'); // Glowing toxic crater with custom cracks
 
-  // Spawn unique plague green and toxic purple chunky sparks
-  const numParticles = 20 + Math.floor(Math.random() * 10);
-  for (let i = 0; i < numParticles; i++) {
+  // Push an active animated toxic radial gradient fireball
+  explosions.push({
+    type: 'necro',
+    x: ex,
+    y: ey,
+    radius: radius,
+    life: 1.0,
+    decay: 0.04
+  });
+
+  // Spawn nested glowing expanding toxic shockwaves
+  gameParticles.push({
+    type: 'shockwave',
+    x: ex,
+    y: ey,
+    maxRadius: radius,
+    lineWidth: 6,
+    color: '#39ff14', // Lime green
+    life: 1.0,
+    decay: 0.035
+  });
+  gameParticles.push({
+    type: 'shockwave',
+    x: ex,
+    y: ey,
+    maxRadius: radius * 0.75,
+    lineWidth: 4,
+    color: '#b026ff', // Toxic purple
+    life: 1.0,
+    decay: 0.045
+  });
+
+  // Spawn dense poisonous gas clouds (20-30 particles) expanding slowly
+  const numPlagueGas = 20 + Math.floor(Math.random() * 10);
+  for (let i = 0; i < numPlagueGas; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const force = Math.random() * 4 + 1.5;
-    const color = Math.random() > 0.4 ? '#39ff14' : '#b026ff'; // neon lime green or toxic purple
-
+    const force = Math.random() * 2 + 0.5;
+    const size = Math.floor(Math.random() * 10) + 8;
+    const color = Math.random() > 0.5 ? '#39ff14' : '#b026ff';
     gameParticles.push({
       x: ex,
       y: ey,
       vx: Math.cos(angle) * force,
       vy: Math.sin(angle) * force,
-      size: Math.floor(Math.random() * 4) + 3, // chunky particles (3-6px)
+      size: size,
       color: color,
       life: 0.9,
-      decay: Math.random() * 0.05 + 0.03
+      decay: Math.random() * 0.04 + 0.02
+    });
+  }
+
+  // Spawn high-velocity glowing plague sparks
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const force = Math.random() * 6 + 2;
+    gameParticles.push({
+      x: ex,
+      y: ey,
+      vx: Math.cos(angle) * force,
+      vy: Math.sin(angle) * force,
+      size: Math.floor(Math.random() * 2) + 2,
+      color: Math.random() > 0.5 ? '#39ff14' : '#b026ff',
+      life: 0.9,
+      decay: Math.random() * 0.08 + 0.05
     });
   }
 
@@ -2213,6 +2567,9 @@ function triggerNecroBombExplosion(ex, ey) {
       const splashDamage = Math.floor(damage * factor);
       if (splashDamage > 0) {
         zTarget.health -= splashDamage;
+        if (zTarget.health <= 0) {
+          zTarget.killedByNecroBomb = true; // Mark as killed by Necro-Bomb to prevent recursive explosions
+        }
       }
     }
   });
@@ -2253,8 +2610,8 @@ function addFloorChemicalStain(x, y, radius, alpha) {
   addFloorStain('chemical', x, y, radius, alpha, 0.0035); // Expire much faster (about 20x faster decay rate)
 }
 
-function addFloorScorch(x, y, radius) {
-  addFloorStain('scorch', x, y, radius, 0.42, 0.0002);
+function addFloorScorch(x, y, radius, type = 'normal') {
+  addFloorStain(type === 'necro' ? 'necro_scorch' : 'scorch', x, y, radius, 0.45, 0.0012); // Expirable floor craters (fade out after ~6s to keep arena clean)
 }
 
 function addFloorStain(type, x, y, radius, alpha, decay) {
@@ -2344,6 +2701,9 @@ function render() {
 
   // 7. Draw active Zombies
   drawZombies();
+
+  // 7.5. Draw active glowing radial explosions
+  drawExplosions();
 
   // 8. Draw absolute World Borders (Outer Industrial Walls)
   ctx.strokeStyle = '#ff7700'; // Hazard orange outer edge
@@ -2639,15 +2999,21 @@ function drawLabGroundDetail(detail) {
 }
 
 function drawFloorStains() {
+  // Deterministic pseudo-random number based on a seed for stable cracks
+  const getDeterministicRandom = (seed) => {
+    const val = Math.sin(seed) * 10000;
+    return val - Math.floor(val);
+  };
+
   floorStains.forEach(stain => {
     const alpha = Math.max(0, Math.min(stain.alpha, stain.alpha * (stain.life / stain.maxLife)));
 
     ctx.save();
     ctx.translate(stain.x, stain.y);
     ctx.rotate(stain.angle);
-    
-    // For chemical stains, draw a circle (do not squash)
-    if (stain.type === 'chemical') {
+
+    // For chemical stains and circular craters, draw perfectly round (do not squash)
+    if (stain.type === 'chemical' || stain.type === 'scorch' || stain.type === 'necro_scorch') {
       ctx.scale(1, 1.0);
     } else {
       ctx.scale(1, stain.squash);
@@ -2657,12 +3023,16 @@ function drawFloorStains() {
       ctx.fillStyle = 'rgba(92, 6, 6, ' + alpha + ')';
     } else if (stain.type === 'chemical') {
       ctx.fillStyle = 'rgba(57, 255, 20, ' + alpha + ')';
+    } else if (stain.type === 'necro_scorch') {
+      // Toxic Greenish-Black crater background
+      ctx.fillStyle = 'rgba(10, 20, 10, ' + alpha * 0.95 + ')';
     } else {
-      ctx.fillStyle = 'rgba(0, 0, 0, ' + alpha + ')';
+      // Standard scorch: deep charcoal black crater background
+      ctx.fillStyle = 'rgba(12, 10, 8, ' + alpha * 0.95 + ')';
     }
 
     ctx.beginPath();
-    if (stain.type === 'chemical') {
+    if (stain.type === 'chemical' || stain.type === 'scorch' || stain.type === 'necro_scorch') {
       ctx.arc(0, 0, stain.radius, 0, Math.PI * 2);
     } else {
       ctx.ellipse(0, 0, stain.radius, stain.radius * 0.55, 0, 0, Math.PI * 2);
@@ -2677,6 +3047,65 @@ function drawFloorStains() {
       ctx.fillStyle = 'rgba(180, 255, 91, ' + alpha * 0.38 + ')';
       ctx.fillRect(-stain.radius * 0.42, -2, stain.radius * 0.84, 4);
       ctx.fillRect(stain.radius * 0.1, stain.radius * 0.18, 6, 6);
+    } else if (stain.type === 'scorch' || stain.type === 'necro_scorch') {
+      // Render beautiful deterministic stress fractures radiating outward (NO FLICKERING!)
+      const seed = Math.floor(stain.x + stain.y * 31);
+      ctx.strokeStyle = stain.type === 'necro_scorch'
+        ? 'rgba(57, 255, 20, ' + alpha * 0.85 + ')' // Glowing toxic green
+        : 'rgba(255, 76, 20, ' + alpha * 0.88 + ')'; // Glowing fiery orange
+
+      ctx.lineWidth = Math.max(1.5, stain.radius * 0.022);
+
+      const numCracks = 5;
+      for (let j = 0; j < numCracks; j++) {
+        const angleSeed = seed + j * 7;
+        const lengthSeed = seed + j * 13;
+
+        const crackAngle = (j / numCracks) * Math.PI * 2 + getDeterministicRandom(angleSeed) * 0.5;
+        const crackLength = stain.radius * (0.45 + getDeterministicRandom(lengthSeed) * 0.45);
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+
+        let cx = 0;
+        let cy = 0;
+        const steps = 3;
+        for (let s = 1; s <= steps; s++) {
+          const t = s / steps;
+          const stepAngleSeed = angleSeed + s * 17;
+          const dev = (getDeterministicRandom(stepAngleSeed) - 0.5) * 0.45;
+          const segAngle = crackAngle + dev;
+          const segDist = crackLength * t;
+          cx = Math.cos(segAngle) * segDist;
+          cy = Math.sin(segAngle) * segDist;
+          ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+      }
+
+      // Draw glowing central ember/plague cores
+      const numCores = 4;
+      for (let c = 0; c < numCores; c++) {
+        const coreSeed = seed + c * 23;
+        const rDist = stain.radius * 0.22 * getDeterministicRandom(coreSeed);
+        const rAngle = getDeterministicRandom(coreSeed + 5) * Math.PI * 2;
+        const rx = Math.floor(Math.cos(rAngle) * rDist);
+        const ry = Math.floor(Math.sin(rAngle) * rDist);
+        const rSize = Math.floor(2 + getDeterministicRandom(coreSeed + 11) * 3);
+
+        if (stain.type === 'necro_scorch') {
+          // Glow green or purple
+          ctx.fillStyle = getDeterministicRandom(coreSeed + 9) > 0.45
+            ? 'rgba(57, 255, 20, ' + alpha * 0.9 + ')'
+            : 'rgba(176, 38, 255, ' + alpha * 0.9 + ')';
+        } else {
+          // Glow fiery orange or gold
+          ctx.fillStyle = getDeterministicRandom(coreSeed + 9) > 0.5
+            ? 'rgba(255, 120, 0, ' + alpha * 0.95 + ')'
+            : 'rgba(255, 220, 0, ' + alpha * 0.95 + ')';
+        }
+        ctx.fillRect(rx - Math.floor(rSize / 2), ry - Math.floor(rSize / 2), rSize, rSize);
+      }
     }
 
     ctx.restore();
@@ -2844,7 +3273,7 @@ function drawPlayer() {
   ctx.rotate(angle); // Pivot character space
 
   // Render elements relative to local origin (0, 0)
-  
+
   // 1. Floor Drop Shadow (flat offset block)
   ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   ctx.fillRect(-14, -12, 26, 26);
@@ -2859,7 +3288,7 @@ function drawPlayer() {
   // 3. Main Torso Suit (Heavy charcoal base)
   ctx.fillStyle = '#4e4e5e';
   ctx.fillRect(-12, -12, 22, 24);
-  
+
   // 4. Utility Plate Vest (Hazard orange & metal shield)
   ctx.fillStyle = '#ff7700'; // Vest base
   ctx.fillRect(-8, -8, 16, 16);
@@ -2911,60 +3340,113 @@ function drawBullets() {
   bullets.forEach(b => {
     // 1. Render continuous nested vector trails if we have historical points
     if (b.trail.length > 1) {
-      // Pass A: Wide neon yellow energy sheath (outer glow)
-      ctx.strokeStyle = 'rgba(255, 235, 0, 0.25)';
-      ctx.lineWidth = b.size;
-      ctx.lineCap = 'square';
-      ctx.lineJoin = 'miter';
-      
-      ctx.beginPath();
-      ctx.moveTo(b.trail[0].x, b.trail[0].y);
-      for (let j = 1; j < b.trail.length; j++) {
-        ctx.lineTo(b.trail[j].x, b.trail[j].y);
-      }
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
+      if (b.isFire) {
+        // Red-Orange fire sheath (outer glow)
+        ctx.strokeStyle = 'rgba(255, 69, 0, 0.35)';
+        ctx.lineWidth = b.size * 1.25;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
 
-      // Pass B: Intense bright gold/yellow envelope (mid glow)
-      ctx.strokeStyle = '#ffcc00';
-      ctx.lineWidth = b.size * 0.6;
-      ctx.beginPath();
-      ctx.moveTo(b.trail[0].x, b.trail[0].y);
-      for (let j = 1; j < b.trail.length; j++) {
-        ctx.lineTo(b.trail[j].x, b.trail[j].y);
-      }
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
 
-      // Pass C: Superheated electric white filament core (inner bullet trail)
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = b.size * 0.25;
-      ctx.beginPath();
-      // Start slightly closer to the tip for a tapering beam effect
-      const startIdx = Math.floor(b.trail.length / 2);
-      ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
-      for (let j = startIdx + 1; j < b.trail.length; j++) {
-        ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        // Intense orange envelope (mid glow)
+        ctx.strokeStyle = '#ff5500';
+        ctx.lineWidth = b.size * 0.75;
+        ctx.beginPath();
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Superheated gold core (inner bullet trail)
+        ctx.strokeStyle = '#ffee00';
+        ctx.lineWidth = b.size * 0.35;
+        ctx.beginPath();
+        const startIdx = Math.floor(b.trail.length / 2);
+        ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
+        for (let j = startIdx + 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      } else {
+        // Pass A: Wide neon yellow energy sheath (outer glow)
+        ctx.strokeStyle = 'rgba(255, 235, 0, 0.25)';
+        ctx.lineWidth = b.size;
+        ctx.lineCap = 'square';
+        ctx.lineJoin = 'miter';
+
+        ctx.beginPath();
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Pass B: Intense bright gold/yellow envelope (mid glow)
+        ctx.strokeStyle = '#ffcc00';
+        ctx.lineWidth = b.size * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Pass C: Superheated electric white filament core (inner bullet trail)
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = b.size * 0.25;
+        ctx.beginPath();
+        const startIdx = Math.floor(b.trail.length / 2);
+        ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
+        for (let j = startIdx + 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
       }
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
     }
 
     // 2. Render bullet main projectile head block
     const half = b.size / 2;
 
-    // Outer solid plasma outline (Vibrant neon yellow)
-    ctx.fillStyle = '#ffee00';
-    ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+    if (b.isFire) {
+      // Outer fiery outline (Vibrant red-orange plasma)
+      ctx.fillStyle = '#ff3c00';
+      ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
 
-    // Inner bright fusing core (White)
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
-    
-    // High-contrast outline border
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+      // Inner molten core (Boiling yellow)
+      ctx.fillStyle = '#ffee00';
+      ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
+
+      // High-contrast outline border (dark fire crimson)
+      ctx.strokeStyle = '#3d0800';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+    } else {
+      // Outer solid plasma outline (Vibrant neon yellow)
+      ctx.fillStyle = '#ffee00';
+      ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+
+      // Inner bright fusing core (White)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
+
+      // High-contrast outline border
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+    }
   });
 }
 
@@ -3021,23 +3503,21 @@ function drawToxicTrails() {
  */
 function drawLightningArcs() {
   ctx.save();
-  ctx.strokeStyle = '#00ffff';
-  ctx.lineWidth = 4;
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
   lightningArcs.forEach(arc => {
-    ctx.globalAlpha = arc.life;
-    ctx.beginPath();
-    ctx.moveTo(arc.x1, arc.y1);
+    const alpha = arc.life;
 
-    // Procedural jagged electric lightning bolt segments
-    const segments = 4;
+    // Pre-calculate jagged segment points so all three glowing passes align perfectly
+    const segments = 5;
+    const points = [{ x: arc.x1, y: arc.y1 }];
+
     for (let s = 1; s < segments; s++) {
       const t = s / segments;
       const px = arc.x1 + (arc.x2 - arc.x1) * t;
       const py = arc.y1 + (arc.y2 - arc.y1) * t;
 
-      // Perpendicular deflection vector
       const perpX = -(arc.y2 - arc.y1);
       const perpY = (arc.x2 - arc.x1);
       const perpLength = Math.sqrt(perpX * perpX + perpY * perpY);
@@ -3045,17 +3525,67 @@ function drawLightningArcs() {
       let ox = 0;
       let oy = 0;
       if (perpLength > 0) {
-        // Jagged deflection magnitude (up to 16px)
-        const offsetAmt = (Math.random() - 0.5) * 16;
+        // Jagged deflection magnitude (22px deflection for dramatic electric shapes)
+        const offsetAmt = (Math.random() - 0.5) * 22;
         ox = (perpX / perpLength) * offsetAmt;
         oy = (perpY / perpLength) * offsetAmt;
       }
-
-      ctx.lineTo(px + ox, py + oy);
+      points.push({ x: px + ox, y: py + oy });
     }
+    points.push({ x: arc.x2, y: arc.y2 });
 
-    ctx.lineTo(arc.x2, arc.y2);
+    // --- Pass A: Outer Neon Blue Glowing Aura (Wide) ---
+    ctx.strokeStyle = 'rgba(0, 136, 255, ' + alpha * 0.28 + ')';
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let p = 1; p < points.length; p++) {
+      ctx.lineTo(points[p].x, points[p].y);
+    }
     ctx.stroke();
+
+    // --- Pass B: Vibrant Electric Cyan Core (Medium) ---
+    ctx.strokeStyle = 'rgba(0, 255, 240, ' + alpha * 0.75 + ')';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let p = 1; p < points.length; p++) {
+      ctx.lineTo(points[p].x, points[p].y);
+    }
+    ctx.stroke();
+
+    // --- Pass C: Superheated Blinding White Filament (Thin Core) ---
+    ctx.strokeStyle = 'rgba(255, 255, 255, ' + alpha * 0.95 + ')';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let p = 1; p < points.length; p++) {
+      ctx.lineTo(points[p].x, points[p].y);
+    }
+    ctx.stroke();
+
+    // --- Pass D: Procedural Crackling Branch Forks ---
+    ctx.strokeStyle = 'rgba(0, 255, 255, ' + alpha * 0.5 + ')';
+    ctx.lineWidth = 1.8;
+    for (let s = 1; s < points.length - 1; s++) {
+      // 35% chance to branch out at intermediate nodes
+      if (Math.random() < 0.35) {
+        const pt = points[s];
+        // Branch deflection
+        const bx = pt.x + (Math.random() - 0.5) * 44;
+        const by = pt.y + (Math.random() - 0.5) * 44;
+
+        ctx.beginPath();
+        ctx.moveTo(pt.x, pt.y);
+        ctx.lineTo(bx, by);
+
+        // Small secondary fork
+        if (Math.random() > 0.5) {
+          ctx.lineTo(bx + (Math.random() - 0.5) * 20, by + (Math.random() - 0.5) * 20);
+        }
+        ctx.stroke();
+      }
+    }
   });
 
   ctx.restore();
@@ -3067,9 +3597,10 @@ function drawLightningArcs() {
 function drawOrbitingDefender() {
   if (player.orbitingDefenderLevel <= 0) return;
 
-  const radius = 45;
-  const size = 12;
+  const radius = 140; // Slower, massive outer orbit perimeter (increased from 80)
+  const size = 68;   // Twice as big sawblades! Made them physically giant sawblades (increased from 34)
   const half = size / 2;
+  const teethCount = 8;
 
   for (let d = 0; d < player.orbitingDefenderLevel; d++) {
     const angleOffset = d * (Math.PI * 2 / player.orbitingDefenderLevel);
@@ -3078,18 +3609,57 @@ function drawOrbitingDefender() {
 
     ctx.save();
     ctx.translate(bladeX, bladeY);
-    ctx.rotate(player.defenderAngle + angleOffset + Math.PI / 4); // spin blade locally
 
-    // Draw glowing orange energy blade square
-    ctx.fillStyle = '#ff7700'; // Rusty orange outer bevel
-    ctx.fillRect(-half, -half, size, size);
+    // High-speed local saw-teeth spinning on center
+    ctx.rotate(gameTick * 0.22 + angleOffset);
 
-    ctx.fillStyle = '#ffee00'; // Hot yellow glowing center core
-    ctx.fillRect(-half + 3, -half + 3, size - 6, size - 6);
+    // 1. Draw outer glowing red-orange heat halo
+    ctx.fillStyle = 'rgba(255, 69, 0, 0.25)';
+    ctx.beginPath();
+    ctx.arc(0, 0, half + 5, 0, Math.PI * 2);
+    ctx.fill();
 
+    // 2. Draw 8 angled saw-teeth (molten steel blades biting the air)
+    ctx.fillStyle = '#ff3c00'; // Molten red-orange edge
+    for (let i = 0; i < teethCount; i++) {
+      const toothAngle = (i * Math.PI * 2 / teethCount);
+      ctx.save();
+      ctx.rotate(toothAngle);
+
+      ctx.beginPath();
+      ctx.moveTo(0, -half * 0.4);
+      ctx.lineTo(half * 0.5, -half * 0.4);
+      ctx.lineTo(0, -half); // sharp outer point
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // 3. Draw middle steel saw body disc
+    ctx.fillStyle = '#ff8800'; // Glowing core orange
+    ctx.beginPath();
+    ctx.arc(0, 0, half * 0.65, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Draw superheated electric white core disc
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, 0, half * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 5. Draw dark center axle/hub
+    ctx.fillStyle = '#22222b';
+    ctx.beginPath();
+    ctx.arc(0, 0, half * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 6. Draw high-contrast black details
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2;
-    ctx.strokeRect(-half, -half, size, size);
+    ctx.beginPath();
+    ctx.arc(0, 0, half * 0.65, 0, Math.PI * 2);
+    ctx.stroke();
 
     ctx.restore();
   }
@@ -3127,7 +3697,7 @@ function drawZombies() {
 
     if (z.type === 'tank') {
       // ==================== HEAVY TANK ZOMBIE SPRITE DESIGN (40px) ====================
-      
+
       // 1. Floor Drop Shadow (larger offset block)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fillRect(-18, -16, 36, 32);
@@ -3181,7 +3751,7 @@ function drawZombies() {
 
     } else if (z.type === 'fast') {
       // ==================== FAST ZOMBIE SPRITE DESIGN (24px) ====================
-      
+
       // 1. Floor Drop Shadow (smaller offset block)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fillRect(-10, -9, 18, 18);
@@ -3289,7 +3859,7 @@ function drawZombies() {
       // 3. Bloated Torso (swollen blistered volatile orange & crimson flesh)
       ctx.fillStyle = '#a61c00'; // Crimson swollen skin base
       ctx.fillRect(-11, -12, 22, 24);
-      
+
       // 4. Glowing Molten Fissures/Blisters (unstable energy)
       ctx.fillStyle = '#ff5100'; // Swollen hot orange core blister
       ctx.fillRect(-5, -9, 12, 18);
@@ -3413,11 +3983,21 @@ function drawGameParticles() {
     // Set particle opacity to fit current lifetime
     ctx.globalAlpha = p.life;
 
+    if (p.type === 'shockwave') {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = p.lineWidth || 3;
+      ctx.beginPath();
+      const currentRadius = p.maxRadius * (1 - p.life);
+      ctx.arc(p.x, p.y, currentRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      return;
+    }
+
     // Calculate shrinking physical dimension based on current lifetime
     const activeSize = Math.max(1, Math.floor(p.size * p.life));
 
     ctx.fillStyle = p.color;
-    
+
     // Draw blood splatters and enemy flesh chunks as circles, others as retro squares
     if (p.color === '#ff1111' || p.color === '#2d8a1e' || p.color === '#8a0000') {
       ctx.beginPath();
@@ -3434,6 +4014,51 @@ function drawGameParticles() {
   });
 
   // Reset globalAlpha to full opacity
+  ctx.globalAlpha = 1.0;
+}
+
+/**
+ * Draws real-time high-fidelity radial gradient fireballs and toxic necro-bomb explosions.
+ */
+function drawExplosions() {
+  explosions.forEach(exp => {
+    const progress = 1 - exp.life; // 0 to 1
+    const currentRadius = exp.radius * progress;
+
+    ctx.save();
+    ctx.globalAlpha = exp.life * 0.88;
+
+    const grad = ctx.createRadialGradient(exp.x, exp.y, currentRadius * 0.05, exp.x, exp.y, currentRadius);
+    if (exp.type === 'necro') {
+      // Legendary Necro-Bomb toxic colors (Hot-white -> neon green -> poison purple -> transparent black)
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.18, 'rgba(57, 255, 20, 0.95)');
+      grad.addColorStop(0.55, 'rgba(176, 38, 255, 0.65)');
+      grad.addColorStop(0.85, 'rgba(100, 10, 180, 0.25)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    } else {
+      // Standard/Exploder Zombie fiery explosion colors (Hot-white -> yellow -> fiery orange -> dark red -> transparent black)
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.15, '#ffee00');
+      grad.addColorStop(0.45, '#ff5500');
+      grad.addColorStop(0.75, '#b00000');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    }
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw the sharp outline shockwave ring
+    ctx.strokeStyle = exp.type === 'necro' ? '#39ff14' : '#ff4500';
+    ctx.lineWidth = Math.max(1, 4 * exp.life);
+    ctx.beginPath();
+    ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  });
   ctx.globalAlpha = 1.0;
 }
 
@@ -3512,7 +4137,7 @@ function generateGroundDetails() {
       detailType = 4; // chemical leak
     }
     const scale = Math.floor(Math.random() * 2) + 2;
-    
+
     // Approximate bounding box of details to prevent overlapping
     let w = 34 + scale * 10;
     let h = 18 + scale * 5;
@@ -3547,7 +4172,7 @@ function generateGroundDetails() {
       for (let j = 0; j < groundDetails.length; j++) {
         const gd = groundDetails[j];
         const dist = Math.hypot(wx - gd.x, wy - gd.y);
-        
+
         // Vents and chemical leaks shouldn't crowd each other
         const minDist = (detailType === 0 || gd.type === 0 || detailType === 4 || gd.type === 4) ? 140 : 60;
         if (dist < minDist) {
@@ -3663,7 +4288,7 @@ function rectsOverlap(a, b) {
 
 function gameOver() {
   gameState.isRunning = false;
-  
+
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
   }
@@ -3691,13 +4316,25 @@ function gameOver() {
 // Keyboard Input Event Listeners
 window.addEventListener('keydown', function(event) {
   const key = event.key.toLowerCase();
+  activeKeys[key] = true;
+
   if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
     keys[key] = true;
+  }
+
+  // Toggle developer cheat panel on simultaneous O + P press
+  if (activeKeys['o'] && activeKeys['p']) {
+    // Reset key states immediately to prevent rapid multiple toggling
+    activeKeys['o'] = false;
+    activeKeys['p'] = false;
+    toggleCheatPanel();
   }
 });
 
 window.addEventListener('keyup', function(event) {
   const key = event.key.toLowerCase();
+  activeKeys[key] = false;
+
   if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
     keys[key] = false;
   }

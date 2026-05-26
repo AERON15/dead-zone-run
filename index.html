@@ -279,6 +279,43 @@
     </div>
   </div>
 
+  <!-- Cheat Panel Modal (Press O + P to toggle) -->
+  <div id="cheat-panel" class="cheat-panel-modal">
+    <div class="cheat-panel-content">
+      <!-- Retro panel corner rivet details -->
+      <div class="rivet top-left" aria-hidden="true"></div>
+      <div class="rivet top-right" aria-hidden="true"></div>
+      <div class="rivet bottom-left" aria-hidden="true"></div>
+      <div class="rivet bottom-right" aria-hidden="true"></div>
+
+      <div class="cheat-header">
+        <h2 class="cheat-title">DEVELOPER CHEAT PANEL</h2>
+        <button id="cheat-close-btn" class="cheat-close-btn" aria-label="Close Cheat Panel">&times;</button>
+      </div>
+
+      <p class="cheat-desc">Select any upgrade below to apply it instantly for testing. Press <strong>O + P</strong> again to close.</p>
+
+      <div class="cheat-sections">
+        <div class="cheat-column">
+          <h3 class="rarity-title common-text">COMMON</h3>
+          <div id="cheat-common-list" class="cheat-list"></div>
+        </div>
+        <div class="cheat-column">
+          <h3 class="rarity-title rare-text">RARE</h3>
+          <div id="cheat-rare-list" class="cheat-list"></div>
+        </div>
+        <div class="cheat-column">
+          <h3 class="rarity-title epic-text">EPIC</h3>
+          <div id="cheat-epic-list" class="cheat-list"></div>
+        </div>
+        <div class="cheat-column">
+          <h3 class="rarity-title legendary-text">LEGENDARY</h3>
+          <div id="cheat-legendary-list" class="cheat-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Supabase CDN (provides the global "supabase" object) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
