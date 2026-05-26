@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Dead Zone Run - A top-down zombie roguelike survival game. Survive the hordes!">
+  <title>Dead Zone Run</title>
+
+  <!-- Google Fonts: Black Ops One for stencil titles, Share Tech Mono for tactical UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+  <!-- Main stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Retro CRT Scanline Screen Overlay -->
+  <div class="crt-overlay" aria-hidden="true"></div>
+
+  <!-- Start Screen -->
+  <!-- This is the first screen the player sees -->
+  <div id="start-screen" class="screen active">
+
+    <!-- Decorative menu scene: underground laboratory environment -->
+    <div class="menu-scene" aria-hidden="true">
+      <!-- Full-width wall structure -->
+      <div class="lab-wall"></div>
+
+      <!-- Horizontal pipe conduits -->
+      <div class="lab-pipe pipe-top"></div>
+      <div class="lab-pipe pipe-bottom"></div>
+
+      <!-- Left wall equipment -->
+      <div class="lab-panel panel-far-left"></div>
+      <div class="lab-panel panel-left"></div>
+
+      <!-- Right wall equipment -->
+      <div class="lab-panel panel-far-right"></div>
+      <div class="lab-panel panel-right"></div>
+
+      <!-- Center containment viewport -->
+      <div class="lab-viewport"></div>
+
+      <!-- Floor section with tiles -->
+      <div class="lab-floor"></div>
+
+      <!-- Floor drainage grate -->
+      <div class="lab-grate"></div>
+
+      <!-- Ambient green floor spills -->
+      <div class="lab-spill spill-left"></div>
+      <div class="lab-spill spill-center"></div>
+      <div class="lab-spill spill-right"></div>
+
+      <!-- Ceiling light strips -->
+      <div class="lab-ceiling-light light-left"></div>
+      <div class="lab-ceiling-light light-right"></div>
+    </div>
+
+    <!-- Decorative particles floating in the background -->
+    <div class="particles" aria-hidden="true">
+      <span class="particle"></span>
+      <span class="particle"></span>
+      <span class="particle"></span>
+      <span class="particle"></span>
+      <span class="particle"></span>
+      <span class="particle"></span>
+      <span class="particle"></span>
+      <span class="particle"></span>
+    </div>
+
+    <!-- Main Game Menu Container -->
+    <div class="menu-container">
+      <!-- Retro panel corner rivet details -->
+      <div class="rivet top-left" aria-hidden="true"></div>
+      <div class="rivet top-right" aria-hidden="true"></div>
+      <div class="rivet bottom-left" aria-hidden="true"></div>
+      <div class="rivet bottom-right" aria-hidden="true"></div>
+
+      <!-- Hazard Stripes Banner for Zombie Theme -->
+      <div class="hazard-bar" aria-hidden="true"></div>
+
+      <!-- Game title in block pixel-art styling -->
+      <h1 id="game-title" class="title">
+        <span class="title-dead">DEAD</span><br>
+        <span class="title-zone">ZONE</span>
+        <span class="title-run">RUN</span>
+      </h1>
+      <p class="tagline">Survive the horde. How long can you last?</p>
+
+      <!-- Player name input -->
+      <div class="input-group">
+        <label for="player-name" class="input-label">Enter Your Name, Survivor</label>
+        <input
+          type="text"
+          id="player-name"
+          class="name-input"
+          placeholder="Anonymous Survivor"
+          maxlength="20"
+          autocomplete="off"
+        >
+      </div>
+
+      <!-- Menu buttons -->
+      <div class="menu-buttons">
+        <button id="start-btn" class="btn btn-primary">
+          Start Game
+        </button>
+        <button id="leaderboard-btn" class="btn btn-secondary">
+          Leaderboard
+        </button>
+      </div>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+
+      <!-- Footer credit -->
+      <p class="footer-text">A Web Development Final Project</p>
+    </div>
+  </div>
+
+  <!-- Game Screen -->
+  <!-- Hidden by default. Shown when the player clicks Start Game -->
+  <div id="game-screen" class="screen">
+
+    <!-- HUD (Heads-Up Display) shows player stats during gameplay -->
+    <div id="hud" class="hud">
+      <div class="hud-item" id="hud-health">
+        <div class="hud-topline">
+          <span class="hud-label">Health</span>
+          <span class="hud-value" id="health-value">100</span>
+        </div>
+        <div class="health-meter" aria-hidden="true">
+          <span id="health-fill"></span>
+        </div>
+      </div>
+      <div class="hud-item" id="hud-score">
+        <span class="hud-label">Score</span>
+        <span class="hud-value" id="score-value">0</span>
+      </div>
+      <div class="hud-item" id="hud-wave">
+        <span class="hud-label">Wave</span>
+        <span class="hud-value" id="wave-value">1</span>
+      </div>
+    </div>
+
+    <!-- The game canvas where everything is drawn -->
+    <canvas id="game-canvas"></canvas>
+  </div>
+
+  <!-- Game Over Screen -->
+  <!-- Hidden by default. Shown when the player dies -->
+  <div id="gameover-screen" class="screen">
+    <div class="menu-container death-container">
+      <!-- Retro panel corner rivet details -->
+      <div class="rivet top-left" aria-hidden="true"></div>
+      <div class="rivet top-right" aria-hidden="true"></div>
+      <div class="rivet bottom-left" aria-hidden="true"></div>
+      <div class="rivet bottom-right" aria-hidden="true"></div>
+
+      <div class="blood-hazard-bar" aria-hidden="true"></div>
+
+      <h1 class="title gameover-title">YOU DIED</h1>
+
+      <!-- Final stats -->
+      <div class="gameover-stats">
+        <div class="stat-row">
+          <span class="stat-label">Survivor</span>
+          <span class="stat-value" id="final-name">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Zombies Slain</span>
+          <span class="stat-value" id="final-kills">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Score</span>
+          <span class="stat-value" id="final-score">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Wave Reached</span>
+          <span class="stat-value" id="final-wave">1</span>
+        </div>
+      </div>
+
+      <!-- Game over buttons -->
+      <div class="menu-buttons">
+        <button id="restart-btn" class="btn btn-primary">
+          Try Again
+        </button>
+        <button id="menu-btn" class="btn btn-secondary">
+          Main Menu
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Wave Cleared Screen -->
+  <!-- Hidden by default. Shown when the player clears a wave -->
+  <div id="wavecleared-screen" class="screen">
+    <div class="menu-container">
+      <!-- Retro panel corner rivet details -->
+      <div class="rivet top-left" aria-hidden="true"></div>
+      <div class="rivet top-right" aria-hidden="true"></div>
+      <div class="rivet bottom-left" aria-hidden="true"></div>
+      <div class="rivet bottom-right" aria-hidden="true"></div>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+
+      <h1 class="title wave-cleared-title">WAVE CLEARED</h1>
+      <p class="tagline">Area temporarily secured.</p>
+
+      <!-- Cleared Wave stats -->
+      <div class="gameover-stats">
+        <div class="stat-row">
+          <span class="stat-label">Wave Completed</span>
+          <span class="stat-value" id="cleared-wave-num">1</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Next Horde Size</span>
+          <span class="stat-value" id="next-wave-zombies">7</span>
+        </div>
+      </div>
+
+      <!-- Choose Upgrade Heading -->
+      <h2 class="upgrade-subtitle">CHOOSE AN UPGRADE</h2>
+
+      <!-- Upgrade options dynamic cards -->
+      <div id="upgrade-options" class="upgrade-options">
+        <!-- Cards loaded dynamically via javascript -->
+      </div>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <!-- Leaderboard Screen -->
+  <!-- Hidden by default. Shown when the player clicks Leaderboard -->
+  <div id="leaderboard-screen" class="screen">
+    <div class="menu-container leaderboard-container">
+      <!-- Retro panel corner rivet details -->
+      <div class="rivet top-left" aria-hidden="true"></div>
+      <div class="rivet top-right" aria-hidden="true"></div>
+      <div class="rivet bottom-left" aria-hidden="true"></div>
+      <div class="rivet bottom-right" aria-hidden="true"></div>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+
+      <h1 class="title leaderboard-title">LEADERBOARD</h1>
+      <p class="tagline">Top survivors of the dead zone.</p>
+
+      <!-- Leaderboard Table -->
+      <div class="leaderboard-table-wrap">
+        <table class="leaderboard-table" id="leaderboard-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Player</th>
+              <th>Score</th>
+              <th>Wave</th>
+              <th>Kills</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-body">
+            <!-- Rows populated dynamically via javascript -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Back button -->
+      <div class="menu-buttons">
+        <button id="leaderboard-back-btn" class="btn btn-secondary">
+          Back to Menu
+        </button>
+      </div>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <!-- Supabase CDN (provides the global "supabase" object) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Database integration (Supabase client, saveScore, loadLeaderboard) -->
+  <script src="database.js"></script>
+
+  <!-- Main game script -->
+  <script src="script.js"></script>
+</body>
+</html>
