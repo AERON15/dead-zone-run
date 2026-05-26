@@ -63,6 +63,7 @@ let waveZombiesTotal = 5;     // Total zombies to defeat this wave
 let waveZombiesSpawned = 0;   // Zombies spawned so far
 let isWaveIntermission = false; // True when showing wave completed screen
 let waveKillCount = 0;         // Kills made in the current wave (used by Slow Start)
+let waveStartTick = 0;         // Game tick when the current wave began
 
 // Roguelike Upgrades Selection Tracker
 let upgradesChosen = [];
@@ -815,7 +816,7 @@ const UPGRADES_REGISTRY = [
     id: 'slowstart',
     name: 'Slow Start',
     icon: '[RAMP]',
-    description: 'Begin each wave at -50% attack speed. Speed ramps up linearly as enemies die, reaching 2.2x at wave end. Stacks raise the cap to 2.8x.',
+    description: 'Begin each wave at -50% attack speed. Speed ramps up linearly over 10 seconds to reach 2.5x. Stacks raise the cap to 3x.',
     rarity: 'legendary',
     apply: () => {
       player.slowStartLevel = Math.min(3, player.slowStartLevel + 1);
@@ -1435,6 +1436,7 @@ function startGame() {
   upgradesChosen = [];
   gameTick = 0;
   waveKillCount = 0;
+  waveStartTick = 0;
 
   // Clear combat arrays
   bullets = [];
@@ -2800,6 +2802,7 @@ function renderUpgradeChoices() {
       gameState.wave += 1;
       waveZombiesSpawned = 0;
       waveKillCount = 0;
+      waveStartTick = gameTick;
       activeBoss = null;
       waveZombiesTotal = isBossWave(gameState.wave)
         ? Math.floor(getWaveZombieTotal(gameState.wave) * 0.4)
@@ -3629,13 +3632,13 @@ function shootWeapon() {
     currentFireRate *= 0.70; // +30% fire rate reduction (faster firing)
   }
 
-  // Slow Start ramp: starts at 0.5x speed, scales linearly to maxMult speed (2.2x–2.8x) as kills accumulate this wave
+  // Slow Start ramp: starts at 0.5x speed, scales linearly to maxMult speed (2.5x–3x) over 10 seconds (600 ticks) from wave start
   if (player.slowStartLevel > 0) {
-    const maxMult = Math.min(2.8, 1.9 + player.slowStartLevel * 0.3); // L1=2.2x, L2=2.5x, L3=2.8x
-    const progress = waveZombiesTotal > 0 ? Math.min(1, waveKillCount / waveZombiesTotal) : 0;
+    const maxMult = Math.min(3.0, 2.25 + player.slowStartLevel * 0.25); // L1=2.5x, L2=2.75x, L3=3.0x
+    const progress = Math.min(1, (gameTick - waveStartTick) / 600); // 10 seconds at 60fps = 600 ticks
     const startCd = currentFireRate * 2.0;
     const endCd = currentFireRate / maxMult;
-    currentFireRate = Math.max(150, startCd + (endCd - startCd) * progress);
+    currentFireRate = Math.max(50, startCd + (endCd - startCd) * progress);
   }
 
   // Bullet spawn rate cooldown check
