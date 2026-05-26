@@ -120,7 +120,8 @@ let player = {
   toxicTrailLevel: 0,
   splinterShotLevel: 0,
   steadyAimLevel: 0,
-  dodgeChance: 0.0
+  dodgeChance: 0.0,
+  waveHealPercentage: 0.15
 };
 
 // Keyboard Input Tracker
@@ -175,12 +176,12 @@ const UPGRADES_REGISTRY = [
   },
   {
     id: 'heal',
-    name: 'Heal',
+    name: 'Heal Boost',
     icon: '[HEAL]',
-    description: 'Restore 30 health (does not exceed max HP)',
+    description: 'Increases natural wave completion heal by +5% of max HP (Stackable, capped at 35% max)',
     rarity: 'common',
     apply: () => {
-      player.health = Math.min(player.maxHealth, player.health + 30);
+      player.waveHealPercentage = Math.min(0.35, player.waveHealPercentage + 0.05);
     }
   },
   {
@@ -608,6 +609,7 @@ function startGame() {
   player.splinterShotLevel = 0;
   player.steadyAimLevel = 0;
   player.dodgeChance = 0.0;
+  player.waveHealPercentage = 0.15;
 
   // Clear chosen upgrades
   upgradesChosen = [];
@@ -644,8 +646,8 @@ function startGame() {
   mouse.isDown = false;
 
   // Generate static details distributed throughout the entire world bounds
-  generateGroundDetails();
   generateMapObstacles();
+  generateGroundDetails();
 
   // Update the HUD to match the reset state
   updateHUD();
@@ -811,6 +813,16 @@ function update() {
   // 3. Update bullets coordinate shifts and trail history
   for (let i = bullets.length - 1; i >= 0; i--) {
     let b = bullets[i];
+
+    // Decrement and check bullet lifetime to balance bouncing bullets
+    if (b.life !== undefined) {
+      b.life -= 1;
+      if (b.life <= 0) {
+        bullets.splice(i, 1);
+        continue;
+      }
+    }
+
     const prevX = b.x;
     const prevY = b.y;
 
@@ -1400,6 +1412,12 @@ function renderUpgradeChoices() {
       // 1. Apply the upgrade
       upgrade.apply();
 
+      // 1.5. Apply natural wave completion heal (base 15% + upgrades, capped at 35% of max HP)
+      const healPercent = player.waveHealPercentage || 0.15;
+      const healAmount = Math.round(player.maxHealth * healPercent);
+      player.health = Math.min(player.maxHealth, player.health + healAmount);
+      console.log(`Wave completion heal applied: +${healAmount} HP (${Math.round(healPercent * 100)}% of Max HP)`);
+
       // 2. Save chosen upgrade name in upgradesChosen
       upgradesChosen.push(upgrade.name);
       console.log('Chosen Upgrade Applied:', upgrade.name, 'Upgrades List:', upgradesChosen);
@@ -1793,8 +1811,7 @@ function damagePlayer(rawAmount) {
 
   // 3. Deal damage
   player.health = Math.max(0, player.health - actualDamage);
-  spawnPlayerBloodSpray(player.x, player.y);
-  addFloorBloodStain(player.x, player.y, 20, 0.32);
+  // (Player blood spray and floor stains removed to clean up visual clutter)
   startScreenShake(7, 12);
   updateHUD();
 
@@ -1839,7 +1856,8 @@ function spawnSplinterShrapnel(x, y, vx, vy, parentDamage) {
       pierceLeft: 1, // pierces 1 zombie then dies
       bounceLeft: 0, // shrapnel does not bounce to avoid infinite recursion
       hitZombies: [],
-      isShrapnel: true
+      isShrapnel: true,
+      life: 45 // Shrapnel expires in 45 frames (~0.75 seconds)
     });
   });
 }
@@ -1892,7 +1910,8 @@ function shootWeapon() {
           pierceLeft: player.bulletPierceLimit,
           bounceLeft: player.bounceLimit, // Bouncing Casings Limit
           hitZombies: [],
-          isShrapnel: false
+          isShrapnel: false,
+          life: 150 // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
         });
 
         // Spawn barrel flash at each starting muzzle point offset
@@ -1917,7 +1936,8 @@ function shootWeapon() {
           pierceLeft: player.bulletPierceLimit,
           bounceLeft: player.bounceLimit,
           hitZombies: [],
-          isShrapnel: false
+          isShrapnel: false,
+          life: 150 // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
         });
 
         // Spawn barrel flash at each muzzle direction
@@ -2065,7 +2085,7 @@ function spawnZombieDeathExplosion(zx, zy) {
       size: Math.floor(Math.random() * 5) + 4,
       color: Math.random() > 0.35 ? '#2d8a1e' : '#8a0000', // Rotten flesh green or deep crimson blood
       life: 1.0,
-      decay: Math.random() * 0.06 + 0.04
+      decay: Math.random() * 0.15 + 0.10 // Green blood and chunks fade much faster now
     });
   }
 }
@@ -2230,7 +2250,7 @@ function addFloorBloodStain(x, y, radius, alpha) {
 }
 
 function addFloorChemicalStain(x, y, radius, alpha) {
-  addFloorStain('chemical', x, y, radius, alpha, 0.00018);
+  addFloorStain('chemical', x, y, radius, alpha, 0.0035); // Expire much faster (about 20x faster decay rate)
 }
 
 function addFloorScorch(x, y, radius) {
@@ -2625,7 +2645,13 @@ function drawFloorStains() {
     ctx.save();
     ctx.translate(stain.x, stain.y);
     ctx.rotate(stain.angle);
-    ctx.scale(1, stain.squash);
+    
+    // For chemical stains, draw a circle (do not squash)
+    if (stain.type === 'chemical') {
+      ctx.scale(1, 1.0);
+    } else {
+      ctx.scale(1, stain.squash);
+    }
 
     if (stain.type === 'blood') {
       ctx.fillStyle = 'rgba(92, 6, 6, ' + alpha + ')';
@@ -2636,7 +2662,11 @@ function drawFloorStains() {
     }
 
     ctx.beginPath();
-    ctx.ellipse(0, 0, stain.radius, stain.radius * 0.55, 0, 0, Math.PI * 2);
+    if (stain.type === 'chemical') {
+      ctx.arc(0, 0, stain.radius, 0, Math.PI * 2);
+    } else {
+      ctx.ellipse(0, 0, stain.radius, stain.radius * 0.55, 0, 0, Math.PI * 2);
+    }
     ctx.fill();
 
     if (stain.type === 'blood') {
@@ -3387,12 +3417,20 @@ function drawGameParticles() {
     const activeSize = Math.max(1, Math.floor(p.size * p.life));
 
     ctx.fillStyle = p.color;
-    ctx.fillRect(
-      Math.floor(p.x - activeSize / 2),
-      Math.floor(p.y - activeSize / 2),
-      activeSize,
-      activeSize
-    );
+    
+    // Draw blood splatters and enemy flesh chunks as circles, others as retro squares
+    if (p.color === '#ff1111' || p.color === '#2d8a1e' || p.color === '#8a0000') {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, activeSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(
+        Math.floor(p.x - activeSize / 2),
+        Math.floor(p.y - activeSize / 2),
+        activeSize,
+        activeSize
+      );
+    }
   });
 
   // Reset globalAlpha to full opacity
@@ -3451,12 +3489,15 @@ function updateHUD() {
 
 // Ground Details Generation
 // Generates procedural coordinates distributed throughout the extensive 2500x2500 world space.
+// Keeps items beautifully spaced and checks for obstacles overlap so things are never cluttered.
 
 function generateGroundDetails() {
   groundDetails = [];
-  const numDetails = 170;
+  const numDetails = 140; // slightly reduced count since they don't stack up anymore
 
-  for (let i = 0; i < numDetails; i++) {
+  let attempts = 0;
+  while (groundDetails.length < numDetails && attempts < 1500) {
+    attempts++;
     const roll = Math.random();
     let detailType = 0;
     if (roll < 0.26) {
@@ -3470,18 +3511,62 @@ function generateGroundDetails() {
     } else {
       detailType = 4; // chemical leak
     }
-    const wx = Math.random() * world.width;
-    const wy = Math.random() * world.height;
     const scale = Math.floor(Math.random() * 2) + 2;
     
-    groundDetails.push({
-      type: detailType,
-      x: wx,
-      y: wy,
-      size: scale,
-      angle: Math.random() * Math.PI,
-      color: Math.random() > 0.5 ? 'rgba(57, 255, 20, 0.34)' : 'rgba(196, 138, 26, 0.28)'
-    });
+    // Approximate bounding box of details to prevent overlapping
+    let w = 34 + scale * 10;
+    let h = 18 + scale * 5;
+    if (detailType === 1) { w = 36 * scale; h = 12 * scale; }
+    else if (detailType === 2) { w = 24; h = 24; }
+    else if (detailType === 3) { w = 20 + scale * 6; h = 14 + scale * 4; }
+    else if (detailType === 4) { w = 24 * scale; h = 10 * scale; }
+
+    // Bounded coordinates in world dimensions (2500x2500)
+    const wx = Math.random() * (world.width - w - 80) + 40;
+    const wy = Math.random() * (world.height - h - 80) + 40;
+
+    let tooClose = false;
+
+    // Check overlap with solid obstacles (we want ground details to be clear of solid props)
+    const padObstacle = 20;
+    const candidateRect = {
+      x: wx - padObstacle,
+      y: wy - padObstacle,
+      width: w + padObstacle * 2,
+      height: h + padObstacle * 2
+    };
+    for (let j = 0; j < obstacles.length; j++) {
+      if (rectsOverlap(candidateRect, obstacles[j])) {
+        tooClose = true;
+        break;
+      }
+    }
+
+    // Check overlap with other ground details to prevent "stacking vents"
+    if (!tooClose) {
+      for (let j = 0; j < groundDetails.length; j++) {
+        const gd = groundDetails[j];
+        const dist = Math.hypot(wx - gd.x, wy - gd.y);
+        
+        // Vents and chemical leaks shouldn't crowd each other
+        const minDist = (detailType === 0 || gd.type === 0 || detailType === 4 || gd.type === 4) ? 140 : 60;
+        if (dist < minDist) {
+          tooClose = true;
+          break;
+        }
+      }
+    }
+
+    if (!tooClose) {
+      groundDetails.push({
+        type: detailType,
+        x: wx,
+        y: wy,
+        size: scale,
+        angle: Math.random() * Math.PI,
+        color: Math.random() > 0.5 ? 'rgba(57, 255, 20, 0.34)' : 'rgba(196, 138, 26, 0.28)'
+      });
+    }
   }
 }
 
@@ -3546,7 +3631,7 @@ function canPlaceObstacle(x, y, width, height) {
     return false;
   }
 
-  const padding = 70;
+  const padding = 110; // Spreads out obstacles beautifully for clean paths and perfect bouncing bullet setups
   const candidate = {
     x: x - padding,
     y: y - padding,
