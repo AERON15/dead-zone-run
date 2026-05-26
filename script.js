@@ -58,6 +58,7 @@ let gameState = {
 let waveZombiesTotal = 5;     // Total zombies to defeat this wave
 let waveZombiesSpawned = 0;   // Zombies spawned so far
 let isWaveIntermission = false; // True when showing wave completed screen
+let waveKillCount = 0;         // Kills made in the current wave (used by Slow Start)
 
 // Roguelike Upgrades Selection Tracker
 let upgradesChosen = [];
@@ -176,10 +177,10 @@ const UPGRADES_REGISTRY = [
     id: 'damage',
     name: 'Damage Up',
     icon: '[DMG]',
-    description: 'Increase bullet damage by 4 (Capped at +100 max)',
+    description: 'Increase bullet damage by 5 (Capped at +100 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletDamage = Math.min(100, player.bulletDamage + 4);
+      player.bulletDamage = Math.min(100, player.bulletDamage + 5);
     }
   },
   {
@@ -217,10 +218,10 @@ const UPGRADES_REGISTRY = [
     id: 'bulletspeed',
     name: 'Bullet Speed Up',
     icon: '[AMMO]',
-    description: 'Increase bullet speed by 0.30 (Capped at 20 max)',
+    description: 'Increase bullet speed by 0.50 (Capped at 20 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 0.30)).toFixed(2));
+      player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 0.50)).toFixed(2));
     }
   },
   {
@@ -247,10 +248,10 @@ const UPGRADES_REGISTRY = [
     id: 'giantbullets',
     name: 'Giant Bullets',
     icon: '[SIZE]',
-    description: 'Increases physical size and collision hitbox of bullets by 2% (Stackable, capped at +100% size max)',
+    description: 'Increases physical size and collision hitbox of bullets by 20% (Stackable, capped at +120% size max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSizeModifier = Number((Math.min(1.0, player.bulletSizeModifier + 0.02)).toFixed(2));
+      player.bulletSizeModifier = Number((Math.min(1.2, player.bulletSizeModifier + 0.20)).toFixed(2));
     }
   },
   {
@@ -279,20 +280,20 @@ const UPGRADES_REGISTRY = [
     id: 'lifesteal',
     name: 'Lifesteal',
     icon: '[VAMP]',
-    description: 'Heal 0.10 HP after killing a zombie (Capped at 5 HP max)',
+    description: 'Heal 0.25 HP after killing a zombie (Capped at 5 HP max)',
     rarity: 'rare',
     apply: () => {
-      player.lifestealAmount = Number((Math.min(5.0, player.lifestealAmount + 0.10)).toFixed(2));
+      player.lifestealAmount = Number((Math.min(5.0, player.lifestealAmount + 0.25)).toFixed(2));
     }
   },
   {
     id: 'knockbackrounds',
     name: 'Knockback Rounds',
     icon: '[PUSH]',
-    description: 'Increases pushback distance on hit by 2% (Stackable, capped at +150% max pushback)',
+    description: 'Increases pushback distance on hit by 10% (Stackable, capped at +150% max pushback)',
     rarity: 'rare',
     apply: () => {
-      player.knockbackModifier = Number((Math.min(1.5, player.knockbackModifier + 0.02)).toFixed(2));
+      player.knockbackModifier = Number((Math.min(1.5, player.knockbackModifier + 0.10)).toFixed(2));
     }
   },
   {
@@ -351,7 +352,7 @@ const UPGRADES_REGISTRY = [
     id: 'doubleshot',
     name: 'Double Shot',
     icon: '[TWIN]',
-    description: 'Adds +1 bullet! Shoots parallel side-by-side; switches to a narrow fan spray at 4+ bullets.',
+    description: 'Adds +1 bullet! But all bullets deal -45% damage. Shoots parallel side-by-side; switches to narrow fan at 4+ bullets.',
     rarity: 'epic',
     apply: () => {
       player.spreadShotCount += 1;
@@ -371,7 +372,7 @@ const UPGRADES_REGISTRY = [
     id: 'burn',
     name: 'Burn Bullet',
     icon: '[FIRE]',
-    description: 'Bullets gain +5% chance to become fire rounds that burn zombies (Capped at 30%)',
+    description: 'Bullets gain +5% chance to become fire rounds that burn zombies (Capped at 30%). First pick grants a permanent +10% damage boost.',
     rarity: 'epic',
     apply: () => {
       player.burnLevel = Math.min(6, player.burnLevel + 1);
@@ -525,6 +526,16 @@ const UPGRADES_REGISTRY = [
     apply: () => {
       player.killFrenzyLevel = Math.min(6, player.killFrenzyLevel + 1);
     }
+  },
+  {
+    id: 'slowstart',
+    name: 'Slow Start',
+    icon: '[RAMP]',
+    description: 'Begin each wave at -50% attack speed. Speed ramps up as enemies die, reaching 3x at wave end. Stacks raise the cap to 4x.',
+    rarity: 'legendary',
+    apply: () => {
+      player.slowStartLevel = Math.min(3, player.slowStartLevel + 1);
+    }
   }
 ];
 
@@ -625,6 +636,15 @@ function isBossWave(wave) {
 
 // Procedural ground features array
 let groundDetails = [];
+
+// Offscreen canvas for the static arena floor (pre-rendered once per game start)
+let floorCanvas = null;
+let floorCtx   = null;
+
+// Cached vignette gradient – rebuilt only when canvas resizes
+let cachedVignette  = null;
+let vignetteW = 0;
+let vignetteH = 0;
 
 // Solid map props that bullets can bounce from and characters cannot pass through
 let obstacles = [];
@@ -786,8 +806,9 @@ function bindCheatPanelQuickControls() {
       ? Math.floor(getWaveZombieTotal(gameState.wave) * 0.4)
       : getWaveZombieTotal(gameState.wave);
     waveZombiesSpawned = 0;
+    waveKillCount = 0;
     activeBoss = null;
-    
+
     // Clear currently active entities on the board
     zombies = [];
     enemyProjectiles = [];
@@ -926,7 +947,7 @@ function spawnSpecificZombie(type) {
     spitter: { size: 38, health: 25, speed: 0.7, damage: 10, score: 25, attackCooldown: 2000 },
     necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 },
     exploder: { size: 42, health: 15, speed: 1.45, damage: 45, score: 25, attackCooldown: 1000 },
-    rusher: { size: 46, health: 45, speed: 1.3, damage: 18, score: 40, attackCooldown: 1000 }
+    rusher: { size: 46, health: 45, speed: 1.55, damage: 18, score: 40, attackCooldown: 1000 }
   };
 
   const config = typesConfig[type] || typesConfig.normal;
@@ -1124,10 +1145,12 @@ function startGame() {
   player.killFrenzyLevel = 0;
   player.killFrenzyHistory = [];
   player.killFrenzyTimer = 0;
+  player.slowStartLevel = 0;
 
   // Clear chosen upgrades
   upgradesChosen = [];
   gameTick = 0;
+  waveKillCount = 0;
 
   // Clear combat arrays
   bullets = [];
@@ -1167,6 +1190,8 @@ function startGame() {
   // Generate static details distributed throughout the entire world bounds
   generateMapObstacles();
   generateGroundDetails();
+  buildStaticFloor();   // Pre-render static floor to offscreen canvas
+  cachedVignette = null; // Invalidate vignette cache on new game
 
   // Update the HUD to match the reset state
   updateHUD();
@@ -1476,7 +1501,7 @@ function update() {
 
     // Log current location to trails array before moving
     b.trail.push({ x: b.x, y: b.y });
-    if (b.trail.length > 10) {
+    if (b.trail.length > 6) {
       b.trail.shift(); // Keep trail length capped for longer lasers
     }
 
@@ -1667,7 +1692,8 @@ function update() {
 
       if (distSq < rangeSum * rangeSum) {
         z.isOnToxicTrail = true;
-        z.health -= (3 / 60) * trail.level; // Minor DoT: 3 HP/sec per stack level
+        z.health -= (10 / 60) * trail.level; // DoT: 10 HP/sec per stack level
+        z.flashTicks = Math.max(z.flashTicks || 0, 2); // brief green flash to confirm damage
 
         // Spawn occasional green bubbles
         if (Math.random() < 0.05) {
@@ -2108,10 +2134,11 @@ function update() {
       if (!z.selfDetonated) {
         gameState.score += z.scoreValue;
         gameState.kills += 1;
+        waveKillCount += 1;
 
         // Lifesteal heal logic
         if (player.lifestealAmount > 0) {
-          player.health = Math.min(player.maxHealth, player.health + player.lifestealAmount);
+          player.health = Math.round(Math.min(player.maxHealth, player.health + player.lifestealAmount) * 100) / 100;
         }
 
         // Necro-Bomb triggering (Legendary upgrade)
@@ -2276,9 +2303,9 @@ function update() {
     }
   }
 
-  // Cap active particles to prevent performance degradation on high density swarms
-  if (gameParticles.length > 400) {
-    gameParticles.splice(0, gameParticles.length - 400);
+  // Cap active particles to keep frame time low on all devices
+  if (gameParticles.length > 200) {
+    gameParticles.splice(0, gameParticles.length - 200);
   }
 
   // 7. Update pixel particles (muzzle flashes, blood, sparks)
@@ -2457,6 +2484,7 @@ function renderUpgradeChoices() {
       // 3. Increment wave and set next wave stats
       gameState.wave += 1;
       waveZombiesSpawned = 0;
+      waveKillCount = 0;
       activeBoss = null;
       waveZombiesTotal = isBossWave(gameState.wave)
         ? Math.floor(getWaveZombieTotal(gameState.wave) * 0.4)
@@ -2604,7 +2632,7 @@ function spawnZombie() {
       size: 46,
       health: 45,
       maxHealth: 45,
-      speed: 1.3,
+      speed: 1.55,
       damage: 18,
       scoreValue: 40,
       lastAttackTime: 0,
@@ -2643,7 +2671,7 @@ function spawnPatientZero() {
 
   // Scale boss HP with wave and previous boss defeats (+10% HP per defeated boss)
   const bossHealthScale = 1 + bossesDefeated * 0.10;
-  const baseHP = Math.ceil((600 + gameState.wave * 60) * bossHealthScale);
+  const baseHP = Math.ceil((1000 + gameState.wave * 60) * bossHealthScale);
 
   const boss = {
     type: 'patient_zero',
@@ -2833,7 +2861,7 @@ function getSummonedZombieConfig(type) {
     tank: { size: 54, health: 60, speed: 0.5, damage: 20, score: 30, attackCooldown: 1200 },
     spitter: { size: 38, health: 25, speed: 0.7, damage: 10, score: 25, attackCooldown: 2000 },
     necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 },
-    rusher: { size: 46, health: 45, speed: 1.3, damage: 18, score: 40, attackCooldown: 1000 }
+    rusher: { size: 46, health: 45, speed: 1.55, damage: 18, score: 40, attackCooldown: 1000 }
   };
 
   return configMap[type] || configMap.normal;
@@ -3284,6 +3312,14 @@ function shootWeapon() {
     currentFireRate *= 0.85; // +15% fire rate reduction (faster firing)
   }
 
+  // Slow Start ramp: starts at 0.5x speed, scales to 3x–4x as kills accumulate this wave
+  if (player.slowStartLevel > 0) {
+    const maxMult  = Math.min(4.0, 2.5 + player.slowStartLevel * 0.5); // L1=3x, L2=3.5x, L3=4x
+    const progress = waveZombiesTotal > 0 ? Math.min(1, waveKillCount / waveZombiesTotal) : 0;
+    const speedMult = 0.5 + (maxMult - 0.5) * progress; // lerp 0.5x → maxMult
+    currentFireRate = Math.max(150, currentFireRate / speedMult);
+  }
+
   // Bullet spawn rate cooldown check
   if (now - player.lastShotTime >= currentFireRate) {
     // 1. Calculate angle from player's screen position to mouse cursor screen coordinates
@@ -3312,6 +3348,14 @@ function shootWeapon() {
     let finalDamage = player.bulletDamage;
     if (!isPlayerMoving && player.steadyAimLevel > 0) {
       finalDamage += Math.min(50, player.steadyAimLevel * 2); // Capped at +50 damage
+    }
+    // Double Shot penalty: -45% damage when extra bullets are active
+    if (player.spreadShotCount > 0) {
+      finalDamage = Math.max(1, Math.round(finalDamage * 0.55));
+    }
+    // Burn Bullet one-time +10% damage boost (applied whenever burnLevel > 0)
+    if (player.burnLevel > 0) {
+      finalDamage = Math.round(finalDamage * 1.10);
     }
     let finalSize = 10 * (1 + player.bulletSizeModifier); // Giant Bullets modifier
 
@@ -3642,15 +3686,32 @@ function triggerExplosion(ex, ey, maxDamage) {
     });
   }
 
-  // Damage player if within upgraded 140px radius
+  const explosionRadius = 140;
+
+  // Damage zombies within explosion radius
+  for (let i = zombies.length - 1; i >= 0; i--) {
+    const z = zombies[i];
+    const zDx = z.x - ex;
+    const zDy = z.y - ey;
+    const zDist = Math.sqrt(zDx * zDx + zDy * zDy);
+    if (zDist < explosionRadius) {
+      const factor = (explosionRadius - zDist) / explosionRadius;
+      const dmg = Math.floor(maxDamage * factor);
+      if (dmg > 0) {
+        z.health -= dmg;
+        z.flashTicks = 5;
+      }
+    }
+  }
+
+  // Damage player if within 140px radius
   const pDx = player.x - ex;
   const pDy = player.y - ey;
   const pDist = Math.sqrt(pDx * pDx + pDy * pDy);
-  const explosionRadius = 140;
 
   if (pDist < explosionRadius) {
     const factor = (explosionRadius - pDist) / explosionRadius;
-    const taken = Math.floor(maxDamage * factor); // Restored Exploder Zombie full blast damage to player
+    const taken = Math.floor(maxDamage * factor);
     if (taken > 0) {
       damagePlayer(taken);
       if (player.health <= 0) return;
@@ -3808,13 +3869,85 @@ function addFloorStain(type, x, y, radius, alpha, decay) {
     decay: decay
   });
 
-  if (floorStains.length > 90) {
+  if (floorStains.length > 40) {
     floorStains.shift();
   }
 }
 
 // Rendering Elements
 // Draws the environment, decorations, and characters onto the canvas.
+
+/**
+ * Returns true when a world-space point is within the current camera viewport.
+ * @param {number} x - World X coordinate.
+ * @param {number} y - World Y coordinate.
+ * @param {number} [pad=80] - Extra margin in pixels so objects aren't popped at edges.
+ */
+function isInView(x, y, pad) {
+  if (pad === undefined) pad = 80;
+  return x + pad > camera.x &&
+         x - pad < camera.x + canvas.width &&
+         y + pad > camera.y &&
+         y - pad < camera.y + canvas.height;
+}
+
+/**
+ * Pre-renders the static arena floor (tiles + grid lines) to an offscreen canvas
+ * once per game start. Each frame the main renderer blits only the visible slice.
+ */
+function buildStaticFloor() {
+  floorCanvas = document.createElement('canvas');
+  floorCanvas.width  = world.width;
+  floorCanvas.height = world.height;
+  floorCtx = floorCanvas.getContext('2d');
+
+  // Base fill
+  floorCtx.fillStyle = '#11171a';
+  floorCtx.fillRect(0, 0, world.width, world.height);
+
+  // Alternating metallic slab tiles
+  const slabSize = 160;
+  for (let x = 0; x < world.width; x += slabSize) {
+    for (let y = 0; y < world.height; y += slabSize) {
+      floorCtx.fillStyle = ((x / slabSize + y / slabSize) % 2 === 0) ? '#172024' : '#141b1f';
+      floorCtx.fillRect(x, y, slabSize, slabSize);
+      floorCtx.fillStyle = 'rgba(255,255,255,0.035)';
+      floorCtx.fillRect(x + 12,           y + 12,           8, 8);
+      floorCtx.fillRect(x + slabSize - 20, y + 12,           8, 8);
+      floorCtx.fillRect(x + 12,           y + slabSize - 20, 8, 8);
+      floorCtx.fillRect(x + slabSize - 20, y + slabSize - 20, 8, 8);
+    }
+  }
+
+  // Slab divider lines
+  floorCtx.fillStyle = 'rgba(0,0,0,0.32)';
+  for (let x = 0; x < world.width; x += slabSize) {
+    floorCtx.fillRect(x, 0, 3, world.height);
+  }
+  for (let y = 0; y < world.height; y += slabSize) {
+    floorCtx.fillRect(0, y, world.width, 3);
+  }
+
+  // Tactical overlay grid (coarse, 320px)
+  floorCtx.strokeStyle = 'rgba(92,130,136,0.07)';
+  floorCtx.lineWidth = 1;
+  for (let x = 80; x <= world.width; x += 320) {
+    floorCtx.beginPath(); floorCtx.moveTo(x, 0); floorCtx.lineTo(x, world.height); floorCtx.stroke();
+  }
+  for (let y = 80; y <= world.height; y += 320) {
+    floorCtx.beginPath(); floorCtx.moveTo(0, y); floorCtx.lineTo(world.width, y); floorCtx.stroke();
+  }
+
+  // Fine grid overlay (160px – was drawn every frame in render())
+  floorCtx.strokeStyle = 'rgba(92,130,136,0.035)';
+  floorCtx.lineWidth = 1;
+  for (let x = 0; x <= world.width; x += slabSize) {
+    floorCtx.beginPath(); floorCtx.moveTo(x, 0); floorCtx.lineTo(x, world.height); floorCtx.stroke();
+  }
+  for (let y = 0; y <= world.height; y += slabSize) {
+    floorCtx.beginPath(); floorCtx.moveTo(0, y); floorCtx.lineTo(world.width, y); floorCtx.stroke();
+  }
+}
 
 function render() {
   const shakeOffset = getScreenShakeOffset();
@@ -3828,31 +3961,19 @@ function render() {
   ctx.translate(shakeOffset.x, shakeOffset.y);
   ctx.translate(-Math.floor(camera.x), -Math.floor(camera.y)); // Floor offsets to keep rendering clean
 
-  // 1. Draw World Arena Floor (layered metal plating instead of pure black)
-  drawArenaFloor();
-
-  // 2. Faint tactical grid overlay above the metal plates
-  ctx.strokeStyle = 'rgba(92, 130, 136, 0.035)';
-  ctx.lineWidth = 1;
-
-  const gridSize = 160; // Matches the lab floor plate size
-
-  for (let x = 0; x <= world.width; x += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, world.height);
-    ctx.stroke();
+  // 1. Blit the pre-rendered static floor (only the visible viewport slice)
+  if (floorCanvas) {
+    const sx = Math.floor(camera.x);
+    const sy = Math.floor(camera.y);
+    const sw = Math.min(canvas.width,  world.width  - sx);
+    const sh = Math.min(canvas.height, world.height - sy);
+    if (sw > 0 && sh > 0) {
+      ctx.drawImage(floorCanvas, sx, sy, sw, sh, sx, sy, sw, sh);
+    }
   }
 
-  for (let y = 0; y <= world.height; y += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(world.width, y);
-    ctx.stroke();
-  }
-
-  // 3. Draw non-collidable lab clutter and floor damage.
-  groundDetails.forEach(drawLabGroundDetail);
+  // 3. Draw non-collidable lab clutter and floor damage (viewport-culled).
+  groundDetails.forEach(d => { if (isInView(d.x, d.y, 80)) drawLabGroundDetail(d); });
 
   // 3.3. Draw lingering combat stains and containment unit floor marks.
   drawFloorStains();
@@ -3917,23 +4038,25 @@ function render() {
 }
 
 function drawLightingOverlay() {
-  const longestScreenSide = Math.max(canvas.width, canvas.height);
+  // Rebuild the vignette gradient only when the canvas is resized (not every frame)
+  if (!cachedVignette || canvas.width !== vignetteW || canvas.height !== vignetteH) {
+    const longestScreenSide = Math.max(canvas.width, canvas.height);
+    cachedVignette = ctx.createRadialGradient(
+      canvas.width / 2, canvas.height / 2,
+      Math.min(canvas.width, canvas.height) * 0.25,
+      canvas.width / 2, canvas.height / 2,
+      longestScreenSide * 0.76
+    );
+    cachedVignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    cachedVignette.addColorStop(0.72, 'rgba(0, 0, 0, 0.18)');
+    cachedVignette.addColorStop(1, 'rgba(0, 0, 0, 0.62)');
+    vignetteW = canvas.width;
+    vignetteH = canvas.height;
+  }
 
   ctx.save();
 
-  // Static facility camera vignette without directional beams or color washes.
-  const cornerVignette = ctx.createRadialGradient(
-    canvas.width / 2,
-    canvas.height / 2,
-    Math.min(canvas.width, canvas.height) * 0.25,
-    canvas.width / 2,
-    canvas.height / 2,
-    longestScreenSide * 0.76
-  );
-  cornerVignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  cornerVignette.addColorStop(0.72, 'rgba(0, 0, 0, 0.18)');
-  cornerVignette.addColorStop(1, 'rgba(0, 0, 0, 0.62)');
-  ctx.fillStyle = cornerVignette;
+  ctx.fillStyle = cachedVignette;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // Thin emergency monitor tint keeps the lab sterile and synthetic.
@@ -4236,6 +4359,7 @@ function drawFloorStains() {
   };
 
   floorStains.forEach(stain => {
+    if (!isInView(stain.x, stain.y, stain.radius + 10)) return;
     const alpha = Math.max(0, Math.min(stain.alpha, stain.alpha * (stain.life / stain.maxLife)));
 
     ctx.save();
@@ -4278,7 +4402,9 @@ function drawFloorStains() {
       ctx.fillRect(-stain.radius * 0.42, -2, stain.radius * 0.84, 4);
       ctx.fillRect(stain.radius * 0.1, stain.radius * 0.18, 6, 6);
     } else if (stain.type === 'scorch' || stain.type === 'necro_scorch') {
-      // Render beautiful deterministic stress fractures radiating outward (NO FLICKERING!)
+      // Skip crack detail when many stains are active to keep frame rate stable
+      if (floorStains.length > 15) { ctx.restore(); return; }
+      // Render deterministic stress fractures radiating outward
       const seed = Math.floor(stain.x + stain.y * 31);
       ctx.strokeStyle = stain.type === 'necro_scorch'
         ? 'rgba(57, 255, 20, ' + alpha * 0.85 + ')' // Glowing toxic green
@@ -4347,9 +4473,12 @@ function drawObstacleGroundMarks() {
     if (obstacle.type !== 'containment' && obstacle.type !== 'chemical') {
       return;
     }
+    const cx = obstacle.x + obstacle.width / 2;
+    const cy = obstacle.y + obstacle.height / 2;
+    if (!isInView(cx, cy, Math.max(obstacle.width, obstacle.height))) return;
 
     ctx.save();
-    ctx.translate(obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height / 2);
+    ctx.translate(cx, cy);
 
     if (obstacle.type === 'containment') {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
@@ -4604,6 +4733,7 @@ function drawPlayer() {
  */
 function drawBullets() {
   bullets.forEach(b => {
+    if (!isInView(b.x, b.y, b.size + 20)) return;
     // 1. Render continuous nested vector trails if we have historical points
     if (b.trail.length > 1) {
       if (b.isOverclocked) {
@@ -4821,6 +4951,7 @@ function drawBullets() {
  */
 function drawEnemyProjectiles() {
   enemyProjectiles.forEach(ep => {
+    if (!isInView(ep.x, ep.y, ep.size + 10)) return;
     const half = ep.size / 2;
     const isShadow = ep.color === '#ff00ff';
 
@@ -4845,6 +4976,7 @@ function drawEnemyProjectiles() {
 function drawToxicTrails() {
   ctx.save();
   toxicTrails.forEach(trail => {
+    if (!isInView(trail.x, trail.y, trail.size + 10)) return;
     // Fade out as it expires
     const alpha = trail.life / trail.maxLife;
 
@@ -4871,6 +5003,7 @@ function drawToxicTrails() {
 function drawMines() {
   ctx.save();
   activeMines.forEach(m => {
+    if (!isInView(m.x, m.y, m.size + 10)) return;
     // Pulse rate depends on mine size/level
     const isPulsing = (gameTick % 20 < 10);
     
@@ -5192,6 +5325,7 @@ function drawPendingSummonTelegraphs() {
 
 function drawZombies() {
   zombies.forEach(z => {
+    if (!isInView(z.x, z.y, z.size + 20)) return;
     const size = z.size;
     const baseSpriteSizes = {
       normal: 32,
@@ -5887,6 +6021,7 @@ function drawZombies() {
  */
 function drawGameParticles() {
   gameParticles.forEach(p => {
+    if (!isInView(p.x, p.y, 20)) return;
     // Set particle opacity to fit current lifetime
     ctx.globalAlpha = p.life;
 
@@ -5929,35 +6064,35 @@ function drawGameParticles() {
  */
 function drawExplosions() {
   explosions.forEach(exp => {
+    if (!isInView(exp.x, exp.y, exp.radius + 20)) return;
     const progress = 1 - exp.life; // 0 to 1
     const currentRadius = exp.radius * progress;
 
     ctx.save();
     ctx.globalAlpha = exp.life * 0.88;
 
-    const grad = ctx.createRadialGradient(exp.x, exp.y, currentRadius * 0.05, exp.x, exp.y, currentRadius);
+    // Layered concentric circles approximate the gradient without creating one per frame
     if (exp.type === 'necro') {
-      // Legendary Necro-Bomb toxic colors (Hot-white -> neon green -> poison purple -> transparent black)
-      grad.addColorStop(0, '#ffffff');
-      grad.addColorStop(0.18, 'rgba(57, 255, 20, 0.95)');
-      grad.addColorStop(0.55, 'rgba(176, 38, 255, 0.65)');
-      grad.addColorStop(0.85, 'rgba(100, 10, 180, 0.25)');
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = 'rgba(100,10,180,0.35)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(176,38,255,0.55)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.65, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(57,255,20,0.8)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.35, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.14, 0, Math.PI * 2); ctx.fill();
     } else {
-      // Standard/Exploder Zombie fiery explosion colors (Hot-white -> yellow -> fiery orange -> dark red -> transparent black)
-      grad.addColorStop(0, '#ffffff');
-      grad.addColorStop(0.15, '#ffee00');
-      grad.addColorStop(0.45, '#ff5500');
-      grad.addColorStop(0.75, '#b00000');
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = 'rgba(176,0,0,0.4)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,85,0,0.65)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.62, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,238,0,0.85)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.30, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.12, 0, Math.PI * 2); ctx.fill();
     }
 
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Draw the sharp outline shockwave ring
+    // Shockwave ring
     ctx.strokeStyle = exp.type === 'necro' ? '#39ff14' : '#ff4500';
     ctx.lineWidth = Math.max(1, 4 * exp.life);
     ctx.beginPath();
