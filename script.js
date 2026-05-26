@@ -656,10 +656,10 @@ const UPGRADES_REGISTRY = [
     id: 'burn',
     name: 'Burn Bullet',
     icon: '[FIRE]',
-    description: 'Bullets gain +5% chance to become fire rounds that burn zombies (Capped at 30%). First pick grants a permanent +10% damage boost.',
+    description: 'Bullets gain +10% chance to become fire rounds that burn zombies and deal +10% damage (Capped at 30% chance).',
     rarity: 'epic',
     apply: () => {
-      player.burnLevel = Math.min(6, player.burnLevel + 1);
+      player.burnLevel = Math.min(3, player.burnLevel + 1);
     }
   },
 
@@ -753,10 +753,10 @@ const UPGRADES_REGISTRY = [
     id: 'cryocapsule',
     name: 'Cryo Capsule',
     icon: '[FREEZE]',
-    description: 'Bullets gain +5% chance to become cryo rounds that slow zombies (Capped at 30%)',
+    description: 'Bullets gain +10% chance to become cryo rounds that slow zombies (Capped at 30% chance)',
     rarity: 'epic',
     apply: () => {
-      player.cryoCapsuleLevel = Math.min(6, player.cryoCapsuleLevel + 1);
+      player.cryoCapsuleLevel = Math.min(3, player.cryoCapsuleLevel + 1);
     }
   },
   {
@@ -2013,12 +2013,12 @@ function update() {
         // Toxic Trail slow effect (20% slow per level, capped at 70% slow)
         let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.70, 0.20 * player.toxicTrailLevel)) : 1.0;
 
-        // Cryo Capsule slow effect (25% slow)
+        // Cryo Capsule slow effect (50% slow)
         z.cryoSlowTicks = z.cryoSlowTicks || 0;
         if (z.cryoSlowTicks > 0) {
           z.cryoSlowTicks -= 1;
           if (z.type !== 'rusher') {
-            slowFactor *= 0.75;
+            slowFactor *= 0.50;
           }
         }
 
@@ -3604,8 +3604,8 @@ function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null, isF
 // Shooting Weapon System
 
 function rollBulletElement() {
-  const fireChance = Math.min(0.30, player.burnLevel * 0.05);
-  const cryoChance = Math.min(0.30, player.cryoCapsuleLevel * 0.05);
+  const fireChance = Math.min(0.30, player.burnLevel * 0.10);
+  const cryoChance = Math.min(0.30, player.cryoCapsuleLevel * 0.10);
   const roll = Math.random();
 
   return {
@@ -3672,10 +3672,7 @@ function shootWeapon() {
     if (player.spreadShotCount > 0) {
       finalDamage = Math.max(1, Math.round(finalDamage * 0.55));
     }
-    // Burn Bullet one-time +10% damage boost (applied whenever burnLevel > 0)
-    if (player.burnLevel > 0) {
-      finalDamage = Math.round(finalDamage * 1.10);
-    }
+    // Burn Bullet damage boost is now applied on an individual bullet basis (under Chunk 6/7)
     let finalSize = 10 * (1 + player.bulletSizeModifier); // Giant Bullets modifier
 
     if (isOverclocked) {
@@ -3701,9 +3698,10 @@ function shootWeapon() {
           vx: Math.cos(angle) * player.bulletSpeed,
           vy: Math.sin(angle) * player.bulletSpeed,
           size: finalSize,
-          damage: finalDamage,
+          damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
           trail: [], // Array of past coordinate points for tracing trails
           pierceLeft: player.bulletPierceLimit,
+          maxBounces: player.bounceLimit,
           bounceLeft: player.bounceLimit, // Bouncing Casings Limit
           hitZombies: [],
           isShrapnel: false,
@@ -3731,9 +3729,9 @@ function shootWeapon() {
           vx: Math.cos(currentAngle) * player.bulletSpeed,
           vy: Math.sin(currentAngle) * player.bulletSpeed,
           size: finalSize,
-          damage: finalDamage,
+          damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
           trail: [],
-          pierceLeft: player.bulletPierceLimit,
+          maxBounces: player.bounceLimit,
           bounceLeft: player.bounceLimit,
           hitZombies: [],
           isShrapnel: false,
@@ -6309,6 +6307,37 @@ function drawZombies() {
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 3;
       ctx.strokeRect(-12, -12, 22, 24);
+    }
+
+    // 9.5 Draw Icy/Fiery visual indicators on top of the zombie sprite
+    if (z.burnTicks > 0 && !isFlashed) {
+      // Draw fiery orange glow overlay on top of body
+      ctx.fillStyle = 'rgba(255, 69, 0, 0.28)';
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw subtle flickering flame sparks
+      ctx.fillStyle = 'rgba(255, 165, 0, 0.6)';
+      for (let f = 0; f < 3; f++) {
+        const fx = (Math.random() - 0.5) * size * 0.6;
+        const fy = (Math.random() - 0.5) * size * 0.6;
+        ctx.fillRect(fx, fy, 4, 4);
+      }
+    } else if (z.cryoSlowTicks > 0 && !isFlashed) {
+      // Draw icy cyan glow overlay on top of body
+      ctx.fillStyle = 'rgba(0, 221, 255, 0.28)';
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw subtle glistening ice crystals
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      for (let c = 0; c < 3; c++) {
+        const cx = (Math.random() - 0.5) * size * 0.6;
+        const cy = (Math.random() - 0.5) * size * 0.6;
+        ctx.fillRect(cx, cy, 3, 3);
+      }
     }
 
     // Restore canvas filter if it was set
