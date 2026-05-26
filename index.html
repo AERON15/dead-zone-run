@@ -24,6 +24,11 @@
     <span id="sound-icon">🔊</span>
   </button>
 
+  <!-- Floating Pause Button -->
+  <button id="pause-btn" class="pause-btn" aria-label="Pause Game" style="display: none;">
+    <span id="pause-icon">⏸</span>
+  </button>
+
   <!-- Start Screen -->
   <!-- This is the first screen the player sees -->
   <div id="start-screen" class="screen active">
@@ -288,6 +293,37 @@
       <div class="menu-buttons">
         <button id="leaderboard-back-btn" class="btn btn-secondary">
           Back to Menu
+        </button>
+      </div>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <!-- Pause Screen / Overlay -->
+  <div id="pause-screen" class="screen" style="background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 950;">
+    <div class="menu-container pause-container">
+      <!-- Retro panel corner rivet details -->
+      <div class="rivet top-left" aria-hidden="true"></div>
+      <div class="rivet top-right" aria-hidden="true"></div>
+      <div class="rivet bottom-left" aria-hidden="true"></div>
+      <div class="rivet bottom-right" aria-hidden="true"></div>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+
+      <h1 class="title pause-title" style="color: #ffaa00; text-shadow: 0 0 10px rgba(255,170,0,0.5);">SYSTEM PAUSED</h1>
+      <p class="tagline">Tactical retreat or short breather?</p>
+
+      <!-- Buttons -->
+      <div class="menu-buttons pause-buttons" style="flex-direction: column; gap: 1rem; width: 100%; max-width: 320px; margin: 2rem auto;">
+        <button id="resume-btn" class="btn btn-primary" style="width: 100%;">
+          Resume Mission
+        </button>
+        <button id="pause-sound-btn" class="btn btn-secondary" style="width: 100%;">
+          Sound: ON
+        </button>
+        <button id="exit-btn" class="btn btn-secondary" style="width: 100%;">
+          Exit to Menu
         </button>
       </div>
 

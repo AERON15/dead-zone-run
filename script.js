@@ -44,6 +44,10 @@ const nextWaveZombies  = document.getElementById('next-wave-zombies');
 const cheatPanel    = document.getElementById('cheat-panel');
 const cheatCloseBtn = document.getElementById('cheat-close-btn');
 
+// Pause elements & state
+const pauseScreen = document.getElementById('pause-screen');
+let isPaused = false;
+
 
 // Game State and Settings
 let gameState = {
@@ -590,7 +594,7 @@ const UPGRADES_REGISTRY = [
     id: 'toxictrail',
     name: 'Toxic Trail',
     icon: '[MUCK]',
-    description: 'Leave a faint chemical trail that deals minor damage over time and slows zombies by 10% (Stackable, slow effect caps at 50% max)',
+    description: 'Leave a faint chemical trail that deals minor damage over time (3 HP/sec per stack) and slows zombies by 20% (Stackable, slow effect caps at 70% max)',
     rarity: 'rare',
     apply: () => {
       player.toxicTrailLevel += 1;
@@ -1486,6 +1490,7 @@ function startGame() {
 
   // Set running state and launch game loop
   gameState.isRunning = true;
+  document.getElementById('pause-btn').style.display = 'flex';
   audio.resume();
   audio.startMusic();
   gameLoop();
@@ -1496,7 +1501,7 @@ function startGame() {
 // Executes 60 times a second using requestAnimationFrame.
 
 function gameLoop() {
-  if (!gameState.isRunning || isWaveIntermission) return;
+  if (!gameState.isRunning || isWaveIntermission || isPaused) return;
 
   update();
   render();
@@ -1974,7 +1979,7 @@ function update() {
 
       if (distSq < rangeSum * rangeSum) {
         z.isOnToxicTrail = true;
-        z.health -= (10 / 60) * trail.level; // DoT: 10 HP/sec per stack level
+        z.health -= (3 / 60) * trail.level; // DoT: 3 HP/sec per stack level
         z.flashTicks = Math.max(z.flashTicks || 0, 2); // brief green flash to confirm damage
 
         // Spawn occasional green bubbles
@@ -2005,8 +2010,8 @@ function update() {
       // Stun locked, do not move
     } else {
       if (distance > 0) {
-        // Toxic Trail slow effect (10% slow per level, capped at 50% slow)
-        let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.50, 0.10 * player.toxicTrailLevel)) : 1.0;
+        // Toxic Trail slow effect (20% slow per level, capped at 70% slow)
+        let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.70, 0.20 * player.toxicTrailLevel)) : 1.0;
 
         // Cryo Capsule slow effect (25% slow)
         z.cryoSlowTicks = z.cryoSlowTicks || 0;
@@ -6646,6 +6651,7 @@ function rectsOverlap(a, b) {
 
 function gameOver() {
   gameState.isRunning = false;
+  document.getElementById('pause-btn').style.display = 'none';
   audio.stopMusic();
   audio.playSfx('explosion');
 
@@ -6847,5 +6853,90 @@ window.addEventListener('keydown', function(event) {
     gameState.kills = Math.floor(Math.random() * 150);
     updateHUD();
     gameOver();
+  }
+});
+
+// Pause System Mechanics
+function togglePause() {
+  if (!gameState.isRunning || isWaveIntermission) return;
+
+  isPaused = !isPaused;
+  const pauseSoundBtn = document.getElementById('pause-sound-btn');
+  
+  if (isPaused) {
+    audio.stopMusic();
+    pauseScreen.classList.add('active');
+    document.getElementById('pause-icon').textContent = '▶';
+    
+    // Sync the pause screen sound button text on open
+    if (pauseSoundBtn) {
+      pauseSoundBtn.textContent = audio.isMuted ? 'Sound: OFF' : 'Sound: ON';
+    }
+  } else {
+    pauseScreen.classList.remove('active');
+    document.getElementById('pause-icon').textContent = '⏸';
+    audio.resume();
+    audio.startMusic();
+    animationFrameId = requestAnimationFrame(gameLoop);
+  }
+}
+
+// Hook up Pause interface buttons
+const pauseBtn = document.getElementById('pause-btn');
+const resumeBtn = document.getElementById('resume-btn');
+const pauseSoundBtn = document.getElementById('pause-sound-btn');
+const exitBtn = document.getElementById('exit-btn');
+
+if (pauseBtn) {
+  pauseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePause();
+  });
+}
+
+if (resumeBtn) {
+  resumeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePause();
+  });
+}
+
+if (pauseSoundBtn) {
+  pauseSoundBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isMuted = audio.toggleMute();
+    
+    // Sync both pause screen sound button and floating sound button visual states
+    pauseSoundBtn.textContent = isMuted ? 'Sound: OFF' : 'Sound: ON';
+    const mainSoundIcon = document.getElementById('sound-icon');
+    const mainSoundBtn = document.getElementById('sound-toggle-btn');
+    if (mainSoundIcon && mainSoundBtn) {
+      if (isMuted) {
+        mainSoundIcon.textContent = '🔇';
+        mainSoundBtn.classList.add('muted');
+      } else {
+        mainSoundIcon.textContent = '🔊';
+        mainSoundBtn.classList.remove('muted');
+      }
+    }
+  });
+}
+
+if (exitBtn) {
+  exitBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isPaused = false;
+    gameState.isRunning = false;
+    pauseScreen.classList.remove('active');
+    document.getElementById('pause-btn').style.display = 'none';
+    audio.stopMusic();
+    showScreen(startScreen);
+  });
+}
+
+// Global keydown escape listener to pause
+window.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') {
+    togglePause();
   }
 });
