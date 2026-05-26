@@ -925,7 +925,8 @@ function spawnSpecificZombie(type) {
     tank: { size: 54, health: 60, speed: 0.5, damage: 20, score: 30, attackCooldown: 1200 },
     spitter: { size: 38, health: 25, speed: 0.7, damage: 10, score: 25, attackCooldown: 2000 },
     necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 },
-    exploder: { size: 42, health: 15, speed: 1.45, damage: 45, score: 25, attackCooldown: 1000 }
+    exploder: { size: 42, health: 15, speed: 1.45, damage: 45, score: 25, attackCooldown: 1000 },
+    rusher: { size: 46, health: 45, speed: 1.3, damage: 18, score: 40, attackCooldown: 1000 }
   };
 
   const config = typesConfig[type] || typesConfig.normal;
@@ -940,7 +941,8 @@ function spawnSpecificZombie(type) {
     damage: config.damage,
     scoreValue: config.score,
     lastAttackTime: 0,
-    attackCooldown: config.attackCooldown
+    attackCooldown: config.attackCooldown,
+    hasHitPlayer: false
   });
 
   // Spawn summon sparks
@@ -1287,6 +1289,33 @@ function update() {
     if (explosions[i].life <= 0) {
       explosions.splice(i, 1);
     }
+  }
+
+  // 0. Handle player stun status (inflicted by Rusher zombie)
+  player.stunTicks = player.stunTicks || 0;
+  if (player.stunTicks > 0) {
+    player.stunTicks -= 1;
+    // Spawn dizzy/stun star particles above player's head!
+    if (gameTick % 8 === 0) {
+      const pAngle = (gameTick * 0.25) % (Math.PI * 2);
+      gameParticles.push({
+        x: player.x + Math.cos(pAngle) * 16,
+        y: player.y - 12 + Math.sin(pAngle) * 6,
+        vx: 0,
+        vy: -0.2,
+        size: 3,
+        color: '#ffd700', // Gold dizzy stars
+        life: 0.6,
+        decay: 0.04
+      });
+    }
+    // Cancel dash
+    player.reflexDashDuration = 0;
+    // Overwrite input to prevent movement
+    keys.w = false;
+    keys.s = false;
+    keys.a = false;
+    keys.d = false;
   }
 
   // 1. Calculate player movement vectors
@@ -1659,18 +1688,25 @@ function update() {
 
     // Stun status check (Legendary Chain Lightning stun)
     z.stunTicks = z.stunTicks || 0;
+    const isStunned = z.stunTicks > 0 && z.type !== 'rusher';
     if (z.stunTicks > 0) {
       z.stunTicks -= 1;
+    }
+
+    if (isStunned) {
+      // Stun locked, do not move
     } else {
       if (distance > 0) {
         // Toxic Trail slow effect (3% slow per level, capped at 50% slow)
-        let slowFactor = z.isOnToxicTrail ? (1 - Math.min(0.50, 0.03 * player.toxicTrailLevel)) : 1.0;
+        let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.50, 0.03 * player.toxicTrailLevel)) : 1.0;
 
         // Cryo Capsule slow effect (25% slow)
         z.cryoSlowTicks = z.cryoSlowTicks || 0;
         if (z.cryoSlowTicks > 0) {
           z.cryoSlowTicks -= 1;
-          slowFactor *= 0.75;
+          if (z.type !== 'rusher') {
+            slowFactor *= 0.75;
+          }
         }
 
         const desiredSpeed = z.speed * slowFactor;
@@ -1810,6 +1846,21 @@ function update() {
 
         z.x += vx;
         z.y += vy;
+
+        // Rusher engine thruster orange spark trails
+        if (z.type === 'rusher' && gameTick % 3 === 0) {
+          const moveAngle = Math.atan2(vy, vx);
+          gameParticles.push({
+            x: z.x - Math.cos(moveAngle) * (z.size / 2),
+            y: z.y - Math.sin(moveAngle) * (z.size / 2),
+            vx: -Math.cos(moveAngle) * 1.5 + (Math.random() - 0.5) * 0.4,
+            vy: -Math.sin(moveAngle) * 1.5 + (Math.random() - 0.5) * 0.4,
+            size: Math.floor(Math.random() * 3) + 2,
+            color: '#ff5500', // reactor fiery orange trail
+            life: 0.5,
+            decay: 0.05
+          });
+        }
       }
     }
 
@@ -1985,6 +2036,28 @@ function update() {
         if (now - z.lastAttackTime >= z.attackCooldown) {
           damagePlayer(z.damage);
           z.lastAttackTime = now;
+
+          // Stun the player on Rusher first hit!
+          if (z.type === 'rusher' && !z.hasHitPlayer) {
+            z.hasHitPlayer = true;
+            player.stunTicks = 90; // Stun the player for 1.5 seconds (90 frames)
+            startScreenShake(12, 18);
+            // Spawn gold dizzy stars instantly
+            for (let sIdx = 0; sIdx < 8; sIdx++) {
+              const sAngle = (sIdx / 8) * Math.PI * 2;
+              gameParticles.push({
+                x: player.x,
+                y: player.y - 12,
+                vx: Math.cos(sAngle) * 0.8,
+                vy: Math.sin(sAngle) * 0.8 - 0.4,
+                size: 4,
+                color: '#ffd700', // Gold dizzy stars
+                life: 0.8,
+                decay: 0.03
+              });
+            }
+            console.log("[RUSHER] Stunned the player with first charge!");
+          }
 
           // Screen shake on boss contact damage
           if (z.type === 'patient_zero') {
@@ -2169,8 +2242,10 @@ function update() {
         // Apply physical knockback pushback force (Knockback Rounds)
         const travelAngle = Math.atan2(b.vy, b.vx);
         const pushForce = 8 * (1 + player.knockbackModifier); // base push 8px
-        z.x += Math.cos(travelAngle) * pushForce;
-        z.y += Math.sin(travelAngle) * pushForce;
+        if (z.type !== 'rusher') {
+          z.x += Math.cos(travelAngle) * pushForce;
+          z.y += Math.sin(travelAngle) * pushForce;
+        }
 
         // Trigger Splinter Shot bullet split
         if (player.splinterShotLevel > 0 && !b.isShrapnel) {
@@ -2520,6 +2595,22 @@ function spawnZombie() {
       lastAttackTime: 0,
       attackCooldown: 1000
     });
+  } else if (zombieType === 'rusher') {
+    // Spawn Rusher Zombie (Tanky fast direct charger)
+    addScaledZombie({
+      type: 'rusher',
+      x: zx,
+      y: zy,
+      size: 46,
+      health: 45,
+      maxHealth: 45,
+      speed: 1.3,
+      damage: 18,
+      scoreValue: 40,
+      lastAttackTime: 0,
+      attackCooldown: 1000,
+      hasHitPlayer: false
+    });
   } else {
     // Spawn Normal Zombie (Original standard specs recalibrated)
     addScaledZombie({
@@ -2661,8 +2752,8 @@ function chooseZombieType(wave) {
     return 'normal';
   }
 
-  // Wave 10+: Debut EXPLOSION (exploder) zombies. (Wave 10 to 14: no necromancers yet!)
-  if (wave < 15) {
+  // Wave 10+: Debut EXPLOSION (exploder) zombies. (Wave 10 to 11: no rushers or necromancers yet!)
+  if (wave < 12) {
     if (roll < 0.12) return 'exploder';
     if (roll < 0.26) return 'spitter';
     if (roll < 0.44) return 'tank';
@@ -2670,32 +2761,45 @@ function chooseZombieType(wave) {
     return 'normal';
   }
 
+  // Wave 12+: Debut RUSHER zombies! (Wave 12 to 14: no necromancers yet!)
+  if (wave < 15) {
+    if (roll < 0.10) return 'exploder';
+    if (roll < 0.18) return 'rusher'; // 8% chance to spawn Rusher
+    if (roll < 0.32) return 'spitter';
+    if (roll < 0.48) return 'tank';
+    if (roll < 0.72) return 'fast';
+    return 'normal';
+  }
+
   // Wave 15+: Debut NECROMANCER zombies! (Wave 15 to 20)
   if (wave < 21) {
-    if (roll < 0.12) return 'exploder';
-    if (roll < 0.21) return 'necromancer'; // debuts at wave 15!
-    if (roll < 0.35) return 'spitter';
-    if (roll < 0.51) return 'tank';
-    if (roll < 0.73) return 'fast';
+    if (roll < 0.10) return 'exploder';
+    if (roll < 0.18) return 'rusher';      // 8% chance to spawn Rusher
+    if (roll < 0.26) return 'necromancer';  // debuts at wave 15!
+    if (roll < 0.38) return 'spitter';
+    if (roll < 0.52) return 'tank';
+    if (roll < 0.74) return 'fast';
     return 'normal';
   }
 
   // Wave 21-30
   if (wave < 31) {
-    if (roll < 0.14) return 'exploder';
-    if (roll < 0.24) return 'necromancer';
-    if (roll < 0.41) return 'spitter';
-    if (roll < 0.59) return 'tank';
-    if (roll < 0.81) return 'fast';
+    if (roll < 0.11) return 'exploder';
+    if (roll < 0.20) return 'rusher';
+    if (roll < 0.29) return 'necromancer';
+    if (roll < 0.44) return 'spitter';
+    if (roll < 0.60) return 'tank';
+    if (roll < 0.80) return 'fast';
     return 'normal';
   }
 
   // Wave 31+
-  if (roll < 0.18) return 'exploder';
-  if (roll < 0.29) return 'necromancer';
-  if (roll < 0.48) return 'spitter';
-  if (roll < 0.69) return 'tank';
-  if (roll < 0.90) return 'fast';
+  if (roll < 0.14) return 'exploder';
+  if (roll < 0.24) return 'rusher';
+  if (roll < 0.34) return 'necromancer';
+  if (roll < 0.50) return 'spitter';
+  if (roll < 0.68) return 'tank';
+  if (roll < 0.88) return 'fast';
   return 'normal';
 }
 
@@ -3154,6 +3258,8 @@ function rollBulletElement() {
 }
 
 function shootWeapon() {
+  if (player.stunTicks > 0) return; // Stunned! Can't fire!
+
   const now = Date.now();
 
   // Calculate dynamic fire rate cooldown
@@ -5082,6 +5188,7 @@ function drawZombies() {
       exploder: 30,
       tank: 40,
       necromancer: 36,
+      rusher: 36,
       patient_zero: 112
     };
     const spriteScale = size / (baseSpriteSizes[z.type] || baseSpriteSizes.normal);
@@ -5309,6 +5416,69 @@ function drawZombies() {
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 3;
       ctx.strokeRect(-11, -12, 22, 24);
+
+    } else if (z.type === 'rusher') {
+      // Rusher Charging Zombie Sprite (36px base, scaled up)
+
+      // ==========================================
+      // PASS 1: SOLID BLACK OUTLINE PASS
+      // ==========================================
+      ctx.fillStyle = '#000000';
+      // Tail / Exhaust tubes
+      ctx.fillRect(-22, -8, 6, 16);
+      // Spiky back armor
+      ctx.fillRect(-18, -16, 12, 32);
+      // Shoulders / spikes
+      ctx.fillRect(-10, -22, 12, 44);
+      // Torso
+      ctx.fillRect(-12, -14, 24, 28);
+      // Head
+      ctx.fillRect(10, -10, 14, 20);
+      // Giant ramming horn / central spike
+      ctx.fillRect(20, -6, 8, 12);
+
+      // ==========================================
+      // PASS 2: COLOR LAYER PASS
+      // ==========================================
+      // Exhaust tubes
+      ctx.fillStyle = '#2d2d30';
+      ctx.fillRect(-20, -6, 4, 12);
+      ctx.fillStyle = '#ff5500'; // Hot orange engine flame
+      ctx.fillRect(-20, -3, 1, 6);
+
+      // Dark Iron Carapace
+      ctx.fillStyle = '#1a1a20'; // Base plate Y narrow
+      ctx.fillRect(-16, -12, 10, 24);
+      ctx.fillStyle = '#252530'; // Main shoulder plate
+      ctx.fillRect(-8, -10, 18, 20);
+
+      // Orange venting reactor seams
+      ctx.fillStyle = '#ff5500';
+      ctx.fillRect(-10, -8, 2, 16);
+      ctx.fillRect(-2, -5, 2, 10);
+      ctx.fillStyle = '#ffcc00'; // central reactor spark
+      ctx.fillRect(-1, -2, 2, 4);
+
+      // Armored Mutant Shoulders & Spikes
+      ctx.fillStyle = '#3a0c0c'; // heavy blood flesh joints
+      ctx.fillRect(-6, -18, 4, 4);
+      ctx.fillRect(-6, 14, 4, 4);
+      ctx.fillStyle = '#ff5500'; // hard orange spike tips
+      ctx.fillRect(-8, -20, 2, 2);
+      ctx.fillRect(-8, 18, 2, 2);
+
+      // Ramming skull & heavy metal spike
+      ctx.fillStyle = '#0a0a0f'; // obsidian skull faceplate
+      ctx.fillRect(10, -8, 10, 16);
+      ctx.fillStyle = '#ff3300'; // bio-hazard magma eyes
+      ctx.fillRect(14, -4, 3, 2);
+      ctx.fillRect(14, 2, 3, 2);
+
+      // Heavy ram horn/wedge
+      ctx.fillStyle = '#5c6b7d';
+      ctx.fillRect(18, -4, 6, 8);
+      ctx.fillStyle = '#ffffff'; // gleaming steel point
+      ctx.fillRect(22, -2, 2, 4);
 
     } else if (z.type === 'patient_zero') {
       // Patient Zero Boss Sprite (112px base, scaled up)
