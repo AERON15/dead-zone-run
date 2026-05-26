@@ -2670,6 +2670,7 @@ function spawnPatientZero() {
 
 function queueBossSummon(boss, now) {
   const spots = [];
+  // Summon 2 Necromancers
   for (let s = 0; s < 2; s++) {
     const angle = Math.random() * Math.PI * 2;
     const radius = 100 + Math.random() * 80;
@@ -2679,6 +2680,15 @@ function queueBossSummon(boss, now) {
       type: 'necromancer'
     });
   }
+
+  // Summon 1 Rusher as the third summon!
+  const rAngle = Math.random() * Math.PI * 2;
+  const rRadius = 90 + Math.random() * 60;
+  spots.push({
+    x: Math.max(20, Math.min(world.width - 20, boss.x + Math.cos(rAngle) * rRadius)),
+    y: Math.max(20, Math.min(world.height - 20, boss.y + Math.sin(rAngle) * rRadius)),
+    type: 'rusher'
+  });
 
   boss.isSummoning = true;
   boss.summonCastEndsAt = now + bossSummonCastTime;
@@ -2752,8 +2762,8 @@ function chooseZombieType(wave) {
     return 'normal';
   }
 
-  // Wave 10+: Debut EXPLOSION (exploder) zombies. (Wave 10 to 11: no rushers or necromancers yet!)
-  if (wave < 12) {
+  // Wave 10+: Debut EXPLOSION (exploder) zombies. (Wave 10 to 14: no rushers or necromancers yet!)
+  if (wave < 15) {
     if (roll < 0.12) return 'exploder';
     if (roll < 0.26) return 'spitter';
     if (roll < 0.44) return 'tank';
@@ -2761,21 +2771,21 @@ function chooseZombieType(wave) {
     return 'normal';
   }
 
-  // Wave 12+: Debut RUSHER zombies! (Wave 12 to 14: no necromancers yet!)
-  if (wave < 15) {
-    if (roll < 0.10) return 'exploder';
-    if (roll < 0.18) return 'rusher'; // 8% chance to spawn Rusher
-    if (roll < 0.32) return 'spitter';
-    if (roll < 0.48) return 'tank';
-    if (roll < 0.72) return 'fast';
+  // Wave 15+: Debut NECROMANCER zombies! (Wave 15 to 19: no rushers yet!)
+  if (wave < 20) {
+    if (roll < 0.12) return 'exploder';
+    if (roll < 0.22) return 'necromancer'; // debuts at wave 15!
+    if (roll < 0.36) return 'spitter';
+    if (roll < 0.52) return 'tank';
+    if (roll < 0.74) return 'fast';
     return 'normal';
   }
 
-  // Wave 15+: Debut NECROMANCER zombies! (Wave 15 to 20)
+  // Wave 20+: Debut RUSHER zombies as high elite monster! (Wave 20)
   if (wave < 21) {
     if (roll < 0.10) return 'exploder';
-    if (roll < 0.18) return 'rusher';      // 8% chance to spawn Rusher
-    if (roll < 0.26) return 'necromancer';  // debuts at wave 15!
+    if (roll < 0.17) return 'rusher';      // debuts at wave 20!
+    if (roll < 0.26) return 'necromancer';
     if (roll < 0.38) return 'spitter';
     if (roll < 0.52) return 'tank';
     if (roll < 0.74) return 'fast';
@@ -2822,7 +2832,8 @@ function getSummonedZombieConfig(type) {
     fast: { size: 34, health: 20, speed: 1.2, damage: 8, score: 15, attackCooldown: 1000 },
     tank: { size: 54, health: 60, speed: 0.5, damage: 20, score: 30, attackCooldown: 1200 },
     spitter: { size: 38, health: 25, speed: 0.7, damage: 10, score: 25, attackCooldown: 2000 },
-    necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 }
+    necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 },
+    rusher: { size: 46, health: 45, speed: 1.3, damage: 18, score: 40, attackCooldown: 1000 }
   };
 
   return configMap[type] || configMap.normal;
@@ -2914,7 +2925,8 @@ function spawnSummonedZombie(type, x, y) {
     damage: config.damage,
     scoreValue: config.score,
     lastAttackTime: 0,
-    attackCooldown: config.attackCooldown
+    attackCooldown: config.attackCooldown,
+    hasHitPlayer: false
   });
 
   // Toxic lab portal particles at each warned spawn point.
