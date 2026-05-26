@@ -531,7 +531,7 @@ const UPGRADES_REGISTRY = [
     id: 'slowstart',
     name: 'Slow Start',
     icon: '[RAMP]',
-    description: 'Begin each wave at -50% attack speed. Speed ramps up as enemies die, reaching 3x at wave end. Stacks raise the cap to 4x.',
+    description: 'Begin each wave at -50% attack speed. Speed ramps up linearly as enemies die, reaching 2.2x at wave end. Stacks raise the cap to 2.8x.',
     rarity: 'legendary',
     apply: () => {
       player.slowStartLevel = Math.min(3, player.slowStartLevel + 1);
@@ -3335,12 +3335,13 @@ function shootWeapon() {
     currentFireRate *= 0.70; // +30% fire rate reduction (faster firing)
   }
 
-  // Slow Start ramp: starts at 0.5x speed, scales to 3x–4x as kills accumulate this wave
+  // Slow Start ramp: starts at 0.5x speed, scales linearly to maxMult speed (2.2x–2.8x) as kills accumulate this wave
   if (player.slowStartLevel > 0) {
-    const maxMult  = Math.min(4.0, 2.5 + player.slowStartLevel * 0.5); // L1=3x, L2=3.5x, L3=4x
+    const maxMult = Math.min(2.8, 1.9 + player.slowStartLevel * 0.3); // L1=2.2x, L2=2.5x, L3=2.8x
     const progress = waveZombiesTotal > 0 ? Math.min(1, waveKillCount / waveZombiesTotal) : 0;
-    const speedMult = 0.5 + (maxMult - 0.5) * progress; // lerp 0.5x → maxMult
-    currentFireRate = Math.max(150, currentFireRate / speedMult);
+    const startCd = currentFireRate * 2.0;
+    const endCd = currentFireRate / maxMult;
+    currentFireRate = Math.max(150, startCd + (endCd - startCd) * progress);
   }
 
   // Bullet spawn rate cooldown check
