@@ -218,20 +218,20 @@ const UPGRADES_REGISTRY = [
     id: 'bulletspeed',
     name: 'Bullet Speed Up',
     icon: '[AMMO]',
-    description: 'Increase bullet speed by 0.50 (Capped at 20 max)',
+    description: 'Increase bullet speed by 2.00 (Capped at 20 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 0.50)).toFixed(2));
+      player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 2.00)).toFixed(2));
     }
   },
   {
     id: 'thickskin',
     name: 'Thick Skin',
     icon: '[SKIN]',
-    description: 'Reduce all incoming damage taken by 5.0% (Stackable, capped at 75% max reduction)',
+    description: 'Reduce all incoming damage taken by 5.0% (Stackable, capped at 50% max reduction)',
     rarity: 'common',
     apply: () => {
-      player.damageReduction = Number((Math.min(0.75, player.damageReduction + 0.050)).toFixed(4));
+      player.damageReduction = Number((Math.min(0.50, player.damageReduction + 0.050)).toFixed(4));
     }
   },
   {
@@ -416,20 +416,20 @@ const UPGRADES_REGISTRY = [
     id: 'defender',
     name: 'Orbiting Defender',
     icon: '[RING]',
-    description: 'Orbiting energy blade circles tightly, dealing contact damage to zombies (Stackable!)',
+    description: 'Orbiting energy blade circles at a wide distance, dealing massive contact damage to zombies (Stackable, capped at 5 blades max)',
     rarity: 'legendary',
     apply: () => {
-      player.orbitingDefenderLevel += 1;
+      player.orbitingDefenderLevel = Math.min(5, player.orbitingDefenderLevel + 1);
     }
   },
   {
     id: 'weakpointscan',
     name: 'Weak Point Scan',
     icon: '[CRIT]',
-    description: 'Bullets gain +6% critical chance to deal 1.75x damage (Capped at 30% chance)',
+    description: 'Bullets gain +5% critical chance to deal 1.75x damage (Capped at 35% chance)',
     rarity: 'common',
     apply: () => {
-      player.critChance = Number((Math.min(0.30, player.critChance + 0.06)).toFixed(2));
+      player.critChance = Number((Math.min(0.35, player.critChance + 0.05)).toFixed(2));
     }
   },
   {
@@ -1892,8 +1892,8 @@ function update() {
 
     // Orbiting Defender contact damage shredding (Legendary)
     if (player.orbitingDefenderLevel > 0) {
-      const radius = 140; // Massive outer orbit radius (more further away from the player)
-      const contactRadius = z.size / 2 + 38; // Twice as big collision footprint to match giant sawblades
+      const radius = 190; // Slower, massive outer orbit perimeter (increased from 140)
+      const contactRadius = z.size / 2 + 48; // Made them physically giant sawblades (half of size 96)
       const contactRadiusSq = contactRadius * contactRadius;
       for (let d = 0; d < player.orbitingDefenderLevel; d++) {
         const angleOffset = d * (Math.PI * 2 / player.orbitingDefenderLevel);
@@ -1905,7 +1905,8 @@ function update() {
         const distSq = bDx * bDx + bDy * bDy;
 
         if (distSq < contactRadiusSq) {
-          z.health -= 0.12 * player.orbitingDefenderLevel; // Nerfed damage again to prevent overly powerful passive kills (reduced from 0.35)
+          z.health -= 0.8; // Dealing high shred contact damage per blade contact
+          z.flashTicks = Math.max(z.flashTicks || 0, 2); // White hit flash when sliced
 
           // Spawn contact sparks
           if (Math.random() < 0.25) {
@@ -2292,7 +2293,7 @@ function update() {
         // Apply physical knockback pushback force (Knockback Rounds)
         const travelAngle = Math.atan2(b.vy, b.vx);
         const pushForce = 8 * (1 + player.knockbackModifier); // base push 8px
-        if (z.type !== 'rusher') {
+        if (z.type !== 'rusher' && z.type !== 'patient_zero') {
           z.x += Math.cos(travelAngle) * pushForce;
           z.y += Math.sin(travelAngle) * pushForce;
         }
@@ -5170,8 +5171,8 @@ function drawLightningArcs() {
 function drawOrbitingDefender() {
   if (player.orbitingDefenderLevel <= 0) return;
 
-  const radius = 140; // Slower, massive outer orbit perimeter (increased from 80)
-  const size = 68;   // Twice as big sawblades! Made them physically giant sawblades (increased from 34)
+  const radius = 190; // Slower, massive outer orbit perimeter (increased from 140)
+  const size = 96;   // Made them physically giant sawblades
   const half = size / 2;
   const teethCount = 8;
 
