@@ -116,12 +116,6 @@
           </li>
           <li>
             <span class="key-caps">
-              <span class="key-cap">O + P</span>
-            </span>
-            <span class="action-desc">Developer Cheat Console</span>
-          </li>
-          <li>
-            <span class="key-caps">
               <span class="key-cap">ESC</span>
             </span>
             <span class="action-desc">Pause Mission / Sound Menu</span>
@@ -164,12 +158,9 @@
         </div>
 
         <!-- Menu buttons -->
-        <div class="menu-buttons">
-          <button id="start-btn" class="btn btn-primary">
+        <div class="menu-buttons" style="justify-content: center; width: 100%;">
+          <button id="start-btn" class="btn btn-primary" style="width: 100%; max-width: 280px;">
             Start Game
-          </button>
-          <button id="leaderboard-btn" class="btn btn-secondary">
-            Leaderboard
           </button>
         </div>
 
@@ -179,7 +170,7 @@
         <p class="footer-text">A Web Development Final Project</p>
       </div>
 
-      <!-- Right Panel: Arsenal & Upgrade Database (Tactical Intel) -->
+      <!-- Right Panel: Live Tactical Leaderboard (Top Survivors) -->
       <div class="side-panel right-panel">
         <div class="rivet top-left" aria-hidden="true"></div>
         <div class="rivet top-right" aria-hidden="true"></div>
@@ -187,38 +178,26 @@
         <div class="rivet bottom-right" aria-hidden="true"></div>
         <div class="hazard-bar" aria-hidden="true"></div>
         
-        <h3 class="side-panel-title">ARSENAL DATABASE</h3>
+        <h3 class="side-panel-title">LEADERBOARD</h3>
+        <p class="tagline" style="font-size: 0.7rem; text-align: center; margin: 0 0 0.5rem 0;">Top survivors of the dead zone.</p>
         
-        <div class="arsenal-item">
-          <div class="arsenal-header">
-            <span class="arsenal-name">Slow Start</span>
-            <span class="arsenal-badge legendary-text">[RAMP]</span>
-          </div>
-          <p class="arsenal-desc">At wave start, fire rate is reduced by 50%. Cooldown speeds up linearly over 10s, capping at a massive 3.0x speed boost.</p>
-        </div>
-        
-        <div class="arsenal-item">
-          <div class="arsenal-header">
-            <span class="arsenal-name">Orbiting Defender</span>
-            <span class="arsenal-badge epic-text">[SAW]</span>
-          </div>
-          <p class="arsenal-desc">Spawns orbiting sawblades slicing through close zombies. Upgrade to increase radius and cap at 5 massive spinning blades.</p>
-        </div>
-        
-        <div class="arsenal-item">
-          <div class="arsenal-header">
-            <span class="arsenal-name">Chain Lightning</span>
-            <span class="arsenal-badge legendary-text">[BOLT]</span>
-          </div>
-          <p class="arsenal-desc">Periodically releases high-voltage cyan lightning arcs that electrocute and bounce across groups of surrounding zombies.</p>
-        </div>
-        
-        <div class="arsenal-item">
-          <div class="arsenal-header">
-            <span class="arsenal-name">Kill Frenzy</span>
-            <span class="arsenal-badge rare-text">[FRENZY]</span>
-          </div>
-          <p class="arsenal-desc">Defeating 5 zombies quickly activates a rush state: +30% movement speed and +30% fire rate for 3 seconds.</p>
+        <div class="leaderboard-table-wrap" style="width: 100%; overflow-x: auto; background: rgba(0,0,0,0.35); border: 2px solid var(--panel-border); margin: 0.5rem 0;">
+          <table class="leaderboard-table" style="width: 100%; font-size: 0.75rem; border-collapse: collapse; text-align: left;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--panel-border); background: rgba(0,0,0,0.5);">
+                <th style="padding: 0.5rem 0.4rem;">Rank</th>
+                <th style="padding: 0.5rem 0.4rem;">Survivor</th>
+                <th style="padding: 0.5rem 0.4rem;">Score</th>
+                <th style="padding: 0.5rem 0.4rem;">Wave</th>
+                <th style="padding: 0.5rem 0.4rem;">Kills</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+              <tr>
+                <td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 1.5rem 1rem;">Loading scores...</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
         
         <div class="hazard-bar" aria-hidden="true"></div>
@@ -336,50 +315,6 @@
       <!-- Upgrade options dynamic cards -->
       <div id="upgrade-options" class="upgrade-options">
         <!-- Cards loaded dynamically via javascript -->
-      </div>
-
-      <div class="hazard-bar" aria-hidden="true"></div>
-    </div>
-  </div>
-
-  <!-- Leaderboard Screen -->
-  <!-- Hidden by default. Shown when the player clicks Leaderboard -->
-  <div id="leaderboard-screen" class="screen">
-    <div class="menu-container leaderboard-container">
-      <!-- Retro panel corner rivet details -->
-      <div class="rivet top-left" aria-hidden="true"></div>
-      <div class="rivet top-right" aria-hidden="true"></div>
-      <div class="rivet bottom-left" aria-hidden="true"></div>
-      <div class="rivet bottom-right" aria-hidden="true"></div>
-
-      <div class="hazard-bar" aria-hidden="true"></div>
-
-      <h1 class="title leaderboard-title">LEADERBOARD</h1>
-      <p class="tagline">Top survivors of the dead zone.</p>
-
-      <!-- Leaderboard Table -->
-      <div class="leaderboard-table-wrap">
-        <table class="leaderboard-table" id="leaderboard-table">
-          <thead>
-            <tr>
-              <th>Rank</th>
-              <th>Player</th>
-              <th>Score</th>
-              <th>Wave</th>
-              <th>Kills</th>
-            </tr>
-          </thead>
-          <tbody id="leaderboard-body">
-            <!-- Rows populated dynamically via javascript -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Back button -->
-      <div class="menu-buttons">
-        <button id="leaderboard-back-btn" class="btn btn-secondary">
-          Back to Menu
-        </button>
       </div>
 
       <div class="hazard-bar" aria-hidden="true"></div>

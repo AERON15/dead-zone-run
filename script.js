@@ -954,7 +954,7 @@ function showScreen(screen) {
   gameScreen.classList.remove('active');
   gameoverScreen.classList.remove('active');
   waveclearedScreen.classList.remove('active');
-  leaderboardScreen.classList.remove('active');
+  if (leaderboardScreen) leaderboardScreen.classList.remove('active');
 
   // Show the target screen
   screen.classList.add('active');
@@ -6854,15 +6854,16 @@ playerNameInput.addEventListener('keydown', function(event) {
   }
 });
 
-// Leaderboard button — load from Supabase and open leaderboard screen
-leaderboardBtn.addEventListener('click', async function() {
+// Automatically load and render the menu leaderboard in the right panel
+async function refreshMenuLeaderboard() {
+  if (!leaderboardBody) return;
+  
   // Show loading state
-  leaderboardBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 2rem;">Loading scores...</td></tr>';
-  showScreen(leaderboardScreen);
-
+  leaderboardBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 1.5rem;">Loading scores...</td></tr>';
+  
   // Try to load from Supabase
   const data = await loadLeaderboard();
-
+  
   // If Supabase returned data, use it; otherwise fall back to sample data
   if (data && data.length > 0) {
     renderLeaderboard(data);
@@ -6870,12 +6871,7 @@ leaderboardBtn.addEventListener('click', async function() {
     // Supabase not configured or empty — show sample data
     renderLeaderboard(sampleLeaderboardData);
   }
-});
-
-// Leaderboard back button — return to start screen
-leaderboardBackBtn.addEventListener('click', function() {
-  showScreen(startScreen);
-});
+}
 
 // Restart button on the game-over screen
 restartBtn.addEventListener('click', startGame);
@@ -6883,6 +6879,7 @@ restartBtn.addEventListener('click', startGame);
 // Main Menu button on the game-over screen
 menuBtn.addEventListener('click', function() {
   showScreen(startScreen);
+  refreshMenuLeaderboard();
 });
 
 // Upgrades chosen listener / continue action handled directly on card selections
@@ -6977,6 +6974,7 @@ if (exitBtn) {
     document.getElementById('pause-btn').style.display = 'none';
     audio.stopMusic();
     showScreen(startScreen);
+    refreshMenuLeaderboard();
   });
 }
 
@@ -6986,3 +6984,6 @@ window.addEventListener('keydown', function(event) {
     togglePause();
   }
 });
+
+// Initial load of the menu leaderboard on startup
+refreshMenuLeaderboard();
