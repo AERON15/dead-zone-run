@@ -187,31 +187,31 @@ const UPGRADES_REGISTRY = [
     id: 'speed',
     name: 'Speed Up',
     icon: '[MOVE]',
-    description: 'Increase player speed by 0.10 (Capped at +2.50 max)',
+    description: 'Increase player speed by 0.20 (Capped at +2.50 max)',
     rarity: 'common',
     apply: () => {
-      player.speed = Number((Math.min(4.2, player.speed + 0.10)).toFixed(2));
+      player.speed = Number((Math.min(4.2, player.speed + 0.20)).toFixed(2));
     }
   },
   {
     id: 'maxhealth',
     name: 'Max Health Up',
     icon: '[HP+]',
-    description: 'Increase max health by 10 and heal for 10 HP (Capped at +250 max)',
+    description: 'Increase max health by 25 and heal for 25 HP (Capped at +250 max)',
     rarity: 'common',
     apply: () => {
-      player.maxHealth = Math.min(350, player.maxHealth + 10); // 100 base + 250 cap = 350 max limit
-      player.health = Math.min(player.maxHealth, player.health + 10);
+      player.maxHealth = Math.min(350, player.maxHealth + 25); // 100 base + 250 cap = 350 max limit
+      player.health = Math.min(player.maxHealth, player.health + 25);
     }
   },
   {
     id: 'heal',
     name: 'Heal Boost',
     icon: '[HEAL]',
-    description: 'Increases natural wave completion heal by +2% of max HP (Stackable, capped at 75% max)',
+    description: 'Increases natural wave completion heal by +5% of max HP (Stackable, capped at 75% max)',
     rarity: 'common',
     apply: () => {
-      player.waveHealPercentage = Number((Math.min(0.75, player.waveHealPercentage + 0.02)).toFixed(2));
+      player.waveHealPercentage = Number((Math.min(0.75, player.waveHealPercentage + 0.05)).toFixed(2));
     }
   },
   {
@@ -228,17 +228,17 @@ const UPGRADES_REGISTRY = [
     id: 'thickskin',
     name: 'Thick Skin',
     icon: '[SKIN]',
-    description: 'Reduce all incoming damage taken by 1.5% (Stackable, capped at 75% max reduction)',
+    description: 'Reduce all incoming damage taken by 5.0% (Stackable, capped at 75% max reduction)',
     rarity: 'common',
     apply: () => {
-      player.damageReduction = Number((Math.min(0.75, player.damageReduction + 0.015)).toFixed(4));
+      player.damageReduction = Number((Math.min(0.75, player.damageReduction + 0.050)).toFixed(4));
     }
   },
   {
     id: 'runnershigh',
     name: "Runner's High",
     icon: '[HIGH]',
-    description: 'Gives an extra 0.04 speed boost when moving continuously for over 3 seconds (Stackable, capped at +1.0 max speed)',
+    description: 'Gives an extra 0.15 speed boost when moving continuously for over 3 seconds (Stackable, capped at +1.0 max speed)',
     rarity: 'common',
     apply: () => {
       player.runnersHighLevel += 1;
@@ -258,7 +258,7 @@ const UPGRADES_REGISTRY = [
     id: 'retaliate',
     name: 'Retaliate',
     icon: '[RAGE]',
-    description: 'Taking damage briefly triggers a +0.10 speed boost per stack (up to +1.5 max) for 2s (Stackable, duration capped at 6s max)',
+    description: 'Taking damage briefly triggers a +0.30 speed boost per stack (up to +1.5 max) for 2s (Stackable, duration capped at 6s max)',
     rarity: 'common',
     apply: () => {
       player.retaliateLevel += 1;
@@ -270,10 +270,10 @@ const UPGRADES_REGISTRY = [
     id: 'firerate',
     name: 'Fire Rate Up',
     icon: '[FAST]',
-    description: 'Reduce fire rate cooldown by 6ms (min 150ms)',
+    description: 'Reduce fire rate cooldown by 30ms (min 150ms)',
     rarity: 'rare',
     apply: () => {
-      player.fireRate = Math.max(150, player.fireRate - 6);
+      player.fireRate = Math.max(150, player.fireRate - 30);
     }
   },
   {
@@ -300,17 +300,17 @@ const UPGRADES_REGISTRY = [
     id: 'bouncingcasings',
     name: 'Bouncing Casings',
     icon: '[RICO]',
-    description: 'Bullets bounce off map walls and obstacles 1 time (Stackable, capped at 10 bounces max)',
+    description: 'Bullets bounce off map walls and obstacles +1 time per stack (Stackable, capped at 5 bounces max)',
     rarity: 'rare',
     apply: () => {
-      player.bounceLimit = Math.min(10, player.bounceLimit + 2);
+      player.bounceLimit = Math.min(5, player.bounceLimit + 1);
     }
   },
   {
     id: 'toxictrail',
     name: 'Toxic Trail',
     icon: '[MUCK]',
-    description: 'Leave a faint chemical trail that deals minor damage over time and slows zombies by 3% (Stackable, slow effect caps at 50% max)',
+    description: 'Leave a faint chemical trail that deals minor damage over time and slows zombies by 10% (Stackable, slow effect caps at 50% max)',
     rarity: 'rare',
     apply: () => {
       player.toxicTrailLevel += 1;
@@ -330,7 +330,7 @@ const UPGRADES_REGISTRY = [
     id: 'steadyaim',
     name: 'Steady Aim',
     icon: '[STILL]',
-    description: 'Increase damage by 2, but only if you are standing completely still while shooting (Stackable, capped at +50 max static damage)',
+    description: 'Increase damage by 10, but only if you are standing completely still while shooting (Stackable, capped at +60 max static damage)',
     rarity: 'rare',
     apply: () => {
       player.steadyAimLevel += 1;
@@ -340,10 +340,10 @@ const UPGRADES_REGISTRY = [
     id: 'phaseshift',
     name: 'Phase Shift',
     icon: '[VEIL]',
-    description: 'Gain a 1% chance to completely dodge/evade any incoming zombie attack (Stackable, capped at 45% max dodge)',
+    description: 'Gain a 5% chance to completely dodge/evade any incoming zombie attack (Stackable, capped at 45% max dodge)',
     rarity: 'rare',
     apply: () => {
-      player.dodgeChance = Number((Math.min(0.45, player.dodgeChance + 0.01)).toFixed(3));
+      player.dodgeChance = Number((Math.min(0.45, player.dodgeChance + 0.05)).toFixed(3));
     }
   },
 
@@ -426,10 +426,10 @@ const UPGRADES_REGISTRY = [
     id: 'weakpointscan',
     name: 'Weak Point Scan',
     icon: '[CRIT]',
-    description: 'Bullets gain +3% critical chance to deal 1.75x damage (Capped at 30% chance)',
+    description: 'Bullets gain +6% critical chance to deal 1.75x damage (Capped at 30% chance)',
     rarity: 'common',
     apply: () => {
-      player.critChance = Number((Math.min(0.30, player.critChance + 0.03)).toFixed(2));
+      player.critChance = Number((Math.min(0.30, player.critChance + 0.06)).toFixed(2));
     }
   },
   {
@@ -479,7 +479,7 @@ const UPGRADES_REGISTRY = [
     id: 'reflexdash',
     name: 'Reflex Dash',
     icon: '[DASH]',
-    description: 'Press Space to dash a short distance (6s cooldown, stacks reduce by 0.5s, cap at 3s)',
+    description: 'Press Space to dash a short distance (6s cooldown, stacks reduce by 1.0s, cap at 3s)',
     rarity: 'rare',
     apply: () => {
       player.reflexDashLevel = Math.min(7, player.reflexDashLevel + 1);
@@ -489,7 +489,7 @@ const UPGRADES_REGISTRY = [
     id: 'labmine',
     name: 'Lab Mine',
     icon: '[MINE]',
-    description: 'Every 8 seconds, drop an explosive mine behind you (Capped at 3s cooldown)',
+    description: 'Every 8 seconds, drop an explosive mine behind you. Stacks reduce cooldown by 1.5s and increase damage (Capped at 3s cooldown)',
     rarity: 'rare',
     apply: () => {
       player.labMineLevel = Math.min(6, player.labMineLevel + 1);
@@ -499,7 +499,7 @@ const UPGRADES_REGISTRY = [
     id: 'combatstim',
     name: 'Combat Stimulant',
     icon: '[STIM]',
-    description: 'Gain +6% fire rate and +0.08 speed, but lose 5 max HP per stack (Fire rate cap +40%)',
+    description: 'Gain +10% fire rate and +0.15 speed, but lose 5 max HP per stack (Fire rate cap +40%)',
     rarity: 'common',
     apply: () => {
       player.stimulantLevel = Math.min(7, player.stimulantLevel + 1);
@@ -521,7 +521,7 @@ const UPGRADES_REGISTRY = [
     id: 'killfrenzy',
     name: 'Kill Frenzy',
     icon: '[FRENZY]',
-    description: 'Defeating 5 zombies quickly grants +15% speed and +15% fire rate for 3s (Capped at 8s duration)',
+    description: 'Defeating 5 zombies quickly grants +30% speed and +30% fire rate for 3s (Capped at 8s duration)',
     rarity: 'rare',
     apply: () => {
       player.killFrenzyLevel = Math.min(6, player.killFrenzyLevel + 1);
@@ -1265,10 +1265,10 @@ function update() {
         x: player.x,
         y: player.y,
         size: 20,
-        damage: 40 + player.labMineLevel * 10
+        damage: 50 + player.labMineLevel * 25
       });
       // Reset cooldown timer: reduces from 8s to 3s
-      const cdSec = Math.max(3.0, 8.0 - (player.labMineLevel - 1) * 1.0);
+      const cdSec = Math.max(3.0, 8.0 - (player.labMineLevel - 1) * 1.5);
       player.labMineTimer = cdSec * 60;
     }
   }
@@ -1370,13 +1370,13 @@ function update() {
 
   // Combat Stimulant speed boost
   if (player.stimulantLevel > 0) {
-    currentSpeed += player.stimulantLevel * 0.08;
+    currentSpeed += player.stimulantLevel * 0.15;
   }
 
-  // Kill Frenzy speed boost (+15% movement speed)
+  // Kill Frenzy speed boost (+30% movement speed)
   if (player.killFrenzyTimer > 0) {
     player.killFrenzyTimer -= 1;
-    currentSpeed += player.speed * 0.15;
+    currentSpeed += player.speed * 0.30;
   }
 
   // Reflex Dash Cooldown decrement
@@ -1387,14 +1387,14 @@ function update() {
   // Runner's High boost
   if (player.runnersHighLevel > 0 && player.movementStart !== null) {
     if (Date.now() - player.movementStart >= 3000) {
-      currentSpeed += Math.min(1.0, player.runnersHighLevel * 0.04);
+      currentSpeed += Math.min(1.0, player.runnersHighLevel * 0.15);
       isRunnersHighActive = true;
     }
   }
 
   // Retaliate boost
   if (player.retaliateLevel > 0 && Date.now() < player.retaliateExpiry) {
-    currentSpeed += Math.min(1.5, player.retaliateLevel * 0.10);
+    currentSpeed += Math.min(1.5, player.retaliateLevel * 0.30);
     isRetaliateActive = true;
   }
 
@@ -1723,8 +1723,8 @@ function update() {
       // Stun locked, do not move
     } else {
       if (distance > 0) {
-        // Toxic Trail slow effect (3% slow per level, capped at 50% slow)
-        let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.50, 0.03 * player.toxicTrailLevel)) : 1.0;
+        // Toxic Trail slow effect (10% slow per level, capped at 50% slow)
+        let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.50, 0.10 * player.toxicTrailLevel)) : 1.0;
 
         // Cryo Capsule slow effect (25% slow)
         z.cryoSlowTicks = z.cryoSlowTicks || 0;
@@ -2135,6 +2135,29 @@ function update() {
         gameState.score += z.scoreValue;
         gameState.kills += 1;
         waveKillCount += 1;
+
+        // Kill Frenzy trigger logic
+        if (player.killFrenzyLevel > 0) {
+          const nowMs = Date.now();
+          player.killFrenzyHistory.push(nowMs);
+          player.killFrenzyHistory = player.killFrenzyHistory.filter(t => nowMs - t <= 3000);
+          if (player.killFrenzyHistory.length >= 5) {
+            player.killFrenzyTimer = Math.min(480, (player.killFrenzyTimer || 0) + 180); // add 3s (180 ticks), cap at 8s (480 ticks)
+            // Spawn green/pink frenzy particles around the player
+            for (let fP = 0; fP < 5; fP++) {
+              gameParticles.push({
+                x: player.x + (Math.random() - 0.5) * player.size,
+                y: player.y + (Math.random() - 0.5) * player.size,
+                vx: (Math.random() - 0.5) * 1.0,
+                vy: -Math.random() * 1.5 - 0.5,
+                size: Math.floor(Math.random() * 3) + 2,
+                color: '#ff0055', // FRENZY PINK
+                life: 0.8,
+                decay: 0.05
+              });
+            }
+          }
+        }
 
         // Lifesteal heal logic
         if (player.lifestealAmount > 0) {
@@ -3305,11 +3328,11 @@ function shootWeapon() {
   // Calculate dynamic fire rate cooldown
   let currentFireRate = player.fireRate;
   if (player.stimulantLevel > 0) {
-    const stimBonus = Math.min(0.40, player.stimulantLevel * 0.06);
+    const stimBonus = Math.min(0.40, player.stimulantLevel * 0.10);
     currentFireRate *= (1 - stimBonus);
   }
   if (player.killFrenzyTimer > 0) {
-    currentFireRate *= 0.85; // +15% fire rate reduction (faster firing)
+    currentFireRate *= 0.70; // +30% fire rate reduction (faster firing)
   }
 
   // Slow Start ramp: starts at 0.5x speed, scales to 3x–4x as kills accumulate this wave
@@ -3347,7 +3370,7 @@ function shootWeapon() {
     const isPlayerMoving = (keys.w || keys.a || keys.s || keys.d);
     let finalDamage = player.bulletDamage;
     if (!isPlayerMoving && player.steadyAimLevel > 0) {
-      finalDamage += Math.min(50, player.steadyAimLevel * 2); // Capped at +50 damage
+      finalDamage += Math.min(60, player.steadyAimLevel * 10); // Capped at +60 damage
     }
     // Double Shot penalty: -45% damage when extra bullets are active
     if (player.spreadShotCount > 0) {
@@ -6409,8 +6432,8 @@ function triggerReflexDash() {
   player.reflexDashVy = Math.sin(angle) * desiredSpeed * dashMultiplier;
   player.reflexDashDuration = 9; // Dash lasts 9 frames (~0.15 seconds of invulnerable surge)
   
-  // Cooldown reduces by 0.5s per stack level above 1, capped at 3s minimum (from 6s)
-  const cooldownSec = Math.max(3.0, 6.0 - (player.reflexDashLevel - 1) * 0.5);
+  // Cooldown reduces by 1.0s per stack level above 1, capped at 3s minimum (from 6s)
+  const cooldownSec = Math.max(3.0, 6.0 - (player.reflexDashLevel - 1) * 1.0);
   player.reflexDashCooldown = cooldownSec * 60; // 60 ticks per second
 
   // Trigger high weight screen shake on dash start
