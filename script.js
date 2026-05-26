@@ -2653,35 +2653,35 @@ function chooseZombieType(wave) {
     return 'normal';
   }
 
-  // Wave 8-9: Debut NECROMANCER zombies
+  // Wave 8-9: Continue normal, fast, tank, spitter
   if (wave < 10) {
-    if (roll < 0.08) return 'necromancer'; // 8% chance to spawn Necromancer
-    if (roll < 0.24) return 'spitter';
-    if (roll < 0.42) return 'tank';
+    if (roll < 0.18) return 'spitter';
+    if (roll < 0.38) return 'tank';
+    if (roll < 0.68) return 'fast';
+    return 'normal';
+  }
+
+  // Wave 10+: Debut EXPLOSION (exploder) zombies. (Wave 10 to 14: no necromancers yet!)
+  if (wave < 15) {
+    if (roll < 0.12) return 'exploder';
+    if (roll < 0.26) return 'spitter';
+    if (roll < 0.44) return 'tank';
     if (roll < 0.70) return 'fast';
     return 'normal';
   }
 
-  // Wave 10+: Debut EXPLOSION (exploder) zombies
-  if (wave < 16) { // Waves 10-15
-    if (roll < 0.10) return 'exploder';
-    if (roll < 0.18) return 'necromancer';
-    if (roll < 0.32) return 'spitter';
-    if (roll < 0.47) return 'tank';
-    if (roll < 0.71) return 'fast';
-    return 'normal';
-  }
-
-  if (wave < 21) { // Waves 16-20
+  // Wave 15+: Debut NECROMANCER zombies! (Wave 15 to 20)
+  if (wave < 21) {
     if (roll < 0.12) return 'exploder';
-    if (roll < 0.21) return 'necromancer';
+    if (roll < 0.21) return 'necromancer'; // debuts at wave 15!
     if (roll < 0.35) return 'spitter';
     if (roll < 0.51) return 'tank';
     if (roll < 0.73) return 'fast';
     return 'normal';
   }
 
-  if (wave < 31) { // Waves 21-30
+  // Wave 21-30
+  if (wave < 31) {
     if (roll < 0.14) return 'exploder';
     if (roll < 0.24) return 'necromancer';
     if (roll < 0.41) return 'spitter';
@@ -5825,14 +5825,14 @@ function drawAimGuide() {
 // Syncs the on-screen HUD with the current player stats.
 
 function updateHUD() {
-  healthValue.textContent = player.health;
+  healthValue.textContent = Math.round(player.health);
   scoreValue.textContent  = gameState.score;
   waveValue.textContent   = gameState.wave;
 
   // Update retro segmented health bar width
   if (healthFill) {
-    const clampedHealth = Math.max(0, Math.min(100, player.health));
-    healthFill.style.width = clampedHealth + '%';
+    const healthPercent = Math.max(0, Math.min(100, (player.health / player.maxHealth) * 100));
+    healthFill.style.width = healthPercent + '%';
   }
 }
 
