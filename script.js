@@ -1998,22 +1998,33 @@ function update() {
     const zDy = player.y - z.y;
     const distance = Math.sqrt(zDx * zDx + zDy * zDy);
 
-    // Toxic Trail slow & DoT calculations
-    z.isOnToxicTrail = false;
-    for (let t = 0; t < toxicTrails.length; t++) {
-      const trail = toxicTrails[t];
-      const tDx = z.x - trail.x;
-      const tDy = z.y - trail.y;
-      const distSq = tDx * tDx + tDy * tDy;
-      const rangeSum = z.size / 2 + trail.size;
+    // Toxic Trail slow calculations (Staggered to run once every 6 frames per zombie to save CPU)
+    if (z.isOnToxicTrail === undefined || (gameTick + i) % 6 === 0) {
+      z.isOnToxicTrail = false;
+      for (let t = 0; t < toxicTrails.length; t++) {
+        const trail = toxicTrails[t];
+        const tDx = z.x - trail.x;
+        const tDy = z.y - trail.y;
+        const distSq = tDx * tDx + tDy * tDy;
+        const rangeSum = z.size / 2 + trail.size;
 
-      if (distSq < rangeSum * rangeSum) {
-        z.isOnToxicTrail = true;
-        z.health -= (3 / 60) * trail.level; // DoT: 3 HP/sec per stack level
-        z.flashTicks = Math.max(z.flashTicks || 0, 2); // brief green flash to confirm damage
+        if (distSq < rangeSum * rangeSum) {
+          z.isOnToxicTrail = true;
+          break;
+        }
+      }
+    }
 
-        // Spawn occasional green bubbles
-        if (Math.random() < 0.05) {
+    // Toxic Trail Tick DoT Damage (Balanced to 3 HP/sec, running in discrete 500ms intervals to eliminate lag & particle spam)
+    if (z.isOnToxicTrail) {
+      z.lastToxicDamageTime = z.lastToxicDamageTime || 0;
+      if (now - z.lastToxicDamageTime >= 500) {
+        z.health -= 1.5 * player.toxicTrailLevel; // 3 HP/sec per stack = 1.5 HP per 500ms
+        z.flashTicks = 8; // Satisfying green hit flash
+        z.lastToxicDamageTime = now;
+
+        // Spawn occasional green bubbles on damage tick
+        if (Math.random() < 0.35) {
           gameParticles.push({
             x: z.x + (Math.random() - 0.5) * z.size,
             y: z.y + (Math.random() - 0.5) * z.size,
@@ -2025,7 +2036,6 @@ function update() {
             decay: Math.random() * 0.08 + 0.05
           });
         }
-        break; // Optimize by breaking early once slowed/damaged on trail
       }
     }
 
@@ -2089,101 +2099,113 @@ function update() {
           vy = (zDy / distance) * desiredSpeed;
         }
 
-        // Advanced AABB Look-Ahead Sliding Vector Obstacle Avoidance
+        // Advanced AABB Look-Ahead Sliding Vector Obstacle Avoidance (Staggered to once every 4 ticks per zombie to optimize CPU load)
         if (vx !== 0 || vy !== 0) {
-          const currentSpeed = Math.hypot(vx, vy);
-          const dirX = vx / currentSpeed;
-          const dirY = vy / currentSpeed;
+          z.lastAvoidanceTick = z.lastAvoidanceTick || 0;
+          if (z.avoidanceVx !== undefined && (gameTick - z.lastAvoidanceTick < 4)) {
+            vx = z.avoidanceVx;
+            vy = z.avoidanceVy;
+          } else {
+            z.lastAvoidanceTick = gameTick;
 
-          const lookAhead = 40; // Pixels to look ahead
-          let avoidanceX = 0;
-          let avoidanceY = 0;
-          let isBlocked = false;
+            const currentSpeed = Math.hypot(vx, vy);
+            const dirX = vx / currentSpeed;
+            const dirY = vy / currentSpeed;
 
-          for (let o = 0; o < obstacles.length; o++) {
-            const obs = obstacles[o];
+            const lookAhead = 40; // Pixels to look ahead
+            let avoidanceX = 0;
+            let avoidanceY = 0;
+            let isBlocked = false;
 
-            // 1. Closest point on AABB obstacle to current zombie position
-            const closestX = Math.max(obs.x, Math.min(z.x, obs.x + obs.width));
-            const closestY = Math.max(obs.y, Math.min(z.y, obs.y + obs.height));
-            const distCurrent = Math.hypot(z.x - closestX, z.y - closestY);
+            for (let o = 0; o < obstacles.length; o++) {
+              const obs = obstacles[o];
 
-            // 2. Closest point on AABB obstacle to anticipated look-ahead position
-            const aheadX = z.x + dirX * lookAhead;
-            const aheadY = z.y + dirY * lookAhead;
-            const closestAheadX = Math.max(obs.x, Math.min(aheadX, obs.x + obs.width));
-            const closestAheadY = Math.max(obs.y, Math.min(aheadY, obs.y + obs.height));
-            const distAhead = Math.hypot(aheadX - closestAheadX, aheadY - closestAheadY);
+              // 1. Closest point on AABB obstacle to current zombie position
+              const closestX = Math.max(obs.x, Math.min(z.x, obs.x + obs.width));
+              const closestY = Math.max(obs.y, Math.min(z.y, obs.y + obs.height));
+              const distCurrent = Math.hypot(z.x - closestX, z.y - closestY);
 
-            // 3. Collision footprint threshold
-            const safetyRadius = z.size / 2 + 12;
+              // 2. Closest point on AABB obstacle to anticipated look-ahead position
+              const aheadX = z.x + dirX * lookAhead;
+              const aheadY = z.y + dirY * lookAhead;
+              const closestAheadX = Math.max(obs.x, Math.min(aheadX, obs.x + obs.width));
+              const closestAheadY = Math.max(obs.y, Math.min(aheadY, obs.y + obs.height));
+              const distAhead = Math.hypot(aheadX - closestAheadX, aheadY - closestAheadY);
 
-            if (distCurrent < safetyRadius || distAhead < safetyRadius) {
-              isBlocked = true;
+              // 3. Collision footprint threshold
+              const safetyRadius = z.size / 2 + 12;
 
-              // Vector pointing outward from closest point on obstacle face
-              let dx = z.x - closestX;
-              let dy = z.y - closestY;
+              if (distCurrent < safetyRadius || distAhead < safetyRadius) {
+                isBlocked = true;
 
-              if (dx === 0 && dy === 0) {
-                // If center is somehow fully inside, resolve using obstacle center
-                const obsCenterX = obs.x + obs.width / 2;
-                const obsCenterY = obs.y + obs.height / 2;
-                dx = z.x - obsCenterX;
-                dy = z.y - obsCenterY;
+                // Vector pointing outward from closest point on obstacle face
+                let dx = z.x - closestX;
+                let dy = z.y - closestY;
+
                 if (dx === 0 && dy === 0) {
-                  dx = 1;
-                  dy = 0;
+                  // If center is somehow fully inside, resolve using obstacle center
+                  const obsCenterX = obs.x + obs.width / 2;
+                  const obsCenterY = obs.y + obs.height / 2;
+                  dx = z.x - obsCenterX;
+                  dy = z.y - obsCenterY;
+                  if (dx === 0 && dy === 0) {
+                    dx = 1;
+                    dy = 0;
+                  }
                 }
+
+                const dist = Math.hypot(dx, dy);
+                const nx = dist > 0 ? dx / dist : 1;
+                const ny = dist > 0 ? dy / dist : 0;
+
+                // sliding vector projection: cancel component going straight into the wall
+                const dotNormal = vx * nx + vy * ny;
+                if (dotNormal < 0) {
+                  vx -= dotNormal * nx;
+                  vy -= dotNormal * ny;
+                }
+
+                // Target-Aligned Tangential Steering: select tangent pointing closest to destination
+                const tx1 = -ny;
+                const ty1 = nx;
+                const tx2 = ny;
+                const ty2 = -nx;
+
+                // The original chase direction we wanted to head towards
+                const origVx = (z.type === 'spitter' && distance < 220) ? -zDx : zDx;
+                const origVy = (z.type === 'spitter' && distance < 220) ? -zDy : zDy;
+
+                const dot1 = origVx * tx1 + origVy * ty1;
+                const dot2 = origVx * tx2 + origVy * ty2;
+
+                const tx = dot1 >= dot2 ? tx1 : tx2;
+                const ty = dot1 >= dot2 ? ty1 : ty2;
+
+                // Accumulate active steering force
+                avoidanceX += tx * desiredSpeed;
+                avoidanceY += ty * desiredSpeed;
               }
-
-              const dist = Math.hypot(dx, dy);
-              const nx = dist > 0 ? dx / dist : 1;
-              const ny = dist > 0 ? dy / dist : 0;
-
-              // sliding vector projection: cancel component going straight into the wall
-              const dotNormal = vx * nx + vy * ny;
-              if (dotNormal < 0) {
-                vx -= dotNormal * nx;
-                vy -= dotNormal * ny;
-              }
-
-              // Target-Aligned Tangential Steering: select tangent pointing closest to destination
-              const tx1 = -ny;
-              const ty1 = nx;
-              const tx2 = ny;
-              const ty2 = -nx;
-
-              // The original chase direction we wanted to head towards
-              const origVx = (z.type === 'spitter' && distance < 220) ? -zDx : zDx;
-              const origVy = (z.type === 'spitter' && distance < 220) ? -zDy : zDy;
-
-              const dot1 = origVx * tx1 + origVy * ty1;
-              const dot2 = origVx * tx2 + origVy * ty2;
-
-              const tx = dot1 >= dot2 ? tx1 : tx2;
-              const ty = dot1 >= dot2 ? ty1 : ty2;
-
-              // Accumulate active steering force
-              avoidanceX += tx * desiredSpeed;
-              avoidanceY += ty * desiredSpeed;
-            }
-          }
-
-          // If blocked, blend sliding velocity (30%) with active steering deflection (70%)
-          if (isBlocked) {
-            vx = vx * 0.3 + avoidanceX * 0.7;
-            vy = vy * 0.3 + avoidanceY * 0.7;
-            const newLen = Math.hypot(vx, vy);
-            if (newLen > 0) {
-              vx = (vx / newLen) * desiredSpeed;
-              vy = (vy / newLen) * desiredSpeed;
             }
 
-            // Set wall circumvention memory to bypass local minimum stuckness
-            z.wallFollowVx = vx;
-            z.wallFollowVy = vy;
-            z.wallFollowTicks = 55; // 55 frames of continuous path kiting
+            // If blocked, blend sliding velocity (30%) with active steering deflection (70%)
+            if (isBlocked) {
+              vx = vx * 0.3 + avoidanceX * 0.7;
+              vy = vy * 0.3 + avoidanceY * 0.7;
+              const newLen = Math.hypot(vx, vy);
+              if (newLen > 0) {
+                vx = (vx / newLen) * desiredSpeed;
+                vy = (vy / newLen) * desiredSpeed;
+              }
+
+              // Set wall circumvention memory to bypass local minimum stuckness
+              z.wallFollowVx = vx;
+              z.wallFollowVy = vy;
+              z.wallFollowTicks = 55; // 55 frames of continuous kiting
+            }
+
+            // Cache kiting vectors to reuse on standard ticks
+            z.avoidanceVx = vx;
+            z.avoidanceVy = vy;
           }
         }
 
