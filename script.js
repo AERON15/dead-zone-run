@@ -495,20 +495,20 @@ const UPGRADES_REGISTRY = [
     id: 'damage',
     name: 'Damage Up',
     icon: '[DMG]',
-    description: 'Increase bullet damage by 5 (Capped at +100 max)',
+    description: 'Increase bullet damage by 8 (Capped at +100 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletDamage = Math.min(100, player.bulletDamage + 5);
+      player.bulletDamage = Math.min(100, player.bulletDamage + 8);
     }
   },
   {
     id: 'speed',
     name: 'Speed Up',
     icon: '[MOVE]',
-    description: 'Increase player speed by 0.20 (Capped at +2.50 max)',
+    description: 'Increase player speed by 0.25 (Capped at +2.50 max)',
     rarity: 'common',
     apply: () => {
-      player.speed = Number((Math.min(4.2, player.speed + 0.20)).toFixed(2));
+      player.speed = Number((Math.min(4.2, player.speed + 0.25)).toFixed(2));
     }
   },
   {
@@ -536,27 +536,27 @@ const UPGRADES_REGISTRY = [
     id: 'bulletspeed',
     name: 'Bullet Speed Up',
     icon: '[AMMO]',
-    description: 'Increase bullet speed by 2.00 (Capped at 20 max)',
+    description: 'Increase bullet speed by 3.00 (Capped at 20 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 2.00)).toFixed(2));
+      player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 3.00)).toFixed(2));
     }
   },
   {
     id: 'thickskin',
     name: 'Thick Skin',
     icon: '[SKIN]',
-    description: 'Reduce all incoming damage taken by 5.0% (Stackable, capped at 50% max reduction)',
+    description: 'Reduce all incoming damage taken by 7.5% (Stackable, capped at 50% max reduction)',
     rarity: 'common',
     apply: () => {
-      player.damageReduction = Number((Math.min(0.50, player.damageReduction + 0.050)).toFixed(4));
+      player.damageReduction = Number((Math.min(0.50, player.damageReduction + 0.075)).toFixed(4));
     }
   },
   {
     id: 'runnershigh',
     name: "Runner's High",
     icon: '[HIGH]',
-    description: 'Gives an extra 0.15 speed boost when moving continuously for over 3 seconds (Stackable, capped at +1.0 max speed)',
+    description: 'Gives an extra 0.20 speed boost when moving continuously for over 3 seconds (Stackable, capped at +1.0 max speed)',
     rarity: 'common',
     apply: () => {
       player.runnersHighLevel += 1;
@@ -566,17 +566,17 @@ const UPGRADES_REGISTRY = [
     id: 'giantbullets',
     name: 'Giant Bullets',
     icon: '[SIZE]',
-    description: 'Increases physical size and collision hitbox of bullets by 20% (Stackable, capped at +120% size max)',
+    description: 'Increases physical size and collision hitbox of bullets by 25% (Stackable, capped at +120% size max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSizeModifier = Number((Math.min(1.2, player.bulletSizeModifier + 0.20)).toFixed(2));
+      player.bulletSizeModifier = Number((Math.min(1.2, player.bulletSizeModifier + 0.25)).toFixed(2));
     }
   },
   {
     id: 'retaliate',
     name: 'Retaliate',
     icon: '[RAGE]',
-    description: 'Taking damage briefly triggers a +0.30 speed boost per stack (up to +1.5 max) for 2s (Stackable, duration capped at 6s max)',
+    description: 'Taking damage briefly triggers a +0.40 speed boost per stack (up to +1.5 max) for 2s (Stackable, duration capped at 6s max)',
     rarity: 'common',
     apply: () => {
       player.retaliateLevel += 1;
@@ -588,10 +588,10 @@ const UPGRADES_REGISTRY = [
     id: 'firerate',
     name: 'Fire Rate Up',
     icon: '[FAST]',
-    description: 'Reduce fire rate cooldown by 30ms (min 150ms)',
+    description: 'Reduce fire rate cooldown by 45ms (min 150ms)',
     rarity: 'rare',
     apply: () => {
-      player.fireRate = Math.max(150, player.fireRate - 30);
+      player.fireRate = Math.max(150, player.fireRate - 45);
     }
   },
   {
@@ -608,10 +608,10 @@ const UPGRADES_REGISTRY = [
     id: 'knockbackrounds',
     name: 'Knockback Rounds',
     icon: '[PUSH]',
-    description: 'Increases pushback distance on hit by 10% (Stackable, capped at +150% max pushback)',
+    description: 'Increases pushback distance on hit by 15% (Stackable, capped at +150% max pushback)',
     rarity: 'rare',
     apply: () => {
-      player.knockbackModifier = Number((Math.min(1.5, player.knockbackModifier + 0.10)).toFixed(2));
+      player.knockbackModifier = Number((Math.min(1.5, player.knockbackModifier + 0.15)).toFixed(2));
     }
   },
   {
@@ -638,17 +638,17 @@ const UPGRADES_REGISTRY = [
     id: 'splintershot',
     name: 'Splinter Shot',
     icon: '[CHIP]',
-    description: 'Bullets split into fanned shrapnel pieces upon hitting walls/enemies. Each stack adds +2 split bullets (Caps at 10 split bullets max, damage capped at 40%)',
+    description: 'Bullets split into fanned shrapnel pieces upon hitting walls/enemies. Each stack adds +3 split bullets (Caps at 10 split bullets max, damage capped at 40%)',
     rarity: 'rare',
     apply: () => {
-      player.splinterShotLevel = Math.min(9, player.splinterShotLevel + 2); // Caps at level 9 (yields 10 split bullets)
+      player.splinterShotLevel = Math.min(9, player.splinterShotLevel + 3); // Caps at level 9 (yields 10 split bullets)
     }
   },
   {
     id: 'steadyaim',
     name: 'Steady Aim',
     icon: '[STILL]',
-    description: 'Increase damage by 10, but only if you are standing completely still while shooting (Stackable, capped at +60 max static damage)',
+    description: 'Increase damage by 15, but only if you are standing completely still while shooting (Stackable, capped at +60 max static damage)',
     rarity: 'rare',
     apply: () => {
       player.steadyAimLevel += 1;
@@ -658,10 +658,10 @@ const UPGRADES_REGISTRY = [
     id: 'phaseshift',
     name: 'Phase Shift',
     icon: '[VEIL]',
-    description: 'Gain a 5% chance to completely dodge/evade any incoming zombie attack (Stackable, capped at 45% max dodge)',
+    description: 'Gain an 8% chance to completely dodge/evade any incoming zombie attack (Stackable, capped at 45% max dodge)',
     rarity: 'rare',
     apply: () => {
-      player.dodgeChance = Number((Math.min(0.45, player.dodgeChance + 0.05)).toFixed(3));
+      player.dodgeChance = Number((Math.min(0.45, player.dodgeChance + 0.08)).toFixed(3));
     }
   },
 
@@ -744,10 +744,10 @@ const UPGRADES_REGISTRY = [
     id: 'weakpointscan',
     name: 'Weak Point Scan',
     icon: '[CRIT]',
-    description: 'Bullets gain +5% critical chance to deal 1.75x damage (Capped at 35% chance)',
+    description: 'Bullets gain +7% critical chance to deal 1.75x damage (Capped at 35% chance)',
     rarity: 'common',
     apply: () => {
-      player.critChance = Number((Math.min(0.35, player.critChance + 0.05)).toFixed(2));
+      player.critChance = Number((Math.min(0.35, player.critChance + 0.07)).toFixed(2));
     }
   },
   {
@@ -818,7 +818,7 @@ const UPGRADES_REGISTRY = [
     id: 'combatstim',
     name: 'Combat Stimulant',
     icon: '[STIM]',
-    description: 'Gain +10% fire rate and +0.15 speed, but lose 5 max HP per stack (Fire rate cap +40%)',
+    description: 'Gain +10% fire rate and +0.20 speed, but lose 5 max HP per stack (Fire rate cap +40%)',
     rarity: 'common',
     apply: () => {
       player.stimulantLevel = Math.min(7, player.stimulantLevel + 1);
@@ -1268,7 +1268,7 @@ function spawnSpecificZombie(type) {
     necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 },
     exploder: { size: 42, health: 15, speed: 1.45, damage: 45, score: 25, attackCooldown: 1000 },
     rusher: { size: 46, health: 45, speed: 1.55, damage: 18, score: 40, attackCooldown: 1000 },
-    shielder: { size: 44, health: 50, speed: 0.65, damage: 10, score: 60, attackCooldown: 1000 }
+    shielder: { size: 52, health: 90, speed: 0.50, damage: 10, score: 60, attackCooldown: 1000 }
   };
 
   const config = typesConfig[type] || typesConfig.normal;
@@ -1620,7 +1620,7 @@ function update() {
         size: 20,
         triggerRadius: 48, // Larger invisible pressure-plate detection zone
         life: 1800,        // 15 real seconds at 120Hz before self-destruct
-        damage: 50 + player.labMineLevel * 25
+        damage: 50 + player.labMineLevel * 35
       });
       // Reset cooldown timer: reduces from 8s to 3s
       const cdSec = Math.max(3.0, 8.0 - (player.labMineLevel - 1) * 1.5);
@@ -1770,7 +1770,7 @@ function update() {
 
   // Combat Stimulant speed boost
   if (player.stimulantLevel > 0) {
-    currentSpeed += player.stimulantLevel * 0.15;
+    currentSpeed += player.stimulantLevel * 0.20;
   }
 
   // Kill Frenzy reactivation cooldown decrement
@@ -1796,14 +1796,14 @@ function update() {
   // Runner's High boost
   if (player.runnersHighLevel > 0 && player.movementStart !== null) {
     if (Date.now() - player.movementStart >= 3000) {
-      currentSpeed += Math.min(1.0, player.runnersHighLevel * 0.15);
+      currentSpeed += Math.min(1.0, player.runnersHighLevel * 0.20);
       isRunnersHighActive = true;
     }
   }
 
   // Retaliate boost
   if (player.retaliateLevel > 0 && Date.now() < player.retaliateExpiry) {
-    currentSpeed += Math.min(1.5, player.retaliateLevel * 0.30);
+    currentSpeed += Math.min(1.5, player.retaliateLevel * 0.40);
     isRetaliateActive = true;
   }
 
@@ -2113,7 +2113,7 @@ function update() {
     if (z.isOnToxicTrail) {
       z.lastToxicDamageTime = z.lastToxicDamageTime || 0;
       if (now - z.lastToxicDamageTime >= 500) {
-        damageZombie(z, 1.5 * player.toxicTrailLevel, false); // isDirect = false
+        damageZombie(z, 2.0 * player.toxicTrailLevel, false); // isDirect = false
         if (!z.hasShield) z.flashTicks = 8; // Satisfying green hit flash if no shield
         z.lastToxicDamageTime = now;
 
@@ -4027,7 +4027,7 @@ function shootWeapon() {
     const isPlayerMoving = (keys.w || keys.a || keys.s || keys.d);
     let finalDamage = player.bulletDamage;
     if (!isPlayerMoving && player.steadyAimLevel > 0) {
-      finalDamage += Math.min(60, player.steadyAimLevel * 10); // Capped at +60 damage
+      finalDamage += Math.min(60, player.steadyAimLevel * 15); // Capped at +60 damage
     }
     // Double Shot penalty: -45% damage when extra bullets are active
     if (player.spreadShotCount > 0) {
@@ -6627,40 +6627,68 @@ function drawZombies() {
 
     } else if (z.type === 'shielder') {
       // Shielder Zombie Sprite Design (34px base size)
-      // 1. Floor Drop Shadow (heavy block shadow)
+      // Blue-themed to match its shield ability — same structural language as all
+      // other zombies (back spine, cavity, reaching arms, skull) but with a cold
+      // blue-charged palette and a clean emitter on the chest face.
+
+      // 1. Drop shadow
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fillRect(-13, -13, 26, 26);
 
-      // 2. Heavy armored carapace back plate (charcoal metal)
-      ctx.fillStyle = '#1c2430';
-      ctx.fillRect(-14, -10, 8, 20);
+      // 2. Exposed spine (back edge) — blue-sinew instead of blood, cold feel
+      ctx.fillStyle = '#0a1a2e'; // dark blue-black sinew
+      ctx.fillRect(-16, -5, 4, 10);
+      ctx.fillStyle = '#8ab8d8'; // icy blue-white vertebrae
+      ctx.fillRect(-16, -3, 2, 2);
+      ctx.fillRect(-16, 1, 2, 2);
+      ctx.fillRect(-16, 5, 2, 2);
 
-      // 3. Exposed spine battery (cyan glowing cells)
-      ctx.fillStyle = '#00f0ff';
-      ctx.fillRect(-15, -4, 2, 8);
+      // 3. Main body (dark navy blue — the shielder's dominant colour)
+      ctx.fillStyle = '#1a2a40';
+      ctx.fillRect(-11, -12, 20, 24);
 
-      // 4. Main heavy iron chassis body (steel blue)
-      ctx.fillStyle = '#2b3b5c';
-      ctx.fillRect(-10, -11, 20, 22);
+      // 4. Chest cavity (medium blue with darker core — mirrors the rot-cavity of others)
+      ctx.fillStyle = '#1e3d5c';
+      ctx.fillRect(-6, -7, 12, 14);
+      ctx.fillStyle = '#0a1a30'; // dark sunken core
+      ctx.fillRect(-2, -4, 6, 8);
 
-      // 5. Tech shield projector plates (heavy sides)
-      ctx.fillStyle = '#42537a';
-      ctx.fillRect(-6, -13, 12, 3); // top plate
-      ctx.fillRect(-6, 10, 12, 3);  // bottom plate
-      ctx.fillStyle = '#00f0ff'; // glowing emitter dots
-      ctx.fillRect(-2, -12, 4, 1);
-      ctx.fillRect(-2, 11, 4, 1);
+      // 5. Shield emitter (front-facing, chest centre — the defining feature)
+      ctx.fillStyle = '#0d1f35'; // recessed socket
+      ctx.fillRect(2, -4, 6, 8);
+      ctx.fillStyle = '#0088cc'; // emitter ring
+      ctx.fillRect(3, -3, 4, 6);
+      ctx.fillStyle = '#00ccff'; // bright core
+      ctx.fillRect(4, -2, 2, 4);
+      ctx.fillStyle = '#ffffff'; // hot spark
+      ctx.fillRect(4, -1, 2, 2);
 
-      // 6. Cybernetic visor eyes (glowing tech cyan)
-      ctx.fillStyle = '#00f0ff';
-      ctx.fillRect(4, -5, 4, 10);
-      ctx.fillStyle = '#ffffff'; // white energy reflection
-      ctx.fillRect(6, -3, 2, 2);
+      // 6. Upper reaching arm (same layout as normal zombie)
+      ctx.fillStyle = '#1e3d5c';
+      ctx.fillRect(8, -11, 12, 4);
+      ctx.fillStyle = '#00aadd'; // blue-charged claw tip
+      ctx.fillRect(20, -11, 2, 4);
 
-      // 7. Outer Black Outline Border
+      // 7. Lower reaching arm
+      ctx.fillStyle = '#162e48';
+      ctx.fillRect(8, 7, 10, 4);
+      ctx.fillStyle = '#00aadd';
+      ctx.fillRect(18, 7, 2, 4);
+
+      // 8. Skull (right side, facing player)
+      ctx.fillStyle = '#162e48';
+      ctx.fillRect(0, -7, 10, 14);
+
+      // 9. Glowing blue eyes — the shielder's identity marker
+      ctx.fillStyle = '#00ccff';
+      ctx.fillRect(5, -4, 4, 8);
+      ctx.fillStyle = '#ffffff'; // bright reflection
+      ctx.fillRect(6, -2, 2, 2);
+
+      // 10. Outer black pixel art border
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 3;
-      ctx.strokeRect(-10, -11, 20, 22);
+      ctx.strokeRect(-11, -12, 20, 24);
 
     } else {
       // Normal Zombie Sprite Design (32px)
@@ -7328,11 +7356,11 @@ function triggerReflexDash() {
   }
 
   // Configure dash surge
-  const dashMultiplier = 3.5;
+  const dashMultiplier = 4.5;
   const desiredSpeed = player.speed * (player.isOnToxicTrail ? 0.7 : 1.0); // slight trail slow
   player.reflexDashVx = Math.cos(angle) * desiredSpeed * dashMultiplier;
   player.reflexDashVy = Math.sin(angle) * desiredSpeed * dashMultiplier;
-  player.reflexDashDuration = 9; // Dash lasts 9 frames (~0.15 seconds of invulnerable surge)
+  player.reflexDashDuration = 11; // Dash lasts 11 frames (~0.18 seconds of invulnerable surge)
   
   // Cooldown reduces by 1.0s per stack level above 1, capped at 3s minimum (from 6s)
   const cooldownSec = Math.max(3.0, 6.0 - (player.reflexDashLevel - 1) * 1.0);
