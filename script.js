@@ -838,6 +838,7 @@ let pendingSummons = []; // Necromancer warning circles before summoned enemies 
 // Patient Zero Boss Tracking
 let bossesDefeated = 0;
 let activeBoss = null; // Reference to the current boss zombie in the zombies array
+const totalActiveZombiesCap = 45; // Performance cap for total active zombies (standard + summoned) to maintain 60fps
 const bossSummonCooldown = 8000;  // Boss summons every 8 seconds
 const bossSummonCastTime = 1200;  // Red flash warning before summon
 
@@ -2313,8 +2314,13 @@ function update() {
       z.summonCooldown = z.summonCooldown || necromancerSummonCooldown;
 
       if (!z.isSummoning && now - z.lastSummonTime >= z.summonCooldown && gameState.isRunning) {
-        queueNecromancerSummon(z, now);
-        z.lastSummonTime = now;
+        if (zombies.length < totalActiveZombiesCap) {
+          queueNecromancerSummon(z, now);
+          z.lastSummonTime = now;
+        } else {
+          // Postpone summoning by 2 seconds to check again soon
+          z.lastSummonTime = now - z.summonCooldown + 2000;
+        }
       }
     }
 
@@ -2324,8 +2330,13 @@ function update() {
         z.lastSummonTime = now;
       }
       if (!z.isSummoning && now - z.lastSummonTime >= bossSummonCooldown && gameState.isRunning) {
-        queueBossSummon(z, now);
-        z.lastSummonTime = now;
+        if (zombies.length < totalActiveZombiesCap) {
+          queueBossSummon(z, now);
+          z.lastSummonTime = now;
+        } else {
+          // Postpone summoning by 2 seconds to check again soon
+          z.lastSummonTime = now - bossSummonCooldown + 2000;
+        }
       }
 
       // Patient Zero Boss custom shooting logic (every 10 seconds, fires a consecutive burst of 3 bullets from each claw)
@@ -2426,12 +2437,19 @@ function update() {
         z1.y -= pushY;
         z2.x += pushX;
         z2.y += pushY;
-
-        // Reinforce obstacle boundary conditions and clamps instantly so separation doesn't clip them inside walls
-        resolveEntityObstacleCollision(z1);
-        resolveEntityObstacleCollision(z2);
       }
     }
+  }
+
+  // After all crowd separation pushes are calculated, resolve boundary clamp and obstacle collisions once per zombie (O(N) single-pass)
+  for (let j = 0; j < zombies.length; j++) {
+    let z = zombies[j];
+    const zHalf = z.size / 2;
+    if (z.x < zHalf) z.x = zHalf;
+    if (z.x > world.width - zHalf) z.x = world.width - zHalf;
+    if (z.y < zHalf) z.y = zHalf;
+    if (z.y > world.height - zHalf) z.y = world.height - zHalf;
+    resolveEntityObstacleCollision(z);
   }
 
   // 5.6. Sweep dead zombies and trigger explosions / scores / kills
