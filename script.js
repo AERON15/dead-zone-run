@@ -2704,9 +2704,9 @@ function update() {
       // Spawn a dramatic blast of rotten green flesh and crimson blood
       spawnZombieDeathExplosion(z.x, z.y);
 
-      // If it's an exploder zombie, detonate it!
+      // If it's an exploder zombie, detonate it! (skipPlayerDamage=false, skipZombieDamage=true — no friendly fire)
       if (z.type === 'exploder') {
-        triggerExplosion(z.x, z.y, z.damage);
+        triggerExplosion(z.x, z.y, z.damage, false, true);
       }
 
       // Patient Zero boss defeated: apply permanent scaling and bonus score
@@ -4321,7 +4321,7 @@ function spawnPlayerBloodSpray(px, py) {
   }
 }
 
-function triggerExplosion(ex, ey, maxDamage, skipPlayerDamage = false) {
+function triggerExplosion(ex, ey, maxDamage, skipPlayerDamage = false, skipZombieDamage = false) {
   audio.playSfx('explosion');
   startExplosionShake(ex, ey, 20); // Upgraded screen shake to 20 for massive weight
   addFloorScorch(ex, ey, 90, 'fire'); // Perfect circle crater with glowing cracks
@@ -4417,16 +4417,18 @@ function triggerExplosion(ex, ey, maxDamage, skipPlayerDamage = false) {
 
   const explosionRadius = 140;
 
-  // Damage zombies within explosion radius
-  for (let i = zombies.length - 1; i >= 0; i--) {
-    const z = zombies[i];
-    const zDx = z.x - ex;
-    const zDy = z.y - ey;
-    const zDist = Math.sqrt(zDx * zDx + zDy * zDy);
-    if (zDist < explosionRadius) {
-      const factor = (explosionRadius - zDist) / explosionRadius;
-      const dmg = Math.floor(maxDamage * factor);
+  // Damage zombies within explosion radius (skipped for zombie-owned explosions like exploders)
+  if (!skipZombieDamage) {
+    for (let i = zombies.length - 1; i >= 0; i--) {
+      const z = zombies[i];
+      const zDx = z.x - ex;
+      const zDy = z.y - ey;
+      const zDist = Math.sqrt(zDx * zDx + zDy * zDy);
+      if (zDist < explosionRadius) {
+        const factor = (explosionRadius - zDist) / explosionRadius;
+        const dmg = Math.floor(maxDamage * factor);
         damageZombie(z, dmg, true);
+      }
     }
   }
 
