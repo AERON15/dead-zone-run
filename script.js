@@ -3877,13 +3877,14 @@ function chooseZombieType(wave) {
   }
 
   // Wave 40+: Debut SHIELD zombies!
-  if (roll < 0.10) return 'shielder';      // debuts at wave 40!
-  if (roll < 0.22) return 'exploder';
-  if (roll < 0.32) return 'rusher';
-  if (roll < 0.42) return 'necromancer';
-  if (roll < 0.55) return 'spitter';
-  if (roll < 0.70) return 'tank';
-  if (roll < 0.86) return 'fast';
+  const shielderChance = wave === 40 ? 0.35 : 0.15; // 35% prominent debut on Wave 40, 15% on Wave 41+
+  if (roll < shielderChance) return 'shielder';      // debuts at wave 40!
+  if (roll < shielderChance + 0.12) return 'exploder';
+  if (roll < shielderChance + 0.22) return 'rusher';
+  if (roll < shielderChance + 0.32) return 'necromancer';
+  if (roll < shielderChance + 0.45) return 'spitter';
+  if (roll < shielderChance + 0.60) return 'tank';
+  if (roll < shielderChance + 0.76) return 'fast';
   return 'normal';
 }
 
