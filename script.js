@@ -508,7 +508,7 @@ const UPGRADES_REGISTRY = [
     id: 'speed',
     name: 'Speed Up',
     icon: '[MOVE]',
-    description: 'Increase player speed by 0.25 (Capped at +2.50 max)',
+    description: 'Increase player speed by 0.25 spd (Capped at +2.5 spd max)',
     rarity: 'common',
     apply: () => {
       player.speed = Number((Math.min(4.2, player.speed + 0.25)).toFixed(2));
@@ -539,7 +539,7 @@ const UPGRADES_REGISTRY = [
     id: 'bulletspeed',
     name: 'Bullet Speed Up',
     icon: '[AMMO]',
-    description: 'Increase bullet speed by 3.00 (Capped at 20 max)',
+    description: 'Increase bullet speed by 3 (Capped at 20 max)',
     rarity: 'common',
     apply: () => {
       player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 3.00)).toFixed(2));
@@ -559,7 +559,7 @@ const UPGRADES_REGISTRY = [
     id: 'runnershigh',
     name: "Runner's High",
     icon: '[HIGH]',
-    description: 'Gives an extra 0.20 speed boost when moving continuously for over 3 seconds (Stackable, capped at +1.0 max speed)',
+    description: 'Gives an extra 0.2 spd boost when moving continuously for over 3 seconds (Stackable, capped at +1 spd max)',
     rarity: 'common',
     apply: () => {
       player.runnersHighLevel += 1;
@@ -579,7 +579,7 @@ const UPGRADES_REGISTRY = [
     id: 'retaliate',
     name: 'Retaliate',
     icon: '[RAGE]',
-    description: 'Taking damage briefly triggers a +0.40 speed boost per stack (up to +1.5 max) for 2s (Stackable, duration capped at 6s max)',
+    description: 'Taking damage briefly triggers a +0.4 spd boost per stack (up to +1.5 spd max) for 2s (Stackable, duration capped at 6s max)',
     rarity: 'common',
     apply: () => {
       player.retaliateLevel += 1;
@@ -705,7 +705,7 @@ const UPGRADES_REGISTRY = [
     id: 'heavycaliber',
     name: 'Heavy Caliber',
     icon: '[HEAVY]',
-    description: 'Massive damage boost (+25), but reduces speed (-0.2) and slows fire rate (+50ms)',
+    description: 'Massive damage boost (+25), but reduces speed (-0.2 spd) and slows fire rate (+50ms)',
     rarity: 'legendary',
     apply: () => {
       player.bulletDamage += 25;
@@ -801,7 +801,7 @@ const UPGRADES_REGISTRY = [
     id: 'reflexdash',
     name: 'Reflex Dash',
     icon: '[DASH]',
-    description: 'Press Space to dash a short distance (6s cooldown, stacks reduce by 1.0s, cap at 3s)',
+    description: 'Press Space to dash a short distance (6s cooldown, stacks reduce by 1s, cap at 3s)',
     rarity: 'rare',
     apply: () => {
       player.reflexDashLevel = Math.min(7, player.reflexDashLevel + 1);
@@ -821,7 +821,7 @@ const UPGRADES_REGISTRY = [
     id: 'combatstim',
     name: 'Combat Stimulant',
     icon: '[STIM]',
-    description: 'Gain +10% fire rate and +0.20 speed, but lose 5 max HP per stack (Fire rate cap +40%)',
+    description: 'Gain +10% fire rate and +0.2 spd, but lose 5 max HP per stack (Fire rate cap +40%)',
     rarity: 'common',
     apply: () => {
       player.stimulantLevel = Math.min(7, player.stimulantLevel + 1);
