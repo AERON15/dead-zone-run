@@ -467,7 +467,10 @@ let player = {
   killFrenzyLevel: 0,
   killFrenzyHistory: [],
   killFrenzyTimer: 0,
-  killFrenzyCD: 0
+  killFrenzyCD: 0,
+  stillTicks: 0,       // How many physics ticks the player has been completely still (for Steady Aim delay)
+  longShotLevel: 0,    // Long Shot upgrade level — bonus damage scales with bullet travel distance
+  fairyAuraLevel: 0    // Fairy Aura upgrade level — magic DoT aura around the player
 };
 
 // Keyboard Input Tracker
@@ -648,7 +651,7 @@ const UPGRADES_REGISTRY = [
     id: 'steadyaim',
     name: 'Steady Aim',
     icon: '[STILL]',
-    description: 'Increase damage by 15, but only if you are standing completely still while shooting (Stackable, capped at +60 max static damage)',
+    description: 'After standing still for 3 seconds, gain +15 bonus damage per stack while stationary. Moving resets the timer. (Stackable, capped at +60 max)',
     rarity: 'rare',
     apply: () => {
       player.steadyAimLevel += 1;
@@ -735,7 +738,7 @@ const UPGRADES_REGISTRY = [
     name: 'Orbiting Defender',
     icon: '[RING]',
     description: 'Orbiting energy blade circles at a wide distance, dealing massive contact damage to zombies (Stackable, capped at 5 blades max)',
-    rarity: 'legendary',
+    rarity: 'epic',
     apply: () => {
       player.orbitingDefenderLevel = Math.min(5, player.orbitingDefenderLevel + 1);
     }
@@ -847,6 +850,26 @@ const UPGRADES_REGISTRY = [
     }
   },
   {
+    id: 'longshot',
+    name: 'Long Shot',
+    icon: '[RANGE]',
+    description: 'Bullets deal up to +35% more damage per stack based on distance traveled (kicks in beyond ~100px, caps at 2x damage at 350px). Does not apply to shrapnel. (Capped at 3 stacks)',
+    rarity: 'epic',
+    apply: () => {
+      player.longShotLevel = Math.min(3, player.longShotLevel + 1);
+    }
+  },
+  {
+    id: 'fairyaura',
+    name: 'Fairy Aura',
+    icon: '[AURA]',
+    description: 'A magical aura radiates around you, pulsing every 0.5s to deal 3 DPS to all nearby zombies. Each stack widens the radius by 20px and adds 2.5 DPS. (Capped at 5 stacks, max 160px radius / 11 DPS)',
+    rarity: 'legendary',
+    apply: () => {
+      player.fairyAuraLevel = Math.min(5, player.fairyAuraLevel + 1);
+    }
+  },
+  {
     id: 'slowstart',
     name: 'Slow Start',
     icon: '[RAMP]',
@@ -892,6 +915,8 @@ const UPGRADE_CAPS = {
   overclockedweapon: () => player.overclockLevel >= 6,
   killfrenzy:        () => player.killFrenzyLevel >= 6,
   slowstart:         () => player.slowStartLevel >= 3,
+  longshot:          () => player.longShotLevel >= 3,
+  fairyaura:         () => player.fairyAuraLevel >= 5,
 };
 
 // Combat Arrays
@@ -1504,6 +1529,9 @@ function startGame() {
   player.killFrenzyTimer = 0;
   player.killFrenzyCD = 0;
   player.slowStartLevel = 0;
+  player.stillTicks = 0;
+  player.longShotLevel = 0;
+  player.fairyAuraLevel = 0;
 
   // Clear chosen upgrades
   upgradesChosen = [];
@@ -1799,6 +1827,13 @@ function update() {
     player.movementStart = null;
   }
 
+  // Track stillness duration for Steady Aim's 3-second activation delay
+  if (isMoving) {
+    player.stillTicks = 0;
+  } else {
+    player.stillTicks += 1;
+  }
+
   // Calculate dynamic movement speed with boosts
   let currentSpeed = player.speed;
   let isRunnersHighActive = false;
@@ -1941,8 +1976,9 @@ function update() {
       }
     }
 
-    // Increment bullet age for trail calculation
+    // Increment bullet age for trail calculation, and track total distance for Long Shot
     b.age = (b.age || 0) + 1;
+    b.distanceTraveled = (b.distanceTraveled || 0) + Math.hypot(b.vx, b.vy);
 
     const prevX = b.x;
     const prevY = b.y;
@@ -2113,6 +2149,35 @@ function update() {
 
       waveZombiesSpawned += batchSize;
       lastZombieSpawnTime = now;
+    }
+  }
+
+  // Fairy Aura DoT — damages all zombies within the aura radius every 60 ticks (0.5s)
+  if (player.fairyAuraLevel > 0 && gameTick % 60 === 0) {
+    const auraRadius = 80 + (player.fairyAuraLevel - 1) * 20;
+    const auraRadiusSq = auraRadius * auraRadius;
+    const dmgPerPulse = 1.5 + (player.fairyAuraLevel - 1) * 1.25; // 3 DPS at L1, 11 DPS at L5
+    for (let i = zombies.length - 1; i >= 0; i--) {
+      const z = zombies[i];
+      const dxA = z.x - player.x;
+      const dyA = z.y - player.y;
+      if (dxA * dxA + dyA * dyA <= auraRadiusSq) {
+        damageZombie(z, dmgPerPulse, false);
+        // Spawn a brief sparkle pop on affected zombies
+        for (let s = 0; s < 3; s++) {
+          const sa = Math.random() * Math.PI * 2;
+          gameParticles.push({
+            x: z.x + Math.cos(sa) * (z.size / 2),
+            y: z.y + Math.sin(sa) * (z.size / 2),
+            vx: Math.cos(sa) * (Math.random() * 1.2 + 0.5),
+            vy: Math.sin(sa) * (Math.random() * 1.2 + 0.5),
+            size: Math.floor(Math.random() * 3) + 2,
+            color: Math.random() > 0.5 ? '#e8b4ff' : '#c0f0ff',
+            life: 0.7,
+            decay: Math.random() * 0.08 + 0.06
+          });
+        }
+      }
     }
   }
 
@@ -2805,6 +2870,13 @@ function update() {
         audio.playSfx('hit');
         // Calculate base and upgrades damage
         let damageDealt = b.damage;
+
+        // Long Shot — damage scales with distance traveled (not applied to shrapnel)
+        if (player.longShotLevel > 0 && !b.isShrapnel) {
+          const rangeFactor = Math.min(1.0, (b.distanceTraveled || 0) / 350);
+          const longShotMult = Math.min(2.0, 1.0 + rangeFactor * (player.longShotLevel * 0.35));
+          damageDealt = Math.round(damageDealt * longShotMult);
+        }
 
         // Weak Point Scan (Critical Hit chance)
         let isCrit = false;
@@ -4068,7 +4140,8 @@ function shootWeapon() {
     // Calculate bullet stats dynamically based on upgrades
     const isPlayerMoving = (keys.w || keys.a || keys.s || keys.d);
     let finalDamage = player.bulletDamage;
-    if (!isPlayerMoving && player.steadyAimLevel > 0) {
+    // Steady Aim: requires 3 full seconds of standing still (360 ticks at 120Hz) before bonus activates
+    if (!isPlayerMoving && player.steadyAimLevel > 0 && player.stillTicks >= 360) {
       finalDamage += Math.min(60, player.steadyAimLevel * 15); // Capped at +60 damage
     }
     // Double Shot penalty: -45% damage when extra bullets are active
@@ -4797,8 +4870,11 @@ function render() {
   ctx.lineWidth = 6;
   ctx.strokeRect(5, 5, world.width - 10, world.height - 10);
 
-  // 8.5. Draw Orbiting Defender energy blades (Legendary)
+  // 8.5. Draw Orbiting Defender energy blades (Epic)
   drawOrbitingDefender();
+
+  // 8.6. Draw Fairy Aura magic circle (Legendary) — rendered behind player
+  drawFairyAura();
 
   // 9. Draw Player (Detailed 8-bit Blocky Survivor)
   drawPlayer();
@@ -5886,6 +5962,68 @@ function drawLightningArcs() {
 /**
  * Renders the Legendary Orbiting Defender energy blades circling the player.
  */
+/**
+ * Draws the Fairy Aura magic circle behind the player.
+ * Soft pulsing lavender/pink glow, rotating cyan inner ring,
+ * and orbiting sparkle stars along the aura edge.
+ */
+function drawFairyAura() {
+  if (player.fairyAuraLevel <= 0) return;
+
+  const auraRadius = 80 + (player.fairyAuraLevel - 1) * 20;
+
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // 1. Outer ambient glow (soft lavender fill — wide and faint)
+  const glowAlpha = 0.10 + Math.sin(gameTick * 0.04) * 0.05;
+  ctx.fillStyle = `rgba(210, 150, 255, ${glowAlpha})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2. Outer ring stroke (pulsing pink/lavender border)
+  const ringAlpha = 0.55 + Math.sin(gameTick * 0.06) * 0.20;
+  ctx.strokeStyle = `rgba(220, 140, 255, ${ringAlpha})`;
+  ctx.lineWidth = 2.0;
+  ctx.beginPath();
+  ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 3. Inner rotating ring (light cyan, spins slowly)
+  const innerR = auraRadius * 0.55;
+  const innerAlpha = 0.35 + Math.sin(gameTick * 0.08 + 2) * 0.15;
+  ctx.strokeStyle = `rgba(160, 230, 255, ${innerAlpha})`;
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash([6, 10]);
+  ctx.lineDashOffset = -(gameTick * 0.5) % 16;
+  ctx.beginPath();
+  ctx.arc(0, 0, innerR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]); // reset dash
+
+  // 4. Orbiting sparkle stars along the aura edge (count scales with level)
+  const numStars = 4 + player.fairyAuraLevel * 2;
+  for (let i = 0; i < numStars; i++) {
+    const a = (i / numStars) * Math.PI * 2 + gameTick * 0.022;
+    const sx = Math.cos(a) * auraRadius;
+    const sy = Math.sin(a) * auraRadius;
+    const starAlpha = 0.5 + Math.sin(gameTick * 0.12 + i * 1.3) * 0.4;
+    // Alternate between pink and cyan sparkles
+    ctx.fillStyle = i % 2 === 0
+      ? `rgba(255, 180, 255, ${starAlpha})`
+      : `rgba(180, 240, 255, ${starAlpha})`;
+    ctx.fillRect(sx - 2, sy - 2, 4, 4);
+
+    // Tiny secondary dot trailing each star
+    const a2 = a - 0.18;
+    ctx.fillStyle = `rgba(255, 210, 255, ${starAlpha * 0.5})`;
+    ctx.fillRect(Math.cos(a2) * auraRadius - 1, Math.sin(a2) * auraRadius - 1, 2, 2);
+  }
+
+  ctx.restore();
+}
+
 function drawOrbitingDefender() {
   if (player.orbitingDefenderLevel <= 0) return;
 
