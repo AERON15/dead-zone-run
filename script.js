@@ -508,10 +508,10 @@ const UPGRADES_REGISTRY = [
     id: 'heal',
     name: 'Heal Boost',
     icon: '[HEAL]',
-    description: 'Increases natural wave completion heal by +5% of max HP (Stackable, capped at 75% max)',
+    description: 'Increases natural wave completion heal by +5% of max HP (Stackable, capped at 35% max)',
     rarity: 'common',
     apply: () => {
-      player.waveHealPercentage = Number((Math.min(0.75, player.waveHealPercentage + 0.05)).toFixed(2));
+      player.waveHealPercentage = Number((Math.min(0.35, player.waveHealPercentage + 0.05)).toFixed(2));
     }
   },
   {
@@ -756,12 +756,13 @@ const UPGRADES_REGISTRY = [
     id: 'bioshield',
     name: 'Bio-Shield',
     icon: '[SHIELD]',
-    description: 'Every 12 seconds, block the next zombie hit. Stacks reduce cooldown by 1s (Capped at 6s)',
+    description: 'Every 45 seconds, block the next zombie hit. Stacks reduce cooldown by 2.5s (Capped at 30s)',
     rarity: 'epic',
     apply: () => {
       player.bioShieldLevel = Math.min(7, player.bioShieldLevel + 1);
-      if (player.bioShieldTimer === 0) {
-        player.bioShieldTimer = (12 - player.bioShieldLevel) * 60; // 60 ticks per sec
+      if (player.bioShieldTimer === 0 && !player.bioShieldActive) {
+        const cdSec = Math.max(30.0, 45.0 - (player.bioShieldLevel - 1) * 2.5);
+        player.bioShieldTimer = cdSec * 120; // 120 ticks per second (120Hz physics)
       }
     }
   },
@@ -821,7 +822,7 @@ const UPGRADES_REGISTRY = [
     id: 'killfrenzy',
     name: 'Kill Frenzy',
     icon: '[FRENZY]',
-    description: 'Defeating 5 zombies quickly grants +30% speed and +30% fire rate for 3s (Capped at 8s duration)',
+    description: 'Defeating 7 zombies quickly grants +20% speed and +20% fire rate for 3s (Capped at 8s duration)',
     rarity: 'rare',
     apply: () => {
       player.killFrenzyLevel = Math.min(6, player.killFrenzyLevel + 1);
@@ -1560,9 +1561,9 @@ function gameLoop(timestamp) {
 function update() {
   gameTick += 1;
 
-  // Update Orbiting Defender rotating blades angle (slower, heavy orbit)
+  // Update Orbiting Defender rotating blades angle (molten blades orbit)
   if (player.orbitingDefenderLevel > 0) {
-    player.defenderAngle += 0.018;
+    player.defenderAngle += 0.04;
   }
 
   // Update Bio-Shield regeneration timer
@@ -1705,10 +1706,10 @@ function update() {
     currentSpeed += player.stimulantLevel * 0.15;
   }
 
-  // Kill Frenzy speed boost (+30% movement speed)
+  // Kill Frenzy speed boost (+20% movement speed)
   if (player.killFrenzyTimer > 0) {
     player.killFrenzyTimer -= 1;
-    currentSpeed += player.speed * 0.30;
+    currentSpeed += player.speed * 0.20;
   }
 
   // Reflex Dash Cooldown decrement
@@ -1802,13 +1803,13 @@ function update() {
     }
   }
 
-  // Keep player inside the world boundaries (not just the screen)
+  // Resolve obstacle collisions first, then clamp player inside world boundaries to prevent border stuckness
+  resolveEntityObstacleCollision(player);
   const halfSize = player.size / 2;
   if (player.x < halfSize) player.x = halfSize;
   if (player.x > world.width - halfSize) player.x = world.width - halfSize;
   if (player.y < halfSize) player.y = halfSize;
   if (player.y > world.height - halfSize) player.y = world.height - halfSize;
-  resolveEntityObstacleCollision(player);
 
   // 2. Continuous shooting behavior when holding down mouse
   if (mouse.isDown) {
@@ -2246,7 +2247,7 @@ function update() {
 
     // Orbiting Defender contact damage shredding (Legendary)
     if (player.orbitingDefenderLevel > 0) {
-      const radius = 190; // Slower, massive outer orbit perimeter (increased from 140)
+      const radius = 240; // Expand outer orbit perimeter (buffed from 190)
       const contactRadius = z.size / 2 + 48; // Made them physically giant sawblades (half of size 96)
       const contactRadiusSq = contactRadius * contactRadius;
       for (let d = 0; d < player.orbitingDefenderLevel; d++) {
@@ -2531,8 +2532,8 @@ function update() {
           const nowMs = Date.now();
           player.killFrenzyHistory.push(nowMs);
           player.killFrenzyHistory = player.killFrenzyHistory.filter(t => nowMs - t <= 3000);
-          if (player.killFrenzyHistory.length >= 5) {
-            player.killFrenzyTimer = Math.min(480, (player.killFrenzyTimer || 0) + 180); // add 3s (180 ticks), cap at 8s (480 ticks)
+          if (player.killFrenzyHistory.length >= 7) {
+            player.killFrenzyTimer = Math.min(960, (player.killFrenzyTimer || 0) + 360); // add 3s (360 ticks), cap at 8s (960 ticks)
             // Spawn green/pink frenzy particles around the player
             for (let fP = 0; fP < 5; fP++) {
               gameParticles.push({
@@ -3486,8 +3487,22 @@ function resolveEntityObstacleCollision(entity) {
 
       const dist = Math.sqrt(distSq);
       const push = radius - dist + 1;
-      entity.x += (dx / dist) * push;
-      entity.y += (dy / dist) * push;
+      const nx = dx / dist;
+      const ny = dy / dist;
+      entity.x += nx * push;
+      entity.y += ny * push;
+
+      // Tangential corner-slip kiting nudge to help zombies glide smoothly around obstacle edges towards the player
+      if (entity !== player) {
+        const tx = -ny;
+        const ty = nx;
+        const toPlayerX = player.x - entity.x;
+        const toPlayerY = player.y - entity.y;
+        const dot = toPlayerX * tx + toPlayerY * ty;
+        const slipDir = dot >= 0 ? 1 : -1;
+        entity.x += tx * slipDir * 1.2;
+        entity.y += ty * slipDir * 1.2;
+      }
     }
   });
 
@@ -3636,9 +3651,9 @@ function damagePlayer(rawAmount) {
   if (player.bioShieldLevel > 0 && player.bioShieldActive) {
     player.bioShieldActive = false;
     
-    // Cooldown reduces by 1s per stack above level 1, capped at 6s minimum (from 12s)
-    const cdSec = Math.max(6.0, 12.0 - (player.bioShieldLevel - 1) * 1.0);
-    player.bioShieldTimer = cdSec * 60; // 60 ticks per second
+    // Cooldown: 45s base, reduces by 2.5s per stack, capped at 30s minimum
+    const cdSec = Math.max(30.0, 45.0 - (player.bioShieldLevel - 1) * 2.5);
+    player.bioShieldTimer = cdSec * 120; // 120 ticks per second (120Hz physics)
 
     // Spawn cyan absorption energy sparks around player
     for (let s = 0; s < 15; s++) {
@@ -3792,7 +3807,7 @@ function shootWeapon() {
     currentFireRate *= (1 - stimBonus);
   }
   if (player.killFrenzyTimer > 0) {
-    currentFireRate *= 0.70; // +30% fire rate reduction (faster firing)
+    currentFireRate *= 0.80; // +20% fire rate reduction (faster firing)
   }
 
   // Slow Start ramp: starts at 0.5x speed, scales linearly to maxMult speed (2.5x–3x) over 10 seconds (600 ticks) from wave start
@@ -5685,7 +5700,7 @@ function drawLightningArcs() {
 function drawOrbitingDefender() {
   if (player.orbitingDefenderLevel <= 0) return;
 
-  const radius = 190; // Slower, massive outer orbit perimeter (increased from 140)
+  const radius = 240; // Slower, massive outer orbit perimeter (increased from 190)
   const size = 96;   // Made them physically giant sawblades
   const half = size / 2;
   const teethCount = 8;
