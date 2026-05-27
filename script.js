@@ -2714,111 +2714,139 @@ function update() {
           vy = (zDy / distance) * desiredSpeed;
         }
 
-        // Advanced AABB Look-Ahead Sliding Vector Obstacle Avoidance (Staggered to once every 4 ticks per zombie to optimize CPU load)
-        if (vx !== 0 || vy !== 0) {
+        // ── Stuck Recovery ────────────────────────────────────────────────────
+        // If a zombie barely moved in the last 90 ticks it is wedged somewhere.
+        // Escape by pushing directly away from the nearest obstacle surface.
+        z.stuckEscapeTicks   = z.stuckEscapeTicks   || 0;
+        z.lastStuckCheckTick = z.lastStuckCheckTick !== undefined ? z.lastStuckCheckTick : gameTick;
+        if (z.lastStuckCheckX === undefined) { z.lastStuckCheckX = z.x; z.lastStuckCheckY = z.y; }
+
+        if ((gameTick - z.lastStuckCheckTick) >= 90) {
+          const movedSq  = (z.x - z.lastStuckCheckX) ** 2 + (z.y - z.lastStuckCheckY) ** 2;
+          const minMove  = z.size * 0.35; // must travel at least 35% of own size in 90 ticks
+          if (movedSq < minMove * minMove && z.type !== 'spitter' && z.type !== 'necromancer') {
+            // Find nearest obstacle surface and push opposite to it
+            let escX = zDx, escY = zDy; // fallback: toward player
+            let bestD = Infinity;
+            for (let o = 0; o < obstacles.length; o++) {
+              const obs = obstacles[o];
+              const cx  = Math.max(obs.x, Math.min(z.x, obs.x + obs.width));
+              const cy  = Math.max(obs.y, Math.min(z.y, obs.y + obs.height));
+              const d   = Math.hypot(z.x - cx, z.y - cy);
+              if (d < bestD) { bestD = d; escX = z.x - cx; escY = z.y - cy; }
+            }
+            const escLen = Math.hypot(escX, escY);
+            z.stuckEscapeVx = escLen > 0 ? escX / escLen : (Math.random() > 0.5 ? 1 : -1);
+            z.stuckEscapeVy = escLen > 0 ? escY / escLen : (Math.random() > 0.5 ? 1 : -1);
+            z.stuckEscapeTicks = 80;   // 80 ticks ~0.67s to break free
+            z.wallFollowTicks  = 0;    // Cancel stale wall-follow commitment
+            z.avoidanceVx      = undefined; // Force full avoidance recompute next tick
+          }
+          z.lastStuckCheckTick = gameTick;
+          z.lastStuckCheckX    = z.x;
+          z.lastStuckCheckY    = z.y;
+        }
+
+        if (z.stuckEscapeTicks > 0) {
+          // Apply escape velocity; geometry cleanup handled by resolveEntityObstacleCollision
+          z.stuckEscapeTicks -= 1;
+          vx = z.stuckEscapeVx * desiredSpeed;
+          vy = z.stuckEscapeVy * desiredSpeed;
+
+        } else if (vx !== 0 || vy !== 0) {
+          // ── Look-Ahead AABB Obstacle Avoidance (single-obstacle focus) ────
+          // Recompute every 3 ticks; single-obstacle steering prevents the
+          // tangent-force cancellation that froze zombies between two walls.
           z.lastAvoidanceTick = z.lastAvoidanceTick || 0;
-          if (z.avoidanceVx !== undefined && (gameTick - z.lastAvoidanceTick < 4)) {
+          const needsRecompute = z.avoidanceVx === undefined || (gameTick - z.lastAvoidanceTick) >= 3;
+
+          if (!needsRecompute) {
             vx = z.avoidanceVx;
             vy = z.avoidanceVy;
           } else {
             z.lastAvoidanceTick = gameTick;
 
             const currentSpeed = Math.hypot(vx, vy);
-            const dirX = vx / currentSpeed;
-            const dirY = vy / currentSpeed;
+            const dirX = currentSpeed > 0 ? vx / currentSpeed : 0;
+            const dirY = currentSpeed > 0 ? vy / currentSpeed : 0;
 
-            const lookAhead = 40; // Pixels to look ahead
-            let avoidanceX = 0;
-            let avoidanceY = 0;
-            let isBlocked = false;
+            // Detection ranges scale with zombie speed so fast enemies see further ahead
+            const lookAhead = Math.max(48, z.speed * 28);
+            const safetyR   = z.size / 2 + Math.max(14, z.speed * 6);
+
+            // Find the SINGLE most-threatening obstacle (closest to path).
+            // Summing forces from all obstacles causes cancellation in corridors —
+            // focusing on the worst threat and rounding it avoids this entirely.
+            let threatObs = null, threatDist = Infinity, threatCX = 0, threatCY = 0;
 
             for (let o = 0; o < obstacles.length; o++) {
               const obs = obstacles[o];
 
-              // 1. Closest point on AABB obstacle to current zombie position
-              const closestX = Math.max(obs.x, Math.min(z.x, obs.x + obs.width));
-              const closestY = Math.max(obs.y, Math.min(z.y, obs.y + obs.height));
-              const distCurrent = Math.hypot(z.x - closestX, z.y - closestY);
+              // Check at current position, midpoint, and full look-ahead (catches corner glances)
+              const cxCur = Math.max(obs.x, Math.min(z.x,                       obs.x + obs.width));
+              const cyCur = Math.max(obs.y, Math.min(z.y,                       obs.y + obs.height));
+              const cxMid = Math.max(obs.x, Math.min(z.x + dirX * lookAhead * 0.5, obs.x + obs.width));
+              const cyMid = Math.max(obs.y, Math.min(z.y + dirY * lookAhead * 0.5, obs.y + obs.height));
+              const cxAhd = Math.max(obs.x, Math.min(z.x + dirX * lookAhead,    obs.x + obs.width));
+              const cyAhd = Math.max(obs.y, Math.min(z.y + dirY * lookAhead,    obs.y + obs.height));
 
-              // 2. Closest point on AABB obstacle to anticipated look-ahead position
-              const aheadX = z.x + dirX * lookAhead;
-              const aheadY = z.y + dirY * lookAhead;
-              const closestAheadX = Math.max(obs.x, Math.min(aheadX, obs.x + obs.width));
-              const closestAheadY = Math.max(obs.y, Math.min(aheadY, obs.y + obs.height));
-              const distAhead = Math.hypot(aheadX - closestAheadX, aheadY - closestAheadY);
+              const dCur = Math.hypot(z.x                       - cxCur, z.y                       - cyCur);
+              const dMid = Math.hypot(z.x + dirX * lookAhead * 0.5 - cxMid, z.y + dirY * lookAhead * 0.5 - cyMid);
+              const dAhd = Math.hypot(z.x + dirX * lookAhead    - cxAhd, z.y + dirY * lookAhead    - cyAhd);
 
-              // 3. Collision footprint threshold
-              const safetyRadius = z.size / 2 + 12;
-
-              if (distCurrent < safetyRadius || distAhead < safetyRadius) {
-                isBlocked = true;
-
-                // Vector pointing outward from closest point on obstacle face
-                let dx = z.x - closestX;
-                let dy = z.y - closestY;
-
-                if (dx === 0 && dy === 0) {
-                  // If center is somehow fully inside, resolve using obstacle center
-                  const obsCenterX = obs.x + obs.width / 2;
-                  const obsCenterY = obs.y + obs.height / 2;
-                  dx = z.x - obsCenterX;
-                  dy = z.y - obsCenterY;
-                  if (dx === 0 && dy === 0) {
-                    dx = 1;
-                    dy = 0;
-                  }
-                }
-
-                const dist = Math.hypot(dx, dy);
-                const nx = dist > 0 ? dx / dist : 1;
-                const ny = dist > 0 ? dy / dist : 0;
-
-                // sliding vector projection: cancel component going straight into the wall
-                const dotNormal = vx * nx + vy * ny;
-                if (dotNormal < 0) {
-                  vx -= dotNormal * nx;
-                  vy -= dotNormal * ny;
-                }
-
-                // Target-Aligned Tangential Steering: select tangent pointing closest to destination
-                const tx1 = -ny;
-                const ty1 = nx;
-                const tx2 = ny;
-                const ty2 = -nx;
-
-                // The original chase direction we wanted to head towards
-                const origVx = (z.type === 'spitter' && distance < 220) ? -zDx : zDx;
-                const origVy = (z.type === 'spitter' && distance < 220) ? -zDy : zDy;
-
-                const dot1 = origVx * tx1 + origVy * ty1;
-                const dot2 = origVx * tx2 + origVy * ty2;
-
-                const tx = dot1 >= dot2 ? tx1 : tx2;
-                const ty = dot1 >= dot2 ? ty1 : ty2;
-
-                // Accumulate active steering force
-                avoidanceX += tx * desiredSpeed;
-                avoidanceY += ty * desiredSpeed;
+              const minD = Math.min(dCur, dMid, dAhd);
+              if (minD < safetyR && minD < threatDist) {
+                threatDist = minD;
+                threatObs  = obs;
+                threatCX   = cxCur; // use current-position closest point for push-out direction
+                threatCY   = cyCur;
               }
             }
 
-            // If blocked, blend sliding velocity (30%) with active steering deflection (70%)
-            if (isBlocked) {
-              vx = vx * 0.3 + avoidanceX * 0.7;
-              vy = vy * 0.3 + avoidanceY * 0.7;
-              const newLen = Math.hypot(vx, vy);
-              if (newLen > 0) {
-                vx = (vx / newLen) * desiredSpeed;
-                vy = (vy / newLen) * desiredSpeed;
+            if (threatObs) {
+              // Normal pointing away from the obstacle surface (push-out direction)
+              let dx = z.x - threatCX;
+              let dy = z.y - threatCY;
+              if (dx === 0 && dy === 0) {
+                dx = z.x - (threatObs.x + threatObs.width  / 2);
+                dy = z.y - (threatObs.y + threatObs.height / 2);
+                if (dx === 0 && dy === 0) dx = 1;
               }
+              const dn = Math.hypot(dx, dy);
+              const nx = dn > 0 ? dx / dn : 1;
+              const ny = dn > 0 ? dy / dn : 0;
 
-              // Set wall circumvention memory to bypass local minimum stuckness
+              // Cancel the velocity component heading INTO the wall
+              const dot = vx * nx + vy * ny;
+              if (dot < 0) { vx -= dot * nx; vy -= dot * ny; }
+
+              // Pick the tangent side that steers toward the chase destination
+              const tx1 = -ny, ty1 =  nx;
+              const tx2 =  ny, ty2 = -nx;
+              const chaseX = (z.type === 'spitter' && distance < 220) ? -zDx : zDx;
+              const chaseY = (z.type === 'spitter' && distance < 220) ? -zDy : zDy;
+              const useTx1 = (chaseX * tx1 + chaseY * ty1) >= (chaseX * tx2 + chaseY * ty2);
+              const tx = useTx1 ? tx1 : tx2;
+              const ty = useTx1 ? ty1 : ty2;
+
+              // 20% wall-slide + 80% tangential arc → smoother corner rounding
+              vx = vx * 0.20 + tx * desiredSpeed * 0.80;
+              vy = vy * 0.20 + ty * desiredSpeed * 0.80;
+              const newLen = Math.hypot(vx, vy);
+              if (newLen > 0) { vx = (vx / newLen) * desiredSpeed; vy = (vy / newLen) * desiredSpeed; }
+
+              // Commit to this direction long enough to fully clear the obstacle's corner.
+              // Duration scales with the zombie's size and the obstacle's width so large
+              // entities navigating wide obstacles don't abandon too early.
               z.wallFollowVx = vx;
               z.wallFollowVy = vy;
-              z.wallFollowTicks = 55; // 55 frames of continuous kiting
+              const clearTime = Math.ceil(
+                (z.size * 0.5 + Math.max(threatObs.width, threatObs.height) * 0.25)
+                / Math.max(desiredSpeed, 0.01)
+              ) + 15;
+              z.wallFollowTicks = Math.max(z.wallFollowTicks || 0, Math.min(clearTime, 75));
             }
 
-            // Cache kiting vectors to reuse on standard ticks
             z.avoidanceVx = vx;
             z.avoidanceVy = vy;
           }
@@ -4255,7 +4283,9 @@ function resolveEntityObstacleCollision(entity) {
       entity.x += nx * push;
       entity.y += ny * push;
 
-      // Tangential corner-slip kiting nudge to help zombies glide smoothly around obstacle edges towards the player
+      // Tangential corner-slip nudge: helps zombies glide around edges toward the player.
+      // Slip strength scales with entity size so large enemies (boss, tank) slide
+      // as decisively as small ones instead of oscillating against the corner.
       if (entity !== player) {
         const tx = -ny;
         const ty = nx;
@@ -4263,8 +4293,9 @@ function resolveEntityObstacleCollision(entity) {
         const toPlayerY = player.y - entity.y;
         const dot = toPlayerX * tx + toPlayerY * ty;
         const slipDir = dot >= 0 ? 1 : -1;
-        entity.x += tx * slipDir * 1.2;
-        entity.y += ty * slipDir * 1.2;
+        const slipStrength = Math.max(1.5, entity.size * 0.04);
+        entity.x += tx * slipDir * slipStrength;
+        entity.y += ty * slipDir * slipStrength;
       }
     }
   });
