@@ -3594,6 +3594,7 @@ function spawnZombie() {
     });
   } else if (zombieType === 'shielder') {
     // Spawn Shield Zombie (Heavy technology armored elite)
+    console.log(`[SPAWNER] Spawning Shield Zombie (shielder) at wave ${gameState.wave}`);
     addScaledZombie({
       type: 'shielder',
       x: zx,
