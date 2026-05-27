@@ -5963,155 +5963,148 @@ function drawLightningArcs() {
  * Renders the Epic Orbiting Defender energy blades circling the player.
  */
 /**
- * Draws the Fairy Aura — an elegant layered magic circle with rotating rune rings,
- * six-petal gemstone accents, radiating spokes, counter-orbiting inner stars,
- * and pulsing multi-pass glow. Scales visually with level.
+ * Draws the Fairy Aura — warm, organic, whimsical magic.
+ * Soft pink/gold/mint palette. Petal arcs, floating bubble orbs,
+ * scattered sparkle dust, and a tiny flower core. No techy dashes or tick marks.
  */
 function drawFairyAura() {
   if (player.fairyAuraLevel <= 0) return;
 
-  const R = 80 + (player.fairyAuraLevel - 1) * 20; // outer radius
+  const R = 80 + (player.fairyAuraLevel - 1) * 20;
   const t = gameTick;
 
   ctx.save();
   ctx.translate(player.x, player.y);
 
-  // ── LAYER 1: Multi-pass outer ambient glow (three nested fills = soft gradient) ──
-  const gp = 0.07 + Math.sin(t * 0.04) * 0.03;
-  ctx.fillStyle = `rgba(195, 130, 255, ${gp * 0.6})`;
-  ctx.beginPath(); ctx.arc(0, 0, R + 14, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = `rgba(210, 150, 255, ${gp})`;
-  ctx.beginPath(); ctx.arc(0, 0, R,      0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = `rgba(225, 175, 255, ${gp * 1.6})`;
-  ctx.beginPath(); ctx.arc(0, 0, R * 0.65, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = `rgba(240, 210, 255, ${gp * 2.2})`;
-  ctx.beginPath(); ctx.arc(0, 0, R * 0.32, 0, Math.PI * 2); ctx.fill();
+  // ── LAYER 1: Warm multi-pass ambient glow (pink → peach, no cyan) ──
+  const gp = 0.07 + Math.sin(t * 0.035) * 0.03;
+  ctx.fillStyle = `rgba(255, 165, 210, ${gp * 0.45})`; // wide outermost blush
+  ctx.beginPath(); ctx.arc(0, 0, R + 18, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(255, 180, 220, ${gp})`; // main warm pink halo
+  ctx.beginPath(); ctx.arc(0, 0, R,       0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(255, 210, 230, ${gp * 1.7})`; // mid warm fill
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.60, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(255, 235, 245, ${gp * 2.6})`; // bright inner core glow
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.28, 0, Math.PI * 2); ctx.fill();
 
-  // ── LAYER 2: Outer main ring with rotating rune tick marks ──
-  const rp = 0.65 + Math.sin(t * 0.06) * 0.20;
-  ctx.strokeStyle = `rgba(220, 145, 255, ${rp})`;
-  ctx.lineWidth = 2.2;
+  // ── LAYER 2: Soft outer ring — thin, no tick marks, just a gentle halo edge ──
+  const rp = 0.48 + Math.sin(t * 0.05) * 0.18;
+  ctx.strokeStyle = `rgba(255, 170, 215, ${rp})`;
+  ctx.lineWidth = 1.8;
   ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
 
-  // 16 tick marks — every 4th is a major rune, others are minor
-  const tickRot = t * 0.007;
-  for (let i = 0; i < 16; i++) {
-    const a  = (i / 16) * Math.PI * 2 + tickRot;
-    const isMajor = i % 4 === 0;
-    const inner = R - (isMajor ? 9 : 5);
-    const outer = R + (isMajor ? 6 : 3);
-    ctx.strokeStyle = isMajor
-      ? `rgba(255, 210, 255, ${rp})`
-      : `rgba(195, 130, 255, ${rp * 0.55})`;
-    ctx.lineWidth = isMajor ? 2.0 : 1.0;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
-    ctx.lineTo(Math.cos(a) * outer, Math.sin(a) * outer);
-    ctx.stroke();
+  // ── LAYER 3: Orbiting petal arcs — organic, not mechanical ──
+  // Small curved petal strokes orbit like floating flower petals
+  const numPetals = 8 + player.fairyAuraLevel * 2;
+  for (let i = 0; i < numPetals; i++) {
+    const a  = (i / numPetals) * Math.PI * 2 + t * 0.013;
+    const orR = R * 0.84;
+    const px  = Math.cos(a) * orR;
+    const py  = Math.sin(a) * orR;
+    const pa  = 0.55 + Math.sin(t * 0.11 + i * 0.85) * 0.35;
 
-    // Small dot at each major tick outer tip
-    if (isMajor) {
-      ctx.fillStyle = `rgba(255, 230, 255, ${rp * 0.85})`;
-      ctx.fillRect(Math.cos(a) * (outer + 2) - 2, Math.sin(a) * (outer + 2) - 2, 4, 4);
-    }
-  }
-
-  // ── LAYER 3: Mid ring — dashed, spins clockwise ──
-  const R2 = R * 0.72;
-  ctx.strokeStyle = `rgba(175, 225, 255, ${0.42 + Math.sin(t * 0.07 + 1) * 0.15})`;
-  ctx.lineWidth = 1.4;
-  ctx.setLineDash([9, 13]);
-  ctx.lineDashOffset = (t * 0.55) % 22;
-  ctx.beginPath(); ctx.arc(0, 0, R2, 0, Math.PI * 2); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // ── LAYER 4: Inner ring — dashed, spins counter-clockwise ──
-  const R3 = R * 0.40;
-  ctx.strokeStyle = `rgba(255, 185, 255, ${0.38 + Math.sin(t * 0.05 + 2.5) * 0.13})`;
-  ctx.lineWidth = 1.0;
-  ctx.setLineDash([5, 9]);
-  ctx.lineDashOffset = -(t * 0.38) % 14;
-  ctx.beginPath(); ctx.arc(0, 0, R3, 0, Math.PI * 2); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // ── LAYER 5: Six faint radiating spoke lines (center → outer ring) ──
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + t * 0.006;
-    const sa = 0.12 + Math.sin(t * 0.07 + i) * 0.06;
-    ctx.strokeStyle = `rgba(215, 175, 255, ${sa})`;
-    ctx.lineWidth = 1.0;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * R3, Math.sin(a) * R3);
-    ctx.lineTo(Math.cos(a) * R,  Math.sin(a) * R);
-    ctx.stroke();
-  }
-
-  // ── LAYER 6: Six gemstone petal accents at the mid-ring radius ──
-  const petalR = R * 0.72;
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + t * 0.014;
-    const px = Math.cos(a) * petalR;
-    const py = Math.sin(a) * petalR;
-    const pa = 0.70 + Math.sin(t * 0.10 + i * 1.05) * 0.25;
-
-    // Diamond shape (rotated 45° square)
     ctx.save();
     ctx.translate(px, py);
-    ctx.rotate(a + Math.PI * 0.25 + t * 0.012); // slow self-spin
-    const col = i % 2 === 0
-      ? `rgba(255, 200, 255, ${pa})`   // pink gem
-      : `rgba(185, 245, 255, ${pa})`;  // cyan gem
-    ctx.fillStyle = col;
-    ctx.fillRect(-4, -4, 8, 8);        // outer diamond body
-    ctx.fillStyle = `rgba(255, 255, 255, ${pa * 0.80})`;
-    ctx.fillRect(-2, -2, 4, 4);        // bright inner facet
+    ctx.rotate(a + Math.PI * 0.5); // face outward tangentially
+
+    // Petal stroke: a small curved arc — looks like a floating petal
+    const petalCol = i % 3 === 0
+      ? `rgba(255, 225, 120, ${pa})`  // warm gold petal
+      : i % 3 === 1
+        ? `rgba(255, 175, 215, ${pa})` // soft pink petal
+        : `rgba(175, 255, 200, ${pa})`; // mint petal
+    ctx.strokeStyle = petalCol;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 5, -0.75, 0.75); // curved petal arc
+    ctx.stroke();
+
+    // Tiny bright dot at petal tip
+    ctx.fillStyle = `rgba(255, 250, 225, ${pa * 0.90})`;
+    ctx.fillRect(-1, -1, 2, 2);
     ctx.restore();
   }
 
-  // ── LAYER 7: Orbiting star crosses along outer ring (clockwise) ──
-  const numStars = 6 + player.fairyAuraLevel * 2;
-  for (let i = 0; i < numStars; i++) {
-    const a  = (i / numStars) * Math.PI * 2 + t * 0.020;
+  // ── LAYER 4: Floating bubble orbs at inner radius — soft, rounded, dreamy ──
+  const numBubbles = 5 + player.fairyAuraLevel;
+  for (let i = 0; i < numBubbles; i++) {
+    const a  = (i / numBubbles) * Math.PI * 2 - t * 0.011; // counter-rotate
+    const br = R * 0.52 + Math.sin(t * 0.07 + i * 0.65) * 7; // gentle float
+    const bx = Math.cos(a) * br;
+    const by = Math.sin(a) * br;
+    const ba = 0.42 + Math.sin(t * 0.09 + i * 1.1) * 0.28;
+
+    // Bubble ring — circle outline, not a square
+    ctx.strokeStyle = `rgba(235, 200, 255, ${ba})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(bx, by, 4, 0, Math.PI * 2);
+    ctx.stroke();
+    // Tiny highlight glint on bubble
+    ctx.fillStyle = `rgba(255, 250, 255, ${ba * 0.70})`;
+    ctx.fillRect(bx - 1, by - 2, 1, 1);
+  }
+
+  // ── LAYER 5: Scattered sparkle dust inside the aura ──
+  // Fixed orbit seeds so dust drifts gently rather than jumping randomly
+  const dustSeeds = [0.14, 0.38, 0.62, 0.81, 0.23, 0.55, 0.90, 0.47, 0.70];
+  const dustCount = Math.min(9, 3 + player.fairyAuraLevel * 2);
+  for (let i = 0; i < dustCount; i++) {
+    const s    = dustSeeds[i];
+    const dA   = s * Math.PI * 2 + t * (0.006 + s * 0.007);
+    const dR   = R * (0.28 + s * 0.56);
+    const dx   = Math.cos(dA) * dR;
+    const dy   = Math.sin(dA) * dR;
+    const da   = 0.30 + Math.sin(t * 0.14 + i * 0.72) * 0.28;
+    const dustCol = i % 3 === 0
+      ? `rgba(255, 230, 110, ${da})`  // gold dust
+      : i % 3 === 1
+        ? `rgba(255, 195, 225, ${da})` // pink dust
+        : `rgba(190, 255, 210, ${da})`; // mint dust
+    ctx.fillStyle = dustCol;
+    ctx.fillRect(dx - 1, dy - 1, 3, 3);
+  }
+
+  // ── LAYER 6: Larger glowing sparkles on the outer ring — warm 4-point stars ──
+  const numSparkles = 4 + player.fairyAuraLevel;
+  for (let i = 0; i < numSparkles; i++) {
+    const a  = (i / numSparkles) * Math.PI * 2 + t * 0.009;
     const sx = Math.cos(a) * R;
     const sy = Math.sin(a) * R;
-    const sa = 0.60 + Math.sin(t * 0.14 + i * 1.15) * 0.35;
-    const col = i % 2 === 0 ? `rgba(255, 195, 255, ${sa})` : `rgba(195, 245, 255, ${sa})`;
+    const sa = 0.68 + Math.sin(t * 0.10 + i * 1.4) * 0.28;
 
-    // Pixel-art cross/star shape
-    ctx.fillStyle = col;
-    ctx.fillRect(sx - 3, sy - 1, 6, 2); // horizontal arm
-    ctx.fillRect(sx - 1, sy - 3, 2, 6); // vertical arm
-    ctx.fillStyle = `rgba(255, 255, 255, ${sa})`;
-    ctx.fillRect(sx - 1, sy - 1, 2, 2); // bright center pixel
+    // Warm gold 4-point sparkle (slowly self-spinning)
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(t * 0.020 + i); // gentle individual spin
+    ctx.fillStyle = `rgba(255, 240, 160, ${sa})`;
+    ctx.fillRect(-3, -1, 6, 2); // horizontal arm
+    ctx.fillRect(-1, -3, 2, 6); // vertical arm
+    ctx.fillStyle = `rgba(255, 255, 230, ${sa})`;
+    ctx.fillRect(-1, -1, 2, 2); // bright center
+    ctx.restore();
 
-    // Trailing ghost dot
-    const a2 = a - 0.20;
-    ctx.fillStyle = `rgba(220, 185, 255, ${sa * 0.38})`;
+    // Trailing golden whisp
+    const a2 = a - 0.18;
+    ctx.fillStyle = `rgba(255, 215, 150, ${sa * 0.35})`;
     ctx.fillRect(Math.cos(a2) * R - 1, Math.sin(a2) * R - 1, 2, 2);
   }
 
-  // ── LAYER 8: Counter-orbiting small dots along mid ring ──
-  const numInner = 4 + player.fairyAuraLevel;
-  for (let i = 0; i < numInner; i++) {
-    const a  = (i / numInner) * Math.PI * 2 - t * 0.016;
-    const ix = Math.cos(a) * R2;
-    const iy = Math.sin(a) * R2;
-    const ia = 0.45 + Math.sin(t * 0.11 + i * 0.9) * 0.30;
-    ctx.fillStyle = `rgba(205, 230, 255, ${ia})`;
-    ctx.fillRect(ix - 2, iy - 2, 4, 4);
-    // tiny trailing pixel
-    const a2 = a + 0.18;
-    ctx.fillStyle = `rgba(225, 195, 255, ${ia * 0.40})`;
-    ctx.fillRect(Math.cos(a2) * R2 - 1, Math.sin(a2) * R2 - 1, 2, 2);
+  // ── LAYER 7: Tiny flower at the center (4 petals alternating pink/gold) ──
+  const fp = 0.68 + Math.sin(t * 0.07) * 0.24;
+  const fr = 5;
+  for (let i = 0; i < 4; i++) {
+    const fa = (i / 4) * Math.PI * 2 + t * 0.007; // slow rotation
+    const petalX = Math.cos(fa) * fr;
+    const petalY = Math.sin(fa) * fr;
+    ctx.fillStyle = i % 2 === 0
+      ? `rgba(255, 205, 235, ${fp})` // pink petal
+      : `rgba(255, 230, 140, ${fp})`; // gold petal
+    ctx.fillRect(petalX - 2, petalY - 2, 4, 4);
   }
-
-  // ── LAYER 9: Subtle center magical core — tiny bright cross ──
-  const cp = 0.55 + Math.sin(t * 0.09) * 0.30;
-  ctx.fillStyle = `rgba(255, 220, 255, ${cp})`;
-  ctx.fillRect(-5, -1, 10, 2);
-  ctx.fillRect(-1, -5,  2, 10);
-  ctx.fillStyle = `rgba(255, 255, 255, ${cp})`;
-  ctx.fillRect(-1, -1,  2,  2);
+  // Bright warm center seed
+  ctx.fillStyle = `rgba(255, 250, 210, ${fp})`;
+  ctx.fillRect(-2, -2, 4, 4);
 
   ctx.restore();
 }
