@@ -65,6 +65,7 @@ let isWaveIntermission = false; // True when showing wave completed screen
 let waveKillCount = 0;         // Kills made in the current wave (used by Slow Start)
 let waveStartTick = 0;         // Game tick when the current wave began
 let shielderDebutSpawned = false; // True once the guaranteed wave-40+ debut shielder has been forced in
+let currentIntermissionRarity = null; // Locked rarity for the current wave intermission (rerolls keep same tier)
 
 // Roguelike Upgrades Selection Tracker
 let upgradesChosen = [];
@@ -3547,6 +3548,9 @@ function clearWave() {
   const nextSize = getWaveZombieTotal(gameState.wave + 1);
   nextWaveZombies.textContent = nextSize;
 
+  // Lock in the rarity for this intermission (rerolls must stay on the same tier)
+  currentIntermissionRarity = null;
+
   // Award reroll token every 5 waves
   if (gameState.wave % 5 === 0) {
     player.rerollTokens += 1;
@@ -3595,9 +3599,12 @@ function renderUpgradeChoices() {
   // Clear existing choices
   container.innerHTML = '';
 
-  // Roll rarity for this intermission
-  const rolledRarity = rollUpgradeRarity(gameState.wave);
-  console.log(`Rolled Upgrade Rarity for Wave ${gameState.wave}: ${rolledRarity.toUpperCase()}`);
+  // Roll rarity once per intermission; rerolls reuse the same tier
+  if (!currentIntermissionRarity) {
+    currentIntermissionRarity = rollUpgradeRarity(gameState.wave);
+    console.log(`Rolled Upgrade Rarity for Wave ${gameState.wave}: ${currentIntermissionRarity.toUpperCase()}`);
+  }
+  const rolledRarity = currentIntermissionRarity;
 
   // Filter upgrades by rolled rarity, excluding anything already at its cap
   const isNotCapped = u => !(UPGRADE_CAPS[u.id]?.());
@@ -4566,23 +4573,11 @@ function damagePlayer(rawAmount) {
       updateHUD();
 
       // Trigger high-intensity screen shake on revive
-      startScreenShake(15, 24);
+      startScreenShake(22, 35);
 
-      // Spawn gold and green healing explosion rings
-      for (let s = 0; s < 30; s++) {
-        const a = Math.random() * Math.PI * 2;
-        const f = Math.random() * 6 + 2;
-        gameParticles.push({
-          x: player.x,
-          y: player.y,
-          vx: Math.cos(a) * f,
-          vy: Math.sin(a) * f,
-          size: Math.floor(Math.random() * 5) + 3,
-          color: Math.random() > 0.5 ? '#ffee00' : '#39ff14', // gold or lime green sparks
-          life: 1.0,
-          decay: Math.random() * 0.05 + 0.02
-        });
-      }
+      // Death Shockwave — massive radial blast that clears the area on revive
+      triggerReviveShockwave(player.x, player.y);
+
       return true; // Hit landed (revive triggered), player survived
     }
 
@@ -4997,6 +4992,87 @@ function spawnPlayerBloodSpray(px, py) {
       life: 1.0,
       decay: Math.random() * 0.06 + 0.04
     });
+  }
+}
+
+/**
+ * Fires a massive death shockwave when Second Wind (revive) triggers.
+ * Deals heavy damage to all zombies in a 380px radius, knocks them far away,
+ * and freezes survivors. Visually distinct from fire explosions (white/gold/cyan).
+ */
+function triggerReviveShockwave(px, py) {
+  const RADIUS = 380;
+  const MAX_DAMAGE = 280;
+  const KNOCKBACK = 260; // pixels to launch zombies outward
+
+  audio.playSfx('explosion');
+
+  // Large blue plasma fireball (fades outward over ~1.2 s)
+  explosions.push({ type: 'revive', x: px, y: py, radius: RADIUS * 0.85, life: 1.0, decay: 0.022 });
+
+  // Expanding shockwave rings — outermost white, mid cyan, inner electric blue
+  gameParticles.push({ type: 'shockwave', x: px, y: py, maxRadius: RADIUS,       lineWidth: 9, color: '#ffffff', life: 1.0, decay: 0.022 });
+  gameParticles.push({ type: 'shockwave', x: px, y: py, maxRadius: RADIUS * 0.75, lineWidth: 6, color: '#00e5ff', life: 1.0, decay: 0.028 });
+  gameParticles.push({ type: 'shockwave', x: px, y: py, maxRadius: RADIUS * 0.45, lineWidth: 4, color: '#4488ff', life: 1.0, decay: 0.038 });
+
+  // High-velocity ice/energy shards — sharp fast streaks
+  for (let s = 0; s < 80; s++) {
+    const a = Math.random() * Math.PI * 2;
+    const f = Math.random() * 12 + 5;
+    const roll = Math.random();
+    const color = roll < 0.35 ? '#ffffff' : roll < 0.65 ? '#00e5ff' : roll < 0.85 ? '#4488ff' : '#aaddff';
+    gameParticles.push({
+      x: px, y: py,
+      vx: Math.cos(a) * f,
+      vy: Math.sin(a) * f,
+      size: Math.floor(Math.random() * 5) + 2,
+      color,
+      life: 1.0,
+      decay: Math.random() * 0.025 + 0.012
+    });
+  }
+
+  // Slow drifting energy clouds (large, low-decay)
+  for (let s = 0; s < 24; s++) {
+    const a = Math.random() * Math.PI * 2;
+    const f = Math.random() * 3 + 0.8;
+    gameParticles.push({
+      x: px, y: py,
+      vx: Math.cos(a) * f,
+      vy: Math.sin(a) * f,
+      size: Math.floor(Math.random() * 14) + 8,
+      color: Math.random() < 0.5 ? 'rgba(0,200,255,0.45)' : 'rgba(100,160,255,0.35)',
+      life: 0.9,
+      decay: Math.random() * 0.018 + 0.008
+    });
+  }
+
+  // Scorch mark (icy blue)
+  addFloorScorch(px, py, 130, 'fire');
+
+  // Damage, knockback, and freeze every zombie in radius
+  for (let i = zombies.length - 1; i >= 0; i--) {
+    const z = zombies[i];
+    const dx = z.x - px;
+    const dy = z.y - py;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist >= RADIUS) continue;
+
+    // Damage scaled by distance (full damage at centre, 20% at edge)
+    const factor = 1 - (dist / RADIUS) * 0.8;
+    damageZombie(z, Math.floor(MAX_DAMAGE * factor), true);
+
+    // Knockback — launch outward (or random direction if dead centre)
+    if (zombies.indexOf(z) !== -1) { // still alive after damage
+      const nx = dist > 0 ? dx / dist : Math.cos(Math.random() * Math.PI * 2);
+      const ny = dist > 0 ? dy / dist : Math.sin(Math.random() * Math.PI * 2);
+      const push = KNOCKBACK * (1 - dist / RADIUS * 0.5); // stronger at centre
+      z.x = Math.max(z.size, Math.min(world.width  - z.size, z.x + nx * push));
+      z.y = Math.max(z.size, Math.min(world.height - z.size, z.y + ny * push));
+
+      // Freeze survivors for 2.5 s so they can't immediately rush back
+      z.cryoSlowTicks = 300;
+    }
   }
 }
 
@@ -8302,6 +8378,47 @@ function drawExplosions() {
       ctx.beginPath();
       ctx.arc(exp.x - currentRadius * 0.08, exp.y + currentRadius * 0.34, currentRadius * 0.11, 0, Math.PI * 2);
       ctx.stroke();
+    } else if (exp.type === 'revive') {
+      // Layer A — Deep sapphire outer corona
+      ctx.fillStyle = 'rgba(0, 40, 200, 0.22)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.fill();
+
+      // Layer B — Electric blue mid cloud
+      ctx.fillStyle = 'rgba(20, 130, 255, 0.40)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.68, 0, Math.PI * 2); ctx.fill();
+
+      // Layer C — Cyan inner glow
+      ctx.fillStyle = 'rgba(0, 220, 255, 0.58)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.40, 0, Math.PI * 2); ctx.fill();
+
+      // Layer D — Hot white-blue core
+      ctx.fillStyle = 'rgba(200, 240, 255, 0.88)';
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.14, 0, Math.PI * 2); ctx.fill();
+
+      // Energy spikes — 8 directions, cyan outer / white inner
+      const spikeLen = currentRadius * 1.18;
+      if (spikeLen > 8) {
+        ctx.save();
+        ctx.translate(exp.x, exp.y);
+        for (let spike = 0; spike < 8; spike++) {
+          ctx.rotate(Math.PI / 4);
+          // Thick cyan spike
+          ctx.strokeStyle = `rgba(0, 210, 255, ${0.38 * exp.life})`;
+          ctx.lineWidth = Math.max(1, 5 * exp.life);
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(spikeLen, 0); ctx.stroke();
+          // Thin white core spike
+          ctx.strokeStyle = `rgba(255, 255, 255, ${0.75 * exp.life})`;
+          ctx.lineWidth = Math.max(1, 1.8 * exp.life);
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(spikeLen * 0.62, 0); ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // Outer rim ring in bright cyan
+      ctx.strokeStyle = `rgba(0, 230, 255, ${0.9 * exp.life})`;
+      ctx.lineWidth = Math.max(1, 5 * exp.life);
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.stroke();
+
     } else {
       ctx.fillStyle = 'rgba(176,0,0,0.4)';
       ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.fill();
@@ -8313,12 +8430,14 @@ function drawExplosions() {
       ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.12, 0, Math.PI * 2); ctx.fill();
     }
 
-    // Shockwave ring
-    ctx.strokeStyle = exp.type === 'necro' ? '#39ff14' : '#ff4500';
-    ctx.lineWidth = Math.max(1, 4 * exp.life);
-    ctx.beginPath();
-    ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2);
-    ctx.stroke();
+    // Shockwave ring (skip for revive — it draws its own)
+    if (exp.type !== 'revive') {
+      ctx.strokeStyle = exp.type === 'necro' ? '#39ff14' : '#ff4500';
+      ctx.lineWidth = Math.max(1, 4 * exp.life);
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     ctx.restore();
   });
