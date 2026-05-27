@@ -6805,11 +6805,18 @@ function drawZombies() {
       ctx.fill();
     }
 
-    // White hit flash overlay — drawn OVER the full sprite in local sprite space.
+    // Hit flash overlay — colour-coded by status so it never conflicts with burn/cryo auras.
     // This replaces ctx.filter which was software-rendered and caused GPU pipeline flushes.
     if (isFlashed) {
       const spBase = baseSpriteSizes[z.type] || baseSpriteSizes.normal;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
+      // Orange flash for burning zombies, icy blue for frozen, white for normal hits
+      if (z.burnTicks > 0) {
+        ctx.fillStyle = 'rgba(255, 100, 0, 0.80)';
+      } else if (z.cryoSlowTicks > 0) {
+        ctx.fillStyle = 'rgba(100, 220, 255, 0.80)';
+      } else {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
+      }
       ctx.fillRect(-spBase / 2, -spBase / 2, spBase, spBase);
     }
 
