@@ -1664,7 +1664,7 @@ function update() {
 
       if (distSq < rangeSum * rangeSum) {
         // Boom! Explode the mine!
-        triggerExplosion(mine.x, mine.y, mine.damage);
+        triggerExplosion(mine.x, mine.y, mine.damage, true); // true = player-owned, skip self-damage
         activeMines.splice(mIdx, 1);
         break; // break out of zombies loop for this mine
       }
@@ -4321,7 +4321,7 @@ function spawnPlayerBloodSpray(px, py) {
   }
 }
 
-function triggerExplosion(ex, ey, maxDamage) {
+function triggerExplosion(ex, ey, maxDamage, skipPlayerDamage = false) {
   audio.playSfx('explosion');
   startExplosionShake(ex, ey, 20); // Upgraded screen shake to 20 for massive weight
   addFloorScorch(ex, ey, 90, 'fire'); // Perfect circle crater with glowing cracks
@@ -4430,17 +4430,19 @@ function triggerExplosion(ex, ey, maxDamage) {
     }
   }
 
-  // Damage player if within 140px radius
-  const pDx = player.x - ex;
-  const pDy = player.y - ey;
-  const pDist = Math.sqrt(pDx * pDx + pDy * pDy);
+  // Damage player if within 140px radius (skipped for player-owned explosions like mines)
+  if (!skipPlayerDamage) {
+    const pDx = player.x - ex;
+    const pDy = player.y - ey;
+    const pDist = Math.sqrt(pDx * pDx + pDy * pDy);
 
-  if (pDist < explosionRadius) {
-    const factor = (explosionRadius - pDist) / explosionRadius;
-    const taken = Math.floor(maxDamage * factor);
-    if (taken > 0) {
-      damagePlayer(taken);
-      if (player.health <= 0) return;
+    if (pDist < explosionRadius) {
+      const factor = (explosionRadius - pDist) / explosionRadius;
+      const taken = Math.floor(maxDamage * factor);
+      if (taken > 0) {
+        damagePlayer(taken);
+        if (player.health <= 0) return;
+      }
     }
   }
 
