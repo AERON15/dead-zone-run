@@ -5960,66 +5960,158 @@ function drawLightningArcs() {
 }
 
 /**
- * Renders the Legendary Orbiting Defender energy blades circling the player.
+ * Renders the Epic Orbiting Defender energy blades circling the player.
  */
 /**
- * Draws the Fairy Aura magic circle behind the player.
- * Soft pulsing lavender/pink glow, rotating cyan inner ring,
- * and orbiting sparkle stars along the aura edge.
+ * Draws the Fairy Aura — an elegant layered magic circle with rotating rune rings,
+ * six-petal gemstone accents, radiating spokes, counter-orbiting inner stars,
+ * and pulsing multi-pass glow. Scales visually with level.
  */
 function drawFairyAura() {
   if (player.fairyAuraLevel <= 0) return;
 
-  const auraRadius = 80 + (player.fairyAuraLevel - 1) * 20;
+  const R = 80 + (player.fairyAuraLevel - 1) * 20; // outer radius
+  const t = gameTick;
 
   ctx.save();
   ctx.translate(player.x, player.y);
 
-  // 1. Outer ambient glow (soft lavender fill — wide and faint)
-  const glowAlpha = 0.10 + Math.sin(gameTick * 0.04) * 0.05;
-  ctx.fillStyle = `rgba(210, 150, 255, ${glowAlpha})`;
-  ctx.beginPath();
-  ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
-  ctx.fill();
+  // ── LAYER 1: Multi-pass outer ambient glow (three nested fills = soft gradient) ──
+  const gp = 0.07 + Math.sin(t * 0.04) * 0.03;
+  ctx.fillStyle = `rgba(195, 130, 255, ${gp * 0.6})`;
+  ctx.beginPath(); ctx.arc(0, 0, R + 14, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(210, 150, 255, ${gp})`;
+  ctx.beginPath(); ctx.arc(0, 0, R,      0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(225, 175, 255, ${gp * 1.6})`;
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.65, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(240, 210, 255, ${gp * 2.2})`;
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.32, 0, Math.PI * 2); ctx.fill();
 
-  // 2. Outer ring stroke (pulsing pink/lavender border)
-  const ringAlpha = 0.55 + Math.sin(gameTick * 0.06) * 0.20;
-  ctx.strokeStyle = `rgba(220, 140, 255, ${ringAlpha})`;
-  ctx.lineWidth = 2.0;
-  ctx.beginPath();
-  ctx.arc(0, 0, auraRadius, 0, Math.PI * 2);
-  ctx.stroke();
+  // ── LAYER 2: Outer main ring with rotating rune tick marks ──
+  const rp = 0.65 + Math.sin(t * 0.06) * 0.20;
+  ctx.strokeStyle = `rgba(220, 145, 255, ${rp})`;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
 
-  // 3. Inner rotating ring (light cyan, spins slowly)
-  const innerR = auraRadius * 0.55;
-  const innerAlpha = 0.35 + Math.sin(gameTick * 0.08 + 2) * 0.15;
-  ctx.strokeStyle = `rgba(160, 230, 255, ${innerAlpha})`;
-  ctx.lineWidth = 1.2;
-  ctx.setLineDash([6, 10]);
-  ctx.lineDashOffset = -(gameTick * 0.5) % 16;
-  ctx.beginPath();
-  ctx.arc(0, 0, innerR, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]); // reset dash
+  // 16 tick marks — every 4th is a major rune, others are minor
+  const tickRot = t * 0.007;
+  for (let i = 0; i < 16; i++) {
+    const a  = (i / 16) * Math.PI * 2 + tickRot;
+    const isMajor = i % 4 === 0;
+    const inner = R - (isMajor ? 9 : 5);
+    const outer = R + (isMajor ? 6 : 3);
+    ctx.strokeStyle = isMajor
+      ? `rgba(255, 210, 255, ${rp})`
+      : `rgba(195, 130, 255, ${rp * 0.55})`;
+    ctx.lineWidth = isMajor ? 2.0 : 1.0;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+    ctx.lineTo(Math.cos(a) * outer, Math.sin(a) * outer);
+    ctx.stroke();
 
-  // 4. Orbiting sparkle stars along the aura edge (count scales with level)
-  const numStars = 4 + player.fairyAuraLevel * 2;
-  for (let i = 0; i < numStars; i++) {
-    const a = (i / numStars) * Math.PI * 2 + gameTick * 0.022;
-    const sx = Math.cos(a) * auraRadius;
-    const sy = Math.sin(a) * auraRadius;
-    const starAlpha = 0.5 + Math.sin(gameTick * 0.12 + i * 1.3) * 0.4;
-    // Alternate between pink and cyan sparkles
-    ctx.fillStyle = i % 2 === 0
-      ? `rgba(255, 180, 255, ${starAlpha})`
-      : `rgba(180, 240, 255, ${starAlpha})`;
-    ctx.fillRect(sx - 2, sy - 2, 4, 4);
-
-    // Tiny secondary dot trailing each star
-    const a2 = a - 0.18;
-    ctx.fillStyle = `rgba(255, 210, 255, ${starAlpha * 0.5})`;
-    ctx.fillRect(Math.cos(a2) * auraRadius - 1, Math.sin(a2) * auraRadius - 1, 2, 2);
+    // Small dot at each major tick outer tip
+    if (isMajor) {
+      ctx.fillStyle = `rgba(255, 230, 255, ${rp * 0.85})`;
+      ctx.fillRect(Math.cos(a) * (outer + 2) - 2, Math.sin(a) * (outer + 2) - 2, 4, 4);
+    }
   }
+
+  // ── LAYER 3: Mid ring — dashed, spins clockwise ──
+  const R2 = R * 0.72;
+  ctx.strokeStyle = `rgba(175, 225, 255, ${0.42 + Math.sin(t * 0.07 + 1) * 0.15})`;
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([9, 13]);
+  ctx.lineDashOffset = (t * 0.55) % 22;
+  ctx.beginPath(); ctx.arc(0, 0, R2, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ── LAYER 4: Inner ring — dashed, spins counter-clockwise ──
+  const R3 = R * 0.40;
+  ctx.strokeStyle = `rgba(255, 185, 255, ${0.38 + Math.sin(t * 0.05 + 2.5) * 0.13})`;
+  ctx.lineWidth = 1.0;
+  ctx.setLineDash([5, 9]);
+  ctx.lineDashOffset = -(t * 0.38) % 14;
+  ctx.beginPath(); ctx.arc(0, 0, R3, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ── LAYER 5: Six faint radiating spoke lines (center → outer ring) ──
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + t * 0.006;
+    const sa = 0.12 + Math.sin(t * 0.07 + i) * 0.06;
+    ctx.strokeStyle = `rgba(215, 175, 255, ${sa})`;
+    ctx.lineWidth = 1.0;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * R3, Math.sin(a) * R3);
+    ctx.lineTo(Math.cos(a) * R,  Math.sin(a) * R);
+    ctx.stroke();
+  }
+
+  // ── LAYER 6: Six gemstone petal accents at the mid-ring radius ──
+  const petalR = R * 0.72;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + t * 0.014;
+    const px = Math.cos(a) * petalR;
+    const py = Math.sin(a) * petalR;
+    const pa = 0.70 + Math.sin(t * 0.10 + i * 1.05) * 0.25;
+
+    // Diamond shape (rotated 45° square)
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(a + Math.PI * 0.25 + t * 0.012); // slow self-spin
+    const col = i % 2 === 0
+      ? `rgba(255, 200, 255, ${pa})`   // pink gem
+      : `rgba(185, 245, 255, ${pa})`;  // cyan gem
+    ctx.fillStyle = col;
+    ctx.fillRect(-4, -4, 8, 8);        // outer diamond body
+    ctx.fillStyle = `rgba(255, 255, 255, ${pa * 0.80})`;
+    ctx.fillRect(-2, -2, 4, 4);        // bright inner facet
+    ctx.restore();
+  }
+
+  // ── LAYER 7: Orbiting star crosses along outer ring (clockwise) ──
+  const numStars = 6 + player.fairyAuraLevel * 2;
+  for (let i = 0; i < numStars; i++) {
+    const a  = (i / numStars) * Math.PI * 2 + t * 0.020;
+    const sx = Math.cos(a) * R;
+    const sy = Math.sin(a) * R;
+    const sa = 0.60 + Math.sin(t * 0.14 + i * 1.15) * 0.35;
+    const col = i % 2 === 0 ? `rgba(255, 195, 255, ${sa})` : `rgba(195, 245, 255, ${sa})`;
+
+    // Pixel-art cross/star shape
+    ctx.fillStyle = col;
+    ctx.fillRect(sx - 3, sy - 1, 6, 2); // horizontal arm
+    ctx.fillRect(sx - 1, sy - 3, 2, 6); // vertical arm
+    ctx.fillStyle = `rgba(255, 255, 255, ${sa})`;
+    ctx.fillRect(sx - 1, sy - 1, 2, 2); // bright center pixel
+
+    // Trailing ghost dot
+    const a2 = a - 0.20;
+    ctx.fillStyle = `rgba(220, 185, 255, ${sa * 0.38})`;
+    ctx.fillRect(Math.cos(a2) * R - 1, Math.sin(a2) * R - 1, 2, 2);
+  }
+
+  // ── LAYER 8: Counter-orbiting small dots along mid ring ──
+  const numInner = 4 + player.fairyAuraLevel;
+  for (let i = 0; i < numInner; i++) {
+    const a  = (i / numInner) * Math.PI * 2 - t * 0.016;
+    const ix = Math.cos(a) * R2;
+    const iy = Math.sin(a) * R2;
+    const ia = 0.45 + Math.sin(t * 0.11 + i * 0.9) * 0.30;
+    ctx.fillStyle = `rgba(205, 230, 255, ${ia})`;
+    ctx.fillRect(ix - 2, iy - 2, 4, 4);
+    // tiny trailing pixel
+    const a2 = a + 0.18;
+    ctx.fillStyle = `rgba(225, 195, 255, ${ia * 0.40})`;
+    ctx.fillRect(Math.cos(a2) * R2 - 1, Math.sin(a2) * R2 - 1, 2, 2);
+  }
+
+  // ── LAYER 9: Subtle center magical core — tiny bright cross ──
+  const cp = 0.55 + Math.sin(t * 0.09) * 0.30;
+  ctx.fillStyle = `rgba(255, 220, 255, ${cp})`;
+  ctx.fillRect(-5, -1, 10, 2);
+  ctx.fillRect(-1, -5,  2, 10);
+  ctx.fillStyle = `rgba(255, 255, 255, ${cp})`;
+  ctx.fillRect(-1, -1,  2,  2);
 
   ctx.restore();
 }
