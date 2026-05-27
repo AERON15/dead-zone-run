@@ -1829,18 +1829,18 @@ function update() {
       }
     }
 
+    // Increment bullet age for trail calculation
+    b.age = (b.age || 0) + 1;
+
     const prevX = b.x;
     const prevY = b.y;
 
-    // Log current location to trails array before moving
-    b.trail.push({ x: b.x, y: b.y });
-    if (b.trail.length > 6) {
-      b.trail.shift(); // Keep trail length capped for longer lasers
-    }
+    // Adaptive particle scaling to cap particle spawning rate when bullet count is high
+    const spawnMultiplier = bullets.length > 20 ? 20 / bullets.length : 1.0;
 
-    // Spawn floating sparks in bullet wake (ash/embers/smoke/ice motes)
+    // Spawn floating sparks in bullet wake (ash/embers/smoke/ice motes - optimized probabilities to reduce CPU allocations)
     if (b.isCryo) {
-      if (Math.random() < 0.72) {
+      if (Math.random() < 0.15 * spawnMultiplier) {
         gameParticles.push({
           x: b.x + (Math.random() - 0.5) * 7,
           y: b.y + (Math.random() - 0.5) * 7,
@@ -1853,7 +1853,7 @@ function update() {
         });
       }
     } else if (b.isFire) {
-      if (Math.random() < 0.80) {
+      if (Math.random() < 0.18 * spawnMultiplier) {
         const isSmoke = Math.random() > 0.7;
         gameParticles.push({
           x: b.x + (Math.random() - 0.5) * 6,
@@ -1867,7 +1867,7 @@ function update() {
         });
       }
     } else {
-      if (Math.random() < 0.65) {
+      if (Math.random() < 0.12 * spawnMultiplier) {
         gameParticles.push({
           x: b.x + (Math.random() - 0.5) * 6,
           y: b.y + (Math.random() - 0.5) * 6,
@@ -1895,7 +1895,8 @@ function update() {
         b.bounceLeft -= 1;
 
         // Trigger Splinter Shot wall bounce shrapnel split
-        if (player.splinterShotLevel > 0 && !b.isShrapnel) {
+        if (player.splinterShotLevel > 0 && !b.isShrapnel && !b.hasSplintered) {
+          b.hasSplintered = true;
           spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, null, b.isFire, b.isCryo);
         }
 
@@ -1921,7 +1922,8 @@ function update() {
         b.hitZombies = [];
       } else {
         // Trigger Splinter Shot shrapnel split on final death
-        if (player.splinterShotLevel > 0 && !b.isShrapnel) {
+        if (player.splinterShotLevel > 0 && !b.isShrapnel && !b.hasSplintered) {
+          b.hasSplintered = true;
           spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, null, b.isFire, b.isCryo);
         }
 
@@ -2615,9 +2617,15 @@ function update() {
       // Prevent hitting the same zombie twice with a single piercing bullet
       if (b.hitZombies && b.hitZombies.includes(z)) continue;
 
-      // Calculate radial distance using squared calculations to avoid heavy Math.sqrt
+      // Fast Manhattan AABB pre-filtering check to bypass 95% of math calculations immediately
+      const limit = (b.size + z.size) / 2 + 5; // collision limit with small safety buffer
       const hitDx = b.x - z.x;
+      if (hitDx > limit || hitDx < -limit) continue;
+
       const hitDy = b.y - z.y;
+      if (hitDy > limit || hitDy < -limit) continue;
+
+      // Calculate radial distance using squared calculations to avoid heavy Math.sqrt
       const distSq = hitDx * hitDx + hitDy * hitDy;
       const radiusSum = b.size / 2 + z.size / 2;
 
@@ -2690,7 +2698,8 @@ function update() {
         }
 
         // Trigger Splinter Shot bullet split
-        if (player.splinterShotLevel > 0 && !b.isShrapnel) {
+        if (player.splinterShotLevel > 0 && !b.isShrapnel && !b.hasSplintered) {
+          b.hasSplintered = true;
           spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, z, b.isFire, b.isCryo);
         }
 
@@ -3516,6 +3525,14 @@ function handleBulletObstacleCollision(bullet, bulletIndex, prevX, prevY) {
   for (let i = 0; i < obstacles.length; i++) {
     const obstacle = obstacles[i];
 
+    // High-speed AABB bounding box check to bypass 99% of out-of-range obstacles instantly
+    if (bullet.x < obstacle.x - radius ||
+        bullet.x > obstacle.x + obstacle.width + radius ||
+        bullet.y < obstacle.y - radius ||
+        bullet.y > obstacle.y + obstacle.height + radius) {
+      continue;
+    }
+
     if (!circleRectCollision(bullet.x, bullet.y, radius, obstacle)) {
       continue;
     }
@@ -3523,7 +3540,8 @@ function handleBulletObstacleCollision(bullet, bulletIndex, prevX, prevY) {
     if (bullet.bounceLeft > 0) {
       bullet.bounceLeft -= 1;
 
-      if (player.splinterShotLevel > 0 && !bullet.isShrapnel) {
+      if (player.splinterShotLevel > 0 && !bullet.isShrapnel && !bullet.hasSplintered) {
+        bullet.hasSplintered = true;
         spawnSplinterShrapnel(bullet.x, bullet.y, bullet.vx, bullet.vy, bullet.damage, null, bullet.isFire, bullet.isCryo);
       }
 
@@ -3533,7 +3551,8 @@ function handleBulletObstacleCollision(bullet, bulletIndex, prevX, prevY) {
       return true;
     }
 
-    if (player.splinterShotLevel > 0 && !bullet.isShrapnel) {
+    if (player.splinterShotLevel > 0 && !bullet.isShrapnel && !bullet.hasSplintered) {
+      bullet.hasSplintered = true;
       spawnSplinterShrapnel(bullet.x, bullet.y, bullet.vx, bullet.vy, bullet.damage, null, bullet.isFire, bullet.isCryo);
     }
 
@@ -3769,11 +3788,12 @@ function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null, isF
       vy: Math.sin(a) * speed,
       size: 6, // smaller shrapnel size
       damage: shrapnelDamage,
-      trail: [],
+      age: 0,
       pierceLeft: 1, // pierces 1 zombie then dies
       bounceLeft: 0, // shrapnel does not bounce to avoid infinite recursion
       hitZombies: hitZombie ? [hitZombie] : [], // Pre-exclude the target zombie that got hit to prevent instant double-hits!
       isShrapnel: true,
+      hasSplintered: true,
       life: 45, // Shrapnel expires in 45 frames (~0.75 seconds)
       isFire,
       isCryo
@@ -3880,7 +3900,7 @@ function shootWeapon() {
           vy: Math.sin(angle) * player.bulletSpeed,
           size: finalSize,
           damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
-          trail: [], // Array of past coordinate points for tracing trails
+          age: 0,
           pierceLeft: player.bulletPierceLimit,
           maxBounces: player.bounceLimit,
           bounceLeft: player.bounceLimit, // Bouncing Casings Limit
@@ -3911,7 +3931,7 @@ function shootWeapon() {
           vy: Math.sin(currentAngle) * player.bulletSpeed,
           size: finalSize,
           damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
-          trail: [],
+          age: 0,
           maxBounces: player.bounceLimit,
           bounceLeft: player.bounceLimit,
           hitZombies: [],
@@ -5234,214 +5254,122 @@ function drawPlayer() {
 function drawBullets() {
   bullets.forEach(b => {
     if (!isInView(b.x, b.y, b.size + 20)) return;
-    // 1. Render continuous nested vector trails if we have historical points
-    if (b.trail.length > 1) {
+
+    // 1. Render continuous nested vector trails using velocity vectors (zero heap allocations)
+    const age = b.age || 0;
+    const trailLength = Math.min(6, age);
+    if (trailLength > 0) {
+      const tailX = b.x - b.vx * trailLength;
+      const tailY = b.y - b.vy * trailLength;
+      const coreTailX = b.x - b.vx * (trailLength * 0.5);
+      const coreTailY = b.y - b.vy * (trailLength * 0.5);
+
       if (b.isOverclocked) {
-        // Red neon energy sheath (outer glow)
-        ctx.strokeStyle = 'rgba(255, 0, 50, 0.35)';
-        ctx.lineWidth = b.size * 1.5;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-
-        // Intense crimson-red envelope (mid glow)
-        ctx.strokeStyle = '#ff0033';
-        ctx.lineWidth = b.size * 0.9;
-        ctx.beginPath();
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-
-        // Superheated hot-white core (inner bullet trail)
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = b.size * 0.4;
-        ctx.beginPath();
-        const startIdx = Math.floor(b.trail.length / 2);
-        ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
-        for (let j = startIdx + 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      } else if (b.isFire) {
-        // Red-Orange fire sheath (outer glow)
-        ctx.strokeStyle = 'rgba(255, 69, 0, 0.35)';
-        ctx.lineWidth = b.size * 1.25;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-
-        // Intense orange envelope (mid glow)
-        ctx.strokeStyle = '#ff5500';
-        ctx.lineWidth = b.size * 0.75;
-        ctx.beginPath();
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-
-        // Superheated gold core (inner bullet trail)
-        ctx.strokeStyle = '#ffee00';
-        ctx.lineWidth = b.size * 0.35;
-        ctx.beginPath();
-        const startIdx = Math.floor(b.trail.length / 2);
-        ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
-        for (let j = startIdx + 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      } else if (b.isCryo) {
-        // Frost-blue cryo sheath (outer chill bloom)
-        ctx.strokeStyle = 'rgba(80, 220, 255, 0.32)';
+        // Glow sheath
+        ctx.strokeStyle = 'rgba(255, 0, 50, 0.4)';
         ctx.lineWidth = b.size * 1.2;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-
         ctx.beginPath();
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
+        ctx.moveTo(tailX, tailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
 
-        // Sharp cyan energy envelope
-        ctx.strokeStyle = '#00d9ff';
-        ctx.lineWidth = b.size * 0.7;
+        // White core filament
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = b.size * 0.35;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.beginPath();
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
+        ctx.moveTo(coreTailX, coreTailY);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      } else if (b.isFire) {
+        // Glow sheath
+        ctx.strokeStyle = 'rgba(255, 69, 0, 0.4)';
+        ctx.lineWidth = b.size * 1.1;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
 
-        // Frozen white core
-        ctx.strokeStyle = '#e9ffff';
+        // Golden core filament
+        ctx.strokeStyle = '#ffee00';
         ctx.lineWidth = b.size * 0.32;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.beginPath();
-        const startIdx = Math.floor(b.trail.length / 2);
-        ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
-        for (let j = startIdx + 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
+        ctx.moveTo(coreTailX, coreTailY);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      } else if (b.isCryo) {
+        // Glow sheath
+        ctx.strokeStyle = 'rgba(80, 220, 255, 0.38)';
+        ctx.lineWidth = b.size * 1.1;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Frozen core filament
+        ctx.strokeStyle = '#e9ffff';
+        ctx.lineWidth = b.size * 0.3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(coreTailX, coreTailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
       } else {
-        // Pass A: Wide neon yellow energy sheath (outer glow)
-        ctx.strokeStyle = 'rgba(255, 235, 0, 0.25)';
-        ctx.lineWidth = b.size;
-        ctx.lineCap = 'square';
-        ctx.lineJoin = 'miter';
-
+        // Glow sheath
+        ctx.strokeStyle = 'rgba(255, 235, 0, 0.38)';
+        ctx.lineWidth = b.size * 0.9;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.beginPath();
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
+        ctx.moveTo(tailX, tailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
 
-        // Pass B: Intense bright gold/yellow envelope (mid glow)
-        ctx.strokeStyle = '#ffcc00';
-        ctx.lineWidth = b.size * 0.6;
-        ctx.beginPath();
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-
-        // Pass C: Superheated electric white filament core (inner bullet trail)
+        // White filament core
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = b.size * 0.25;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.beginPath();
-        const startIdx = Math.floor(b.trail.length / 2);
-        ctx.moveTo(b.trail[startIdx].x, b.trail[startIdx].y);
-        for (let j = startIdx + 1; j < b.trail.length; j++) {
-          ctx.lineTo(b.trail[j].x, b.trail[j].y);
-        }
+        ctx.moveTo(coreTailX, coreTailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
       }
     }
 
-    // 2. Render bullet main projectile head block
+    // 2. Render bullet main projectile head block (optimized to remove slow strokeRect borders)
     const half = b.size / 2;
 
     if (b.isOverclocked) {
-      // Outer fiery outline (Vibrant crimson neon)
       ctx.fillStyle = '#ff0033';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
-
-      // Inner molten core (Pure white)
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
-
-      // High-contrast outline border (dark ruby crimson)
-      ctx.strokeStyle = '#3a000a';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
     } else if (b.isFire) {
-      // Outer fiery outline (Vibrant red-orange plasma)
       ctx.fillStyle = '#ff3c00';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
-
-      // Inner molten core (Boiling yellow)
       ctx.fillStyle = '#ffee00';
       ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
-
-      // High-contrast outline border (dark fire crimson)
-      ctx.strokeStyle = '#3d0800';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
     } else if (b.isCryo) {
-      // Outer cryo shell (electric cyan ice)
       ctx.fillStyle = '#00d9ff';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
-
-      // Inner frozen core (cold white)
       ctx.fillStyle = '#e9ffff';
       ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
-
-      // High-contrast outline border (deep lab blue)
-      ctx.strokeStyle = '#002b3d';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
     } else {
-      // Outer solid plasma outline (Vibrant neon yellow)
       ctx.fillStyle = '#ffee00';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
-
-      // Inner bright fusing core (White)
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
-
-      // High-contrast outline border
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
     }
   });
 }
