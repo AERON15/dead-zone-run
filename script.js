@@ -7941,38 +7941,48 @@ function generateGroundDetails() {
   }
 }
 
+// Minimum clear corridor width guaranteed between any two obstacle surfaces.
+// Must exceed the largest entity diameter (Patient Zero = 112px) with margin.
+const OBSTACLE_MIN_GAP = 180;
+
 function generateMapObstacles() {
   obstacles = [];
 
   // Hand-placed landmarks make the arena feel intentional.
   const centerX = world.width / 2;
   const centerY = world.height / 2;
-  addObstacle('barrier', centerX - 430, centerY - 330, 190, 54);
+  addObstacle('barrier',     centerX - 430, centerY - 330, 190, 54);
   addObstacle('containment', centerX + 270, centerY - 360, 170, 78);
-  addObstacle('console', centerX - 500, centerY + 280, 180, 62);
-  addObstacle('chemical', centerX + 390, centerY + 250, 82, 108);
+  addObstacle('console',     centerX - 500, centerY + 280, 180, 62);
+  addObstacle('chemical',    centerX + 390, centerY + 250,  82, 108);
 
   const obstacleTypes = [
-    { type: 'crate', minW: 64, maxW: 84, minH: 64, maxH: 84 },
-    { type: 'barrier', minW: 150, maxW: 230, minH: 46, maxH: 58 },
-    { type: 'containment', minW: 130, maxW: 190, minH: 66, maxH: 84 },
-    { type: 'console', minW: 130, maxW: 200, minH: 52, maxH: 70 },
-    { type: 'chemical', minW: 70, maxW: 86, minH: 92, maxH: 118 }
+    { type: 'crate',       minW: 64,  maxW: 84,  minH: 64, maxH: 84  },
+    { type: 'barrier',     minW: 150, maxW: 220, minH: 46, maxH: 56  },
+    { type: 'containment', minW: 130, maxW: 185, minH: 66, maxH: 82  },
+    { type: 'console',     minW: 130, maxW: 195, minH: 52, maxH: 68  },
+    { type: 'chemical',    minW: 70,  maxW: 84,  minH: 92, maxH: 114 }
   ];
 
+  // Use more attempts to compensate for the stricter gap requirement.
   let attempts = 0;
-  while (obstacles.length < 18 && attempts < 500) {
+  while (obstacles.length < 16 && attempts < 700) {
     attempts += 1;
     const preset = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
-    const width = Math.floor(randomBetween(preset.minW, preset.maxW));
+    const width  = Math.floor(randomBetween(preset.minW, preset.maxW));
     const height = Math.floor(randomBetween(preset.minH, preset.maxH));
-    const x = Math.floor(randomBetween(90, world.width - width - 90));
+    const x = Math.floor(randomBetween(90, world.width  - width  - 90));
     const y = Math.floor(randomBetween(130, world.height - height - 90));
 
     if (canPlaceObstacle(x, y, width, height)) {
       addObstacle(preset.type, x, y, width, height);
     }
   }
+
+  // Post-placement safety pass: remove any obstacle whose nearest neighbour
+  // leaves a gap narrower than OBSTACLE_MIN_GAP in BOTH axes simultaneously
+  // (a tight diagonal pinch that the AABB padding alone might miss).
+  pruneObstaclePinchPoints();
 }
 
 function randomBetween(min, max) {
@@ -7996,18 +8006,20 @@ function canPlaceObstacle(x, y, width, height) {
   const obstacleCenterY = y + height / 2;
   const dx = obstacleCenterX - centerX;
   const dy = obstacleCenterY - centerY;
-  const spawnSafeRadius = 260;
+  const spawnSafeRadius = 280; // Slightly wider so no obstacle hugs the player start
 
   if (Math.sqrt(dx * dx + dy * dy) < spawnSafeRadius) {
     return false;
   }
 
-  const padding = 110; // Spreads out obstacles beautifully for clean paths and perfect bouncing bullet setups
+  // OBSTACLE_MIN_GAP guarantees corridors are wide enough for Patient Zero (112px).
+  // Pad the candidate rect so any overlap with an existing obstacle means the gap
+  // between their surfaces would be less than OBSTACLE_MIN_GAP.
   const candidate = {
-    x: x - padding,
-    y: y - padding,
-    width: width + padding * 2,
-    height: height + padding * 2
+    x: x - OBSTACLE_MIN_GAP,
+    y: y - OBSTACLE_MIN_GAP,
+    width:  width  + OBSTACLE_MIN_GAP * 2,
+    height: height + OBSTACLE_MIN_GAP * 2
   };
 
   for (let i = 0; i < obstacles.length; i++) {
@@ -8017,6 +8029,42 @@ function canPlaceObstacle(x, y, width, height) {
   }
 
   return true;
+}
+
+/**
+ * Post-placement pass: removes random-placed obstacles whose nearest neighbour
+ * creates a diagonal pinch point — a gap that is technically >= OBSTACLE_MIN_GAP
+ * edge-to-edge but forms a corner trap that large entities can't navigate out of.
+ * Hand-placed landmarks (first 4 entries) are never removed.
+ */
+function pruneObstaclePinchPoints() {
+  const HAND_PLACED = 4; // First N obstacles are fixed landmarks
+  const PINCH = OBSTACLE_MIN_GAP * 0.8; // Diagonal tolerance (slightly tighter than pairwise)
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = obstacles.length - 1; i >= HAND_PLACED; i--) {
+      const a = obstacles[i];
+      for (let j = 0; j < obstacles.length; j++) {
+        if (i === j) continue;
+        const b = obstacles[j];
+
+        // Compute gap between surfaces in each axis separately
+        const gapX = Math.max(0, Math.max(a.x, b.x) - Math.min(a.x + a.width,  b.x + b.width));
+        const gapY = Math.max(0, Math.max(a.y, b.y) - Math.min(a.y + a.height, b.y + b.height));
+
+        // A pinch point is when both gaps are simultaneously small enough that
+        // a large entity approaching diagonally can get wedged in the corner.
+        if (gapX > 0 && gapX < PINCH && gapY > 0 && gapY < PINCH) {
+          obstacles.splice(i, 1);
+          changed = true;
+          break;
+        }
+      }
+      if (changed) break;
+    }
+  }
 }
 
 function rectsOverlap(a, b) {
