@@ -858,6 +858,42 @@ const UPGRADES_REGISTRY = [
   }
 ];
 
+// Cap checkers — returns true when an upgrade's stat is already at its maximum value.
+// Capped upgrades are excluded from the selection pool so they never appear as choices.
+// Upgrades with no hard cap (pierce, doubleshot, lightning, heavycaliber) are omitted — always available.
+const UPGRADE_CAPS = {
+  damage:            () => player.bulletDamage >= 100,
+  speed:             () => player.speed >= 4.2,
+  maxhealth:         () => player.maxHealth >= 350,
+  heal:              () => player.waveHealPercentage >= 0.35,
+  bulletspeed:       () => player.bulletSpeed >= 20,
+  thickskin:         () => player.damageReduction >= 0.50,
+  runnershigh:       () => player.runnersHighLevel >= 5,   // 5 × 0.20 = 1.0 (speed cap)
+  giantbullets:      () => player.bulletSizeModifier >= 1.2,
+  retaliate:         () => player.retaliateLevel >= 4,     // 4 × 0.40 = 1.60 → clamped to 1.5 (speed cap)
+  firerate:          () => player.fireRate <= 150,
+  lifesteal:         () => player.lifestealAmount >= 5.0,
+  knockbackrounds:   () => player.knockbackModifier >= 1.5,
+  bouncingcasings:   () => player.bounceLimit >= 5,
+  splintershot:      () => player.splinterShotLevel >= 9,
+  steadyaim:         () => player.steadyAimLevel >= 4,     // 4 × 15 = 60 (damage cap)
+  phaseshift:        () => player.dodgeChance >= 0.45,
+  burn:              () => player.burnLevel >= 3,
+  necrobomb:         () => player.necroBombLevel >= 4,
+  defender:          () => player.orbitingDefenderLevel >= 5,
+  weakpointscan:     () => player.critChance >= 0.35,
+  finisherrounds:    () => player.finisherDamage >= 0.60,
+  secondwind:        () => player.secondWindLevel >= 5,
+  bioshield:         () => player.bioShieldLevel >= 7,
+  cryocapsule:       () => player.cryoCapsuleLevel >= 3,
+  reflexdash:        () => player.reflexDashLevel >= 7,
+  labmine:           () => player.labMineLevel >= 6,
+  combatstim:        () => player.stimulantLevel >= 7,
+  overclockedweapon: () => player.overclockLevel >= 6,
+  killfrenzy:        () => player.killFrenzyLevel >= 6,
+  slowstart:         () => player.slowStartLevel >= 3,
+};
+
 // Combat Arrays
 let bullets = [];
 let zombies = [];
@@ -3000,8 +3036,14 @@ function renderUpgradeChoices() {
   const rolledRarity = rollUpgradeRarity(gameState.wave);
   console.log(`Rolled Upgrade Rarity for Wave ${gameState.wave}: ${rolledRarity.toUpperCase()}`);
 
-  // Filter upgrades by rolled rarity
-  const pool = UPGRADES_REGISTRY.filter(u => u.rarity === rolledRarity);
+  // Filter upgrades by rolled rarity, excluding anything already at its cap
+  const isNotCapped = u => !(UPGRADE_CAPS[u.id]?.());
+  let pool = UPGRADES_REGISTRY.filter(u => u.rarity === rolledRarity && isNotCapped(u));
+
+  // Fallback: if the rarity pool is exhausted (all capped), draw from any non-capped upgrade
+  if (pool.length === 0) {
+    pool = UPGRADES_REGISTRY.filter(isNotCapped);
+  }
 
   // Pick unique random choices (or all available if pool size is smaller)
   let shuffled = [...pool].sort(() => 0.5 - Math.random());
