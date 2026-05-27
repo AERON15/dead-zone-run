@@ -148,6 +148,22 @@ const audio = {
         osc.stop(now + 0.12);
         break;
       }
+      case 'shoot_turret': {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(800, now);
+        osc.frequency.exponentialRampToValueAtTime(150, now + 0.10);
+
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.10);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.10);
+        break;
+      }
       case 'hit': {
         // Quick high-passed noise-like pop
         const osc = ctx.createOscillator();
@@ -470,7 +486,13 @@ let player = {
   killFrenzyCD: 0,
   stillTicks: 0,       // How many physics ticks the player has been completely still (for Steady Aim delay)
   longShotLevel: 0,    // Long Shot upgrade level — bonus damage scales with bullet travel distance
-  fairyAuraLevel: 0    // Fairy Aura upgrade level — magic DoT aura around the player
+  fairyAuraLevel: 0,   // Fairy Aura upgrade level — magic DoT aura around the player
+  rapidBootsLevel: 0,      // Rapid Boots upgrade level
+  rapidBootsKillCount: 0,  // Kills accumulated since last burst / CD reset
+  rapidBootsTimer: 0,      // Burst duration remaining (ticks)
+  rapidBootsCD: 0,         // Cooldown remaining after burst (ticks)
+  rustyTurretLevel: 0,      // Rusty Turret upgrade level
+  rustyTurretTimer: 0       // Timer before spawning next turret (ticks)
 };
 
 // Keyboard Input Tracker
@@ -585,6 +607,16 @@ const UPGRADES_REGISTRY = [
       player.retaliateLevel += 1;
     }
   },
+  {
+    id: 'rustyturret',
+    name: 'Rusty Turret',
+    icon: '[TURRET]',
+    description: 'Deploy a stationary rusty turret every 10 seconds that shoots the nearest zombie and despawns after 45s (Capped at Level 5).',
+    rarity: 'common',
+    apply: () => {
+      player.rustyTurretLevel = Math.min(5, player.rustyTurretLevel + 1);
+    }
+  },
 
   // 🔵 RARE
   {
@@ -673,10 +705,10 @@ const UPGRADES_REGISTRY = [
     id: 'doubleshot',
     name: 'Double Shot',
     icon: '[TWIN]',
-    description: 'Adds +1 bullet! But all bullets deal -45% damage. Shoots parallel side-by-side; switches to narrow fan at 4+ bullets.',
+    description: 'Adds +1 bullet! But all bullets deal -35% damage. Shoots parallel side-by-side; switches to narrow fan at 4+ bullets. (Capped at 8 bullets)',
     rarity: 'epic',
     apply: () => {
-      player.spreadShotCount += 1;
+      player.spreadShotCount = Math.min(7, player.spreadShotCount + 1);
     }
   },
   {
@@ -693,7 +725,7 @@ const UPGRADES_REGISTRY = [
     id: 'burn',
     name: 'Burn Bullet',
     icon: '[FIRE]',
-    description: 'Bullets gain +10% chance to become fire rounds that burn zombies and deal +10% damage (Capped at 30% chance).',
+    description: 'Bullets gain 30% chance at Level 1 (up to 80% at Level 3) to become fire rounds that burn zombies and deal +10% damage (Mutually exclusive with Cryo Capsule).',
     rarity: 'epic',
     apply: () => {
       player.burnLevel = Math.min(3, player.burnLevel + 1);
@@ -781,9 +813,9 @@ const UPGRADES_REGISTRY = [
     rarity: 'epic',
     apply: () => {
       player.bioShieldLevel = Math.min(7, player.bioShieldLevel + 1);
+      // On first pickup: activate the shield immediately (CD only runs after it's consumed)
       if (player.bioShieldTimer === 0 && !player.bioShieldActive) {
-        const cdSec = Math.max(30.0, 45.0 - (player.bioShieldLevel - 1) * 2.5);
-        player.bioShieldTimer = cdSec * 120; // 120 ticks per second (120Hz physics)
+        player.bioShieldActive = true;
       }
     }
   },
@@ -791,7 +823,7 @@ const UPGRADES_REGISTRY = [
     id: 'cryocapsule',
     name: 'Cryo Capsule',
     icon: '[FREEZE]',
-    description: 'Bullets gain +10% chance to become cryo rounds that slow zombies (Capped at 30% chance)',
+    description: 'Bullets gain 30% chance at Level 1 (up to 80% at Level 3) to become frozen rounds that slow zombies (Mutually exclusive with Burn Bullet).',
     rarity: 'epic',
     apply: () => {
       player.cryoCapsuleLevel = Math.min(3, player.cryoCapsuleLevel + 1);
@@ -860,6 +892,16 @@ const UPGRADES_REGISTRY = [
     }
   },
   {
+    id: 'rapidboots',
+    name: 'Rapid Boots',
+    icon: '[BOOTS]',
+    description: 'Permanently reduces your speed by 30%, but every 6 kills triggers a 4s burst of +60% speed and a glowing trail. Each stack cuts kills needed by 1 (min 2) and adds +12% burst power. 3s CD. (Capped at 6 stacks)',
+    rarity: 'epic',
+    apply: () => {
+      player.rapidBootsLevel = Math.min(6, player.rapidBootsLevel + 1);
+    }
+  },
+  {
     id: 'fairyaura',
     name: 'Fairy Aura',
     icon: '[AURA]',
@@ -883,8 +925,10 @@ const UPGRADES_REGISTRY = [
 
 // Cap checkers — returns true when an upgrade's stat is already at its maximum value.
 // Capped upgrades are excluded from the selection pool so they never appear as choices.
-// Upgrades with no hard cap (pierce, doubleshot, lightning, heavycaliber) are omitted — always available.
+// Upgrades with no hard cap (pierce, lightning, heavycaliber) are omitted — always available.
 const UPGRADE_CAPS = {
+  rustyturret:       () => player.rustyTurretLevel >= 5,
+  doubleshot:        () => player.spreadShotCount >= 7,
   damage:            () => player.bulletDamage >= 100,
   speed:             () => player.speed >= 4.2,
   maxhealth:         () => player.maxHealth >= 350,
@@ -901,14 +945,14 @@ const UPGRADE_CAPS = {
   splintershot:      () => player.splinterShotLevel >= 9,
   steadyaim:         () => player.steadyAimLevel >= 4,     // 4 × 15 = 60 (damage cap)
   phaseshift:        () => player.dodgeChance >= 0.45,
-  burn:              () => player.burnLevel >= 3,
+  burn:              () => player.burnLevel >= 3 || player.cryoCapsuleLevel > 0,
   necrobomb:         () => player.necroBombLevel >= 4,
   defender:          () => player.orbitingDefenderLevel >= 5,
   weakpointscan:     () => player.critChance >= 0.35,
   finisherrounds:    () => player.finisherDamage >= 0.60,
   secondwind:        () => player.secondWindLevel >= 5,
   bioshield:         () => player.bioShieldLevel >= 7,
-  cryocapsule:       () => player.cryoCapsuleLevel >= 3,
+  cryocapsule:       () => player.cryoCapsuleLevel >= 3 || player.burnLevel > 0,
   reflexdash:        () => player.reflexDashLevel >= 7,
   labmine:           () => player.labMineLevel >= 6,
   combatstim:        () => player.stimulantLevel >= 7,
@@ -917,6 +961,7 @@ const UPGRADE_CAPS = {
   slowstart:         () => player.slowStartLevel >= 3,
   longshot:          () => player.longShotLevel >= 3,
   fairyaura:         () => player.fairyAuraLevel >= 5,
+  rapidboots:        () => player.rapidBootsLevel >= 6,
 };
 
 // Combat Arrays
@@ -928,6 +973,7 @@ let lightningArcs = []; // For chain lightning cyan arc drawings
 let gameParticles = []; // For muzzle flashes, blood splatters, and impact sparks
 let explosions = [];    // For high-fidelity animated radial explosions
 let activeMines = [];   // For dropped explosive mines in world bounds
+let activeTurrets = []; // For deployed Rusty Turrets
 let pendingSummons = []; // Necromancer warning circles before summoned enemies appear
 
 // Patient Zero Boss Tracking
@@ -1198,6 +1244,7 @@ function bindCheatPanelQuickControls() {
     lightningArcs = [];
     explosions = [];
     activeMines = [];
+    activeTurrets = [];
     pendingSummons = [];
 
     // Trigger visual/haptic response
@@ -1532,6 +1579,12 @@ function startGame() {
   player.stillTicks = 0;
   player.longShotLevel = 0;
   player.fairyAuraLevel = 0;
+  player.rapidBootsLevel = 0;
+  player.rapidBootsKillCount = 0;
+  player.rapidBootsTimer = 0;
+  player.rapidBootsCD = 0;
+  player.rustyTurretLevel = 0;
+  player.rustyTurretTimer = 0;
 
   // Clear chosen upgrades
   upgradesChosen = [];
@@ -1549,6 +1602,7 @@ function startGame() {
   floorStains = [];
   explosions = [];
   activeMines = [];
+  activeTurrets = [];
   pendingSummons = [];
   screenShake.amount = 0;
   screenShake.frames = 0;
@@ -1689,6 +1743,130 @@ function update() {
       // Reset cooldown timer: reduces from 8s to 3s
       const cdSec = Math.max(3.0, 8.0 - (player.labMineLevel - 1) * 1.5);
       player.labMineTimer = cdSec * 60;
+    }
+  }
+
+  // Update Rusty Turrets spawning & lifetimes
+  if (player.rustyTurretLevel > 0) {
+    player.rustyTurretTimer = (player.rustyTurretTimer || 0) - 1;
+    if (player.rustyTurretTimer <= 0) {
+      activeTurrets.push({
+        x: player.x,
+        y: player.y,
+        angle: 0,
+        fireCooldown: 0,
+        life: 45 * 120, // 45 seconds at 120Hz (5400 ticks)
+        maxLife: 45 * 120
+      });
+      player.rustyTurretTimer = 10 * 120; // 10 seconds at 120Hz (1200 ticks)
+      // Visual feedback: some bronze/metallic sparks when spawning
+      for (let s = 0; s < 10; s++) {
+        const a = Math.random() * Math.PI * 2;
+        const f = Math.random() * 2 + 1;
+        gameParticles.push({
+          x: player.x,
+          y: player.y,
+          vx: Math.cos(a) * f,
+          vy: Math.sin(a) * f,
+          size: Math.floor(Math.random() * 3) + 2,
+          color: '#d48047', // rusty orange spark
+          life: 0.6,
+          decay: 0.05
+        });
+      }
+    }
+  }
+
+  // Update Turrets shooting & lifetimes
+  for (let tIdx = activeTurrets.length - 1; tIdx >= 0; tIdx--) {
+    const turret = activeTurrets[tIdx];
+    turret.life -= 1;
+    if (turret.life <= 0) {
+      // Spawn some debris particles on despawn
+      for (let sp = 0; sp < 8; sp++) {
+        const sAngle = Math.random() * Math.PI * 2;
+        gameParticles.push({
+          x: turret.x + (Math.random() - 0.5) * 16,
+          y: turret.y + (Math.random() - 0.5) * 16,
+          vx: Math.cos(sAngle) * (Math.random() * 2.0 + 0.5),
+          vy: Math.sin(sAngle) * (Math.random() * 2.0 + 0.5),
+          size: Math.floor(Math.random() * 4) + 2,
+          color: '#8c6046', // rusty brown debris
+          life: 0.7,
+          decay: 0.04
+        });
+      }
+      activeTurrets.splice(tIdx, 1);
+      continue;
+    }
+
+    if (turret.fireCooldown > 0) {
+      turret.fireCooldown -= 1;
+    }
+
+    // Target the nearest zombie
+    let nearestZ = null;
+    let minDistSq = Infinity;
+    const fireRange = 320;
+    
+    for (let zIdx = 0; zIdx < zombies.length; zIdx++) {
+      const z = zombies[zIdx];
+      const dx = z.x - turret.x;
+      const dy = z.y - turret.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < minDistSq) {
+        minDistSq = distSq;
+        nearestZ = z;
+      }
+    }
+
+    if (nearestZ && minDistSq < fireRange * fireRange) {
+      // Aim at target
+      const targetAngle = Math.atan2(nearestZ.y - turret.y, nearestZ.x - turret.x);
+      turret.angle = targetAngle;
+
+      if (turret.fireCooldown <= 0) {
+        // Fire bullet!
+        const bSpeed = 7.5;
+        const bDamage = 6 + player.rustyTurretLevel * 3; // Common tier damage: 9 to 21
+        const bx = turret.x + Math.cos(turret.angle) * 14;
+        const by = turret.y + Math.sin(turret.angle) * 14;
+
+        bullets.push({
+          x: bx,
+          y: by,
+          vx: Math.cos(turret.angle) * bSpeed,
+          vy: Math.sin(turret.angle) * bSpeed,
+          damage: bDamage,
+          size: 6,
+          color: '#e58e38', // glowing orange rusty round
+          bounceLimit: 0,
+          bounceLeft: 0,
+          bulletPierceLimit: 1,
+          isTurretBullet: true, // Tag to identify turret bullets
+          isFire: false,
+          isCryo: false
+        });
+
+        // Small muzzle flash
+        for (let sp = 0; sp < 3; sp++) {
+          const sAngle = turret.angle + (Math.random() - 0.5) * 0.4;
+          gameParticles.push({
+            x: bx,
+            y: by,
+            vx: Math.cos(sAngle) * (Math.random() * 2 + 1),
+            vy: Math.sin(sAngle) * (Math.random() * 2 + 1),
+            size: Math.floor(Math.random() * 2) + 2,
+            color: '#ffd080',
+            life: 0.3,
+            decay: 0.08
+          });
+        }
+
+        audio.playSfx('shoot_turret');
+
+        turret.fireCooldown = 60; // 0.5 seconds at 120Hz
+      }
     }
   }
 
@@ -1859,6 +2037,46 @@ function update() {
     }
   }
 
+  // Rapid Boots — passive penalty + burst timer + CD + trail
+  if (player.rapidBootsLevel > 0) {
+    // -30% passive speed penalty (always active while equipped)
+    currentSpeed -= player.speed * 0.30;
+
+    // Tick down CD
+    if (player.rapidBootsCD > 0) {
+      player.rapidBootsCD -= 1;
+    }
+
+    // Tick down burst and apply speed bonus + trail
+    if (player.rapidBootsTimer > 0) {
+      player.rapidBootsTimer -= 1;
+      const burstBonus = 0.60 + (player.rapidBootsLevel - 1) * 0.12;
+      currentSpeed += player.speed * burstBonus;
+
+      // Speed trail: 2 particles per tick, electric gold + white glow
+      if (gameTick % 2 === 0) {
+        for (let tP = 0; tP < 2; tP++) {
+          const isBolt = Math.random() < 0.25;
+          gameParticles.push({
+            x: player.x + (Math.random() - 0.5) * player.size * 0.7,
+            y: player.y + (Math.random() - 0.5) * player.size * 0.7,
+            vx: (Math.random() - 0.5) * 0.6,
+            vy: (Math.random() - 0.5) * 0.6,
+            size: isBolt ? Math.floor(Math.random() * 5) + 8 : Math.floor(Math.random() * 3) + 3,
+            color: isBolt ? '#ffffff' : (Math.random() < 0.55 ? '#ffe000' : '#ffaa00'),
+            life: isBolt ? 0.15 : 0.40,
+            decay: isBolt ? 0.08 : 0.04
+          });
+        }
+      }
+
+      // Start CD after burst expires
+      if (player.rapidBootsTimer === 0) {
+        player.rapidBootsCD = 360; // 3 seconds at 120Hz
+      }
+    }
+  }
+
   // Reflex Dash Cooldown decrement
   if (player.reflexDashCooldown > 0) {
     player.reflexDashCooldown -= 1;
@@ -1883,6 +2101,12 @@ function update() {
     player.reflexDashDuration -= 1;
     player.x += player.reflexDashVx;
     player.y += player.reflexDashVy;
+
+    // Start cooldown only after the dash finishes (not when it triggers)
+    if (player.reflexDashDuration === 0) {
+      const cooldownSec = Math.max(3.0, 6.0 - (player.reflexDashLevel - 1) * 1.0);
+      player.reflexDashCooldown = cooldownSec * 60;
+    }
 
     // Spawn cyber-blue shadow particle trails trailing the player surge
     gameParticles.push({
@@ -2012,6 +2236,19 @@ function update() {
           color: isSmoke ? 'rgba(90, 90, 90, 0.35)' : '#ff4500', // Grey smoke or bright orange-red fire
           life: 0.7,
           decay: Math.random() * 0.12 + 0.07
+        });
+      }
+    } else if (b.isTurretBullet) {
+      if (Math.random() < 0.15 * spawnMultiplier) {
+        gameParticles.push({
+          x: b.x + (Math.random() - 0.5) * 4,
+          y: b.y + (Math.random() - 0.5) * 4,
+          vx: (Math.random() - 0.5) * 0.35,
+          vy: (Math.random() - 0.5) * 0.35,
+          size: Math.floor(Math.random() * 2) + 1,
+          color: '#d48047', // rusty orange sparkle
+          life: 0.6,
+          decay: Math.random() * 0.08 + 0.05
         });
       }
     } else {
@@ -2248,12 +2485,12 @@ function update() {
         // Toxic Trail slow effect (20% slow per level, capped at 70% slow)
         let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.70, 0.20 * player.toxicTrailLevel)) : 1.0;
 
-        // Cryo Capsule slow effect (50% slow)
+        // Cryo Capsule slow effect (70% slow)
         z.cryoSlowTicks = z.cryoSlowTicks || 0;
         if (z.cryoSlowTicks > 0) {
           z.cryoSlowTicks -= 1;
           if (z.type !== 'rusher') {
-            slowFactor *= 0.50;
+            slowFactor *= 0.30;
           }
         }
 
@@ -2788,6 +3025,31 @@ function update() {
           }
         }
 
+        // Rapid Boots kill counter — only counts while no burst is active and not on CD
+        if (player.rapidBootsLevel > 0 && player.rapidBootsTimer <= 0 && player.rapidBootsCD <= 0) {
+          player.rapidBootsKillCount += 1;
+          const killsNeeded = Math.max(2, 7 - player.rapidBootsLevel);
+          if (player.rapidBootsKillCount >= killsNeeded) {
+            player.rapidBootsKillCount = 0;
+            player.rapidBootsTimer = 480; // 4 seconds at 120Hz
+            // Burst activation flash — electric gold ring explosion
+            for (let bP = 0; bP < 18; bP++) {
+              const bAng = (bP / 18) * Math.PI * 2;
+              const bSpd = Math.random() * 3.5 + 2.0;
+              gameParticles.push({
+                x: player.x + Math.cos(bAng) * player.size * 0.5,
+                y: player.y + Math.sin(bAng) * player.size * 0.5,
+                vx: Math.cos(bAng) * bSpd,
+                vy: Math.sin(bAng) * bSpd,
+                size: Math.floor(Math.random() * 4) + 3,
+                color: Math.random() < 0.6 ? '#ffe000' : '#ffffff',
+                life: 0.7,
+                decay: 0.06
+              });
+            }
+          }
+        }
+
         // Lifesteal heal logic
         if (player.lifestealAmount > 0) {
           player.health = Math.round(Math.min(player.maxHealth, player.health + player.lifestealAmount) * 100) / 100;
@@ -2871,23 +3133,25 @@ function update() {
         // Calculate base and upgrades damage
         let damageDealt = b.damage;
 
-        // Long Shot — damage scales with distance traveled (not applied to shrapnel)
-        if (player.longShotLevel > 0 && !b.isShrapnel) {
-          const rangeFactor = Math.min(1.0, (b.distanceTraveled || 0) / 350);
-          const longShotMult = Math.min(2.0, 1.0 + rangeFactor * (player.longShotLevel * 0.35));
-          damageDealt = Math.round(damageDealt * longShotMult);
-        }
-
-        // Weak Point Scan (Critical Hit chance)
         let isCrit = false;
-        if (player.critChance > 0 && Math.random() < player.critChance) {
-          isCrit = true;
-          damageDealt = Math.round(damageDealt * 1.75);
-        }
+        if (!b.isTurretBullet) {
+          // Long Shot — damage scales with distance traveled (not applied to shrapnel)
+          if (player.longShotLevel > 0 && !b.isShrapnel) {
+            const rangeFactor = Math.min(1.0, (b.distanceTraveled || 0) / 350);
+            const longShotMult = Math.min(2.0, 1.0 + rangeFactor * (player.longShotLevel * 0.35));
+            damageDealt = Math.round(damageDealt * longShotMult);
+          }
 
-        // Finisher Rounds (+8% execute damage per stack to target below 35% HP)
-        if (player.finisherDamage > 0 && z.health < z.maxHealth * 0.35) {
-          damageDealt = Math.round(damageDealt * (1 + player.finisherDamage));
+          // Weak Point Scan (Critical Hit chance)
+          if (player.critChance > 0 && Math.random() < player.critChance) {
+            isCrit = true;
+            damageDealt = Math.round(damageDealt * 1.75);
+          }
+
+          // Finisher Rounds (+8% execute damage per stack to target below 35% HP)
+          if (player.finisherDamage > 0 && z.health < z.maxHealth * 0.35) {
+            damageDealt = Math.round(damageDealt * (1 + player.finisherDamage));
+          }
         }
 
         // Apply damage to zombie
@@ -2933,14 +3197,14 @@ function update() {
 
         // Apply physical knockback pushback force (Knockback Rounds)
         const travelAngle = Math.atan2(b.vy, b.vx);
-        const pushForce = 8 * (1 + player.knockbackModifier); // base push 8px
+        const pushForce = b.isTurretBullet ? 3 : (8 * (1 + player.knockbackModifier)); // base push 8px
         if (z.type !== 'rusher' && z.type !== 'patient_zero') {
           z.x += Math.cos(travelAngle) * pushForce;
           z.y += Math.sin(travelAngle) * pushForce;
         }
 
         // Trigger Splinter Shot bullet split
-        if (player.splinterShotLevel > 0 && !b.isShrapnel && !b.hasSplintered) {
+        if (!b.isTurretBullet && player.splinterShotLevel > 0 && !b.isShrapnel && !b.hasSplintered) {
           b.hasSplintered = true;
           spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, z, b.isFire, b.isCryo);
         }
@@ -3324,6 +3588,22 @@ function spawnZombie() {
       speed: 1.55,
       damage: 18,
       scoreValue: 40,
+      lastAttackTime: 0,
+      attackCooldown: 1000,
+      hasHitPlayer: false
+    });
+  } else if (zombieType === 'shielder') {
+    // Spawn Shield Zombie (Heavy technology armored elite)
+    addScaledZombie({
+      type: 'shielder',
+      x: zx,
+      y: zy,
+      size: 52,
+      health: 90,
+      maxHealth: 90,
+      speed: 0.50,
+      damage: 10,
+      scoreValue: 60,
       lastAttackTime: 0,
       attackCooldown: 1000,
       hasHitPlayer: false
@@ -4079,8 +4359,14 @@ function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null, isF
 // Shooting Weapon System
 
 function rollBulletElement() {
-  const fireChance = Math.min(0.30, player.burnLevel * 0.10);
-  const cryoChance = Math.min(0.30, player.cryoCapsuleLevel * 0.10);
+  let fireChance = 0;
+  if (player.burnLevel > 0) {
+    fireChance = 0.30 + (player.burnLevel - 1) * 0.25;
+  }
+  let cryoChance = 0;
+  if (player.cryoCapsuleLevel > 0) {
+    cryoChance = 0.30 + (player.cryoCapsuleLevel - 1) * 0.25;
+  }
   const roll = Math.random();
 
   return {
@@ -4144,9 +4430,9 @@ function shootWeapon() {
     if (!isPlayerMoving && player.steadyAimLevel > 0 && player.stillTicks >= 360) {
       finalDamage += Math.min(60, player.steadyAimLevel * 15); // Capped at +60 damage
     }
-    // Double Shot penalty: -45% damage when extra bullets are active
+    // Double Shot penalty: -35% damage when extra bullets are active
     if (player.spreadShotCount > 0) {
-      finalDamage = Math.max(1, Math.round(finalDamage * 0.55));
+      finalDamage = Math.max(1, Math.round(finalDamage * 0.65));
     }
     // Burn Bullet damage boost is now applied on an individual bullet basis (under Chunk 6/7)
     let finalSize = 10 * (1 + player.bulletSizeModifier); // Giant Bullets modifier
@@ -4839,6 +5125,9 @@ function render() {
 
   // 3.7. Draw dropped Lab Mines
   drawMines();
+
+  // 3.75. Draw stationary Rusty Turrets
+  drawTurrets();
 
   // 4. Draw Dotted Aim Guide Sight
   drawAimGuide();
@@ -5656,6 +5945,26 @@ function drawBullets() {
         ctx.moveTo(coreTailX, coreTailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
+      } else if (b.isTurretBullet) {
+        // Glow sheath
+        ctx.strokeStyle = 'rgba(212, 128, 71, 0.4)'; // rusty orange
+        ctx.lineWidth = b.size * 1.0;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Burnt brass core filament
+        ctx.strokeStyle = '#ffae73';
+        ctx.lineWidth = b.size * 0.28;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(coreTailX, coreTailY);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
       } else {
         // Glow sheath
         ctx.strokeStyle = 'rgba(255, 235, 0, 0.38)';
@@ -5696,6 +6005,11 @@ function drawBullets() {
       ctx.fillStyle = '#00d9ff';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
       ctx.fillStyle = '#e9ffff';
+      ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
+    } else if (b.isTurretBullet) {
+      ctx.fillStyle = '#b85823'; // copper/bronze body
+      ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
+      ctx.fillStyle = '#ffae73'; // bright orange/white core
       ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
     } else {
       ctx.fillStyle = '#ffee00';
@@ -5862,6 +6176,86 @@ function drawMines() {
       ctx.arc(m.x, m.y, m.size * 0.2, 0, Math.PI * 2);
       ctx.stroke();
     }
+  });
+  ctx.restore();
+}
+
+/**
+ * Renders active, stationary Rusty Turrets on the canvas, complete with rotating heads and life rings.
+ */
+function drawTurrets() {
+  ctx.save();
+  activeTurrets.forEach(t => {
+    if (!isInView(t.x, t.y, 40)) return;
+
+    // 1. Draw Object Shadow beneath the turret base
+    drawObjectShadow(t.x - 20, t.y - 12, 40, 24, 0.45);
+
+    ctx.save();
+    ctx.translate(t.x, t.y);
+
+    // 2. Draw Rusty Metal Base (circular, with an industrial feel)
+    ctx.fillStyle = '#6e4533'; // rusty brown
+    ctx.strokeStyle = '#42281d'; // dark rust
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Rivets on base (8 metal dots around the rim)
+    ctx.fillStyle = '#8b5a42';
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI * 2) / 8;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * 11, Math.sin(a) * 11, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Draw Rotational Components (barrel and turret head)
+    ctx.save();
+    ctx.rotate(t.angle);
+
+    // Rusty Dual Barrel
+    ctx.fillStyle = '#2d1b13'; // dark burnt gunmetal
+    ctx.strokeStyle = '#5a3d2e';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(4, -4, 13, 3);
+    ctx.strokeRect(4, -4, 13, 3);
+    ctx.fillRect(4, 1, 13, 3);
+    ctx.strokeRect(4, 1, 13, 3);
+
+    // Turret Center Head/Cap
+    ctx.fillStyle = '#7c4b35'; // glowing rusty iron
+    ctx.strokeStyle = '#4a2c1d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Highlight detail line
+    ctx.strokeStyle = '#a66a4e';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(-2, -2, 4, Math.PI, Math.PI * 1.5);
+    ctx.stroke();
+
+    ctx.restore(); // end barrel rotation
+
+    // 4. Draw Radial Lifetime Indicator Circle (cool green-to-red depleting ring)
+    const lifePct = Math.max(0, t.life / t.maxLife);
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = `hsla(${lifePct * 120}, 90%, 50%, 0.6)`;
+    
+    ctx.strokeStyle = `hsla(${lifePct * 120}, 90%, 45%, 0.7)`;
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, 19, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifePct);
+    ctx.stroke();
+
+    ctx.restore(); // end individual turret space
   });
   ctx.restore();
 }
@@ -7116,18 +7510,24 @@ function drawZombies() {
         ctx.fillRect(fx, fy, 4, 4);
       }
     } else if (z.cryoSlowTicks > 0) {
-      // Rotating hexagonal frosted glacier shield
-      const radius = size * 0.48;
-      ctx.fillStyle = 'rgba(0, 200, 255, 0.26)';
-      ctx.strokeStyle = 'rgba(143, 252, 255, 0.85)';
-      ctx.lineWidth = 2.2;
-
+      const spBase = baseSpriteSizes[z.type] || baseSpriteSizes.normal;
+      const radius = spBase * 0.64; // Visual radius scales perfectly with spBase
+      
+      // Pulsing effect based on gameTick
+      const pulse = Math.sin(gameTick * 0.08) * 1.5;
+      const activeRadius = radius + pulse;
+      
+      // 1. Draw Translucent Icy Glass Barrier Fill & Glow
+      ctx.fillStyle = 'rgba(100, 225, 255, 0.18)';
+      ctx.strokeStyle = 'rgba(130, 245, 255, 0.85)';
+      ctx.lineWidth = 2.4;
+      
       ctx.beginPath();
-      const sides = 6;
+      const sides = 8; // Octagonal ice structure for premium crystal feel
       for (let s = 0; s <= sides; s++) {
-        const a = (s * Math.PI * 2 / sides) + (gameTick * 0.008);
-        const x = Math.cos(a) * radius;
-        const y = Math.sin(a) * radius;
+        const a = (s * Math.PI * 2 / sides) + (gameTick * 0.005);
+        const x = Math.cos(a) * activeRadius;
+        const y = Math.sin(a) * activeRadius;
         if (s === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -7135,24 +7535,74 @@ function drawZombies() {
       ctx.fill();
       ctx.stroke();
 
-      // Glistening frost inner lines
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+      // 2. Draw Internal Crack/Frost Lines (glistening ice fractures)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      for (let s = 0; s < 3; s++) {
-        const a = (s * Math.PI * 2 / 3) + (gameTick * 0.008);
+      for (let s = 0; s < 4; s++) {
+        const a = (s * Math.PI * 2 / 4) + (gameTick * 0.005) + Math.PI / 4;
         ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * radius * 0.75, Math.sin(a) * radius * 0.75);
+        // Jagged crack line
+        const midX = Math.cos(a) * activeRadius * 0.4 + (Math.sin(gameTick * 0.05 + s) * 2);
+        const midY = Math.sin(a) * activeRadius * 0.4 + (Math.cos(gameTick * 0.05 + s) * 2);
+        ctx.lineTo(midX, midY);
+        ctx.lineTo(Math.cos(a) * activeRadius * 0.8, Math.sin(a) * activeRadius * 0.8);
       }
       ctx.stroke();
 
-      // Subtle glistening ice crystals
-      ctx.fillStyle = 'rgba(200, 240, 255, 0.9)';
-      for (let c = 0; c < 2; c++) {
-        const cx = (Math.random() - 0.5) * size * 0.5;
-        const cy = (Math.random() - 0.5) * size * 0.5;
-        ctx.fillRect(cx, cy, 3, 3);
+      // 3. Draw 8 sharp external ice needles pointing outward from the corners
+      ctx.fillStyle = 'rgba(200, 250, 255, 0.95)';
+      ctx.strokeStyle = 'rgba(0, 180, 255, 0.85)';
+      ctx.lineWidth = 1.0;
+      for (let s = 0; s < 8; s++) {
+        const a = (s * Math.PI * 2 / 8) + (gameTick * 0.005);
+        
+        // Base points on the octagonal boundary
+        const bx = Math.cos(a) * activeRadius;
+        const by = Math.sin(a) * activeRadius;
+        
+        // Needle tip pointing outward
+        const tipLen = spBase * 0.20; // 20% of base size
+        const tx = Math.cos(a) * (activeRadius + tipLen);
+        const ty = Math.sin(a) * (activeRadius + tipLen);
+        
+        // Needle thickness perpendiculars
+        const perpA = a + Math.PI / 2;
+        const thickness = spBase * 0.05; // thin needle base
+        const px1 = bx + Math.cos(perpA) * thickness;
+        const py1 = by + Math.sin(perpA) * thickness;
+        const px2 = bx - Math.cos(perpA) * thickness;
+        const py2 = by - Math.sin(perpA) * thickness;
+        
+        // Draw the needle diamond
+        ctx.beginPath();
+        ctx.moveTo(px1, py1);
+        ctx.lineTo(tx, ty);
+        ctx.lineTo(px2, py2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       }
+
+      // 4. Glistening diamond sparkles floating around (sparkles are 4-sided stars)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      const sparklePositions = [
+        { x: -spBase * 0.3, y: -spBase * 0.35, size: 3.5, speed: 0.05 },
+        { x: spBase * 0.35, y: -spBase * 0.2, size: 2.5, speed: 0.07 },
+        { x: -spBase * 0.2, y: spBase * 0.38, size: 3.0, speed: 0.04 },
+        { x: spBase * 0.4, y: spBase * 0.35, size: 4.0, speed: 0.06 }
+      ];
+      
+      sparklePositions.forEach((sp, idx) => {
+        const spSize = sp.size * (0.4 + 0.6 * Math.abs(Math.sin(gameTick * sp.speed + idx)));
+        ctx.beginPath();
+        ctx.moveTo(sp.x, sp.y - spSize); // top
+        ctx.lineTo(sp.x + spSize * 0.4, sp.y); // right
+        ctx.lineTo(sp.x, sp.y + spSize); // bottom
+        ctx.lineTo(sp.x - spSize * 0.4, sp.y); // left
+        ctx.closePath();
+        ctx.fill();
+      });
     }
 
     ctx.restore();
@@ -7638,9 +8088,7 @@ function triggerReflexDash() {
   player.reflexDashVy = Math.sin(angle) * desiredSpeed * dashMultiplier;
   player.reflexDashDuration = 11; // Dash lasts 11 frames (~0.18 seconds of invulnerable surge)
   
-  // Cooldown reduces by 1.0s per stack level above 1, capped at 3s minimum (from 6s)
-  const cooldownSec = Math.max(3.0, 6.0 - (player.reflexDashLevel - 1) * 1.0);
-  player.reflexDashCooldown = cooldownSec * 60; // 60 ticks per second
+  // (Cooldown is started in the physics loop after reflexDashDuration reaches 0)
 
   // Trigger high weight screen shake on dash start
   startScreenShake(4, 6);
