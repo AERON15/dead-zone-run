@@ -3625,6 +3625,8 @@ function renderUpgradeChoices() {
     card.className = 'upgrade-card rarity-' + rolledRarity;
     card.setAttribute('role', 'button');
     card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-label', `${upgrade.name}: ${upgrade.description}`);
+    card.title = `${upgrade.name}: ${upgrade.description}`;
 
     // Rivets for retro styling
     const rivetTL = document.createElement('div'); rivetTL.className = 'rivet top-left'; card.appendChild(rivetTL);

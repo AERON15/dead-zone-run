@@ -967,50 +967,106 @@ html, body {
 }
 
 /* Roguelike Upgrade Cards */
+#wavecleared-screen.screen {
+  padding: clamp(10px, 2vh, 20px);
+}
+
 #wavecleared-screen .menu-container {
-  max-width: 860px;
-  width: 92%;
+  max-width: min(1180px, calc(100vw - 32px));
+  width: 96vw;
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
+  gap: clamp(0.45rem, 1.1vh, 0.75rem);
+  padding: clamp(0.8rem, 1.8vh, 1.25rem) clamp(0.9rem, 2vw, 1.4rem);
+}
+
+#wavecleared-screen .hazard-bar {
+  height: clamp(6px, 1.1vh, 10px);
+  border-width: 2px;
+  flex: 0 0 auto;
+}
+
+#wavecleared-screen .wave-cleared-title {
+  font-size: clamp(1.55rem, 3vw, 2.15rem);
+  line-height: 1;
+}
+
+#wavecleared-screen .tagline {
+  font-size: clamp(0.85rem, 1.5vw, 1.05rem);
+  margin: -0.15rem 0 0;
+}
+
+#wavecleared-screen .gameover-stats {
+  max-width: 680px;
+  flex-direction: row;
+  justify-content: center;
+  align-items: stretch;
+  gap: 0;
+  padding: 0.45rem 0.65rem;
+}
+
+#wavecleared-screen .stat-row {
+  flex: 1 1 0;
+  justify-content: center;
+  gap: 0.7rem;
+  padding: 0 0.75rem;
+}
+
+#wavecleared-screen .stat-row + .stat-row {
+  border-left: 3px solid var(--panel-border);
+}
+
+#wavecleared-screen .stat-label {
+  font-size: clamp(0.75rem, 1.3vw, 0.95rem);
+}
+
+#wavecleared-screen .stat-value {
+  font-size: clamp(0.68rem, 1.1vw, 0.82rem);
 }
 
 .upgrade-subtitle {
   font-family: var(--font-pixel);
-  font-size: 1.2rem;
+  font-size: clamp(0.78rem, 1.3vw, 1rem);
   color: var(--text-primary);
-  margin-top: 0.5rem;
+  margin-top: 0.1rem;
   text-shadow: 2px 2px 0px #000;
   letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .upgrade-options {
-  display: flex;
-  gap: 1.2rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(0.6rem, 1.4vw, 1rem);
   justify-content: center;
   width: 100%;
-  margin: 1.2rem 0;
+  margin: 0.25rem 0 0.35rem;
+  min-height: 0;
 }
 
 .upgrade-card {
-  flex: 1;
+  min-width: 0;
   background: var(--bg-dark);
   border: 4px solid var(--panel-border);
-  padding: 1.5rem 1rem;
+  padding: clamp(0.65rem, 1.4vh, 1rem) clamp(0.6rem, 1.2vw, 0.9rem);
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.8rem;
+  gap: clamp(0.35rem, 0.9vh, 0.55rem);
   cursor: pointer;
   transition: transform 0.1s steps(2), border-color 0.1s steps(2), box-shadow 0.1s steps(2);
   position: relative;
   box-shadow: 6px 6px 0px #000;
-  min-height: 220px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .upgrade-card:hover {
-  transform: translateY(-8px);
+  transform: translateY(-4px);
   border-color: var(--pixel-orange);
-  box-shadow: 12px 12px 0px #000;
+  box-shadow: 8px 8px 0px #000;
   background: #0d0d14;
 }
 
@@ -1021,19 +1077,21 @@ html, body {
 }
 
 .upgrade-card-icon {
-  font-size: 2.2rem;
-  margin-bottom: 0.2rem;
+  font-size: clamp(1.45rem, 2.5vw, 2rem);
+  margin-bottom: 0;
   text-shadow: 3px 3px 0px #000;
   filter: drop-shadow(2px 2px 0px #000);
+  line-height: 1;
 }
 
 .upgrade-card-title {
   font-family: var(--font-pixel);
-  font-size: 0.75rem;
+  font-size: clamp(0.58rem, 0.85vw, 0.68rem);
   color: var(--pixel-orange);
   text-transform: uppercase;
-  line-height: 1.3;
+  line-height: 1.2;
   letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .upgrade-card:hover .upgrade-card-title {
@@ -1043,10 +1101,11 @@ html, body {
 
 .upgrade-card-desc {
   font-family: var(--font-terminal);
-  font-size: 1.2rem;
+  font-size: clamp(0.78rem, 1.1vw, 0.95rem);
   color: var(--text-secondary);
-  line-height: 1.3;
+  line-height: 1.18;
   flex-grow: 1;
+  overflow-wrap: anywhere;
 }
 
 .upgrade-card:hover .upgrade-card-desc {
@@ -1054,34 +1113,63 @@ html, body {
 }
 
 /* Responsive adjust for Upgrade Cards on Tablet/Mobile */
-@media (max-width: 840px) {
+@media (max-width: 900px) {
   #wavecleared-screen .menu-container {
-    max-width: 440px;
-    width: 95%;
+    max-width: min(720px, calc(100vw - 24px));
+    width: 96vw;
   }
 
   .upgrade-options {
-    flex-direction: column;
-    gap: 1rem;
-    width: 100%;
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
   }
 
   .upgrade-card {
-    width: 100%;
-    min-height: auto;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: auto minmax(120px, 0.42fr) minmax(0, 1fr);
+    align-items: center;
     text-align: left;
-    padding: 1rem;
-    gap: 1.2rem;
+    padding: 0.65rem 0.75rem;
+    gap: 0.65rem;
   }
 
   .upgrade-card-icon {
-    font-size: 2rem;
-    margin-bottom: 0;
+    font-size: 1.35rem;
   }
 
   .upgrade-card-desc {
-    font-size: 1.1rem;
+    font-size: 0.82rem;
+    flex-grow: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  #wavecleared-screen .gameover-stats {
+    flex-direction: column;
+    padding: 0.45rem;
+  }
+
+  #wavecleared-screen .stat-row {
+    justify-content: space-between;
+    padding: 0.15rem 0.35rem;
+  }
+
+  #wavecleared-screen .stat-row + .stat-row {
+    border-left: 0;
+    border-top: 2px solid var(--panel-border);
+    padding-top: 0.35rem;
+  }
+
+  .upgrade-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .upgrade-card-desc {
+    grid-column: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    overflow: hidden;
   }
 }
 
@@ -1140,20 +1228,23 @@ html, body {
 /* ── Reroll Row ────────────────────────────────────────────────────────── */
 .reroll-row {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 0.4rem;
-  margin: 0.2rem 0 0.8rem;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0.05rem 0 0.35rem;
 }
 
 .reroll-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.55rem 1.6rem;
+  flex: 0 0 auto;
+  padding: 0.45rem 1.15rem;
   font-family: var(--font-pixel);
-  font-size: 0.78rem;
-  letter-spacing: 1px;
+  font-size: 0.68rem;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: #00e5ff;
   background: transparent;
@@ -1207,10 +1298,23 @@ html, body {
 
 .reroll-hint {
   font-family: var(--font-terminal);
-  font-size: 1.05rem;
+  font-size: clamp(0.78rem, 1.1vw, 0.92rem);
   color: var(--text-secondary);
   margin: 0;
-  text-align: center;
+  text-align: left;
+  max-width: 440px;
+}
+
+@media (max-width: 560px) {
+  .reroll-row {
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.1rem;
+  }
+
+  .reroll-hint {
+    text-align: center;
+  }
 }
 
 @keyframes legendary-pulse {
@@ -1703,6 +1807,89 @@ html, body {
   }
 }
 
+@media (max-height: 750px) {
+  #wavecleared-screen .menu-container {
+    padding: 0.65rem 0.9rem !important;
+    gap: 0.35rem !important;
+  }
+
+  #wavecleared-screen .wave-cleared-title {
+    font-size: 1.35rem !important;
+  }
+
+  #wavecleared-screen .tagline {
+    font-size: 0.72rem !important;
+    margin: 0 !important;
+  }
+
+  #wavecleared-screen .hazard-bar {
+    height: 6px !important;
+  }
+
+  #wavecleared-screen .gameover-stats {
+    margin: 0 !important;
+    padding: 0.32rem 0.5rem !important;
+    gap: 0 !important;
+  }
+
+  #wavecleared-screen .stat-row {
+    padding: 0 0.5rem !important;
+    gap: 0.45rem !important;
+  }
+
+  #wavecleared-screen .stat-label {
+    font-size: 0.68rem !important;
+  }
+
+  #wavecleared-screen .stat-value {
+    font-size: 0.62rem !important;
+  }
+
+  #wavecleared-screen .upgrade-subtitle {
+    font-size: 0.68rem !important;
+    margin-top: 0 !important;
+  }
+
+  #wavecleared-screen .upgrade-options {
+    margin: 0.1rem 0 !important;
+    gap: 0.45rem !important;
+  }
+
+  #wavecleared-screen .upgrade-card {
+    padding: 0.45rem 0.5rem !important;
+    gap: 0.25rem !important;
+  }
+
+  #wavecleared-screen .upgrade-card-icon {
+    font-size: 1.1rem !important;
+    margin-bottom: 0 !important;
+  }
+
+  #wavecleared-screen .upgrade-card-title {
+    font-size: 0.52rem !important;
+    line-height: 1.12 !important;
+  }
+
+  #wavecleared-screen .upgrade-card-desc {
+    font-size: 0.68rem !important;
+    line-height: 1.12 !important;
+  }
+
+  #wavecleared-screen .reroll-row {
+    gap: 0.45rem !important;
+    margin: 0 !important;
+  }
+
+  #wavecleared-screen .reroll-btn {
+    padding: 0.32rem 0.8rem !important;
+    font-size: 0.58rem !important;
+  }
+
+  #wavecleared-screen .reroll-hint {
+    font-size: 0.7rem !important;
+  }
+}
+
 /* Tactical Survival Instructions Panel */
 .instructions-panel {
   width: 100%;
@@ -2065,5 +2252,3 @@ html, body {
 .side-panel .leaderboard-table td:nth-child(5) {
   width: 12% !important; /* Kills column */
 }
-
-
