@@ -1502,7 +1502,7 @@ function startGame() {
 
 let lastLoopTime = 0;
 let loopAccumulator = 0;
-const timestep = 1000 / 60; // Exactly 16.67ms per game tick
+const timestep = 1000 / 120; // Exactly 8.33ms per game tick (120Hz)
 
 function gameLoop(timestamp) {
   if (!gameState.isRunning || isWaveIntermission || isPaused) {
