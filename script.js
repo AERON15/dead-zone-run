@@ -165,6 +165,27 @@ const audio = {
         osc.stop(now + 0.10);
         break;
       }
+      case 'shoot_mortar': {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.linearRampToValueAtTime(40, now + 0.28);
+
+        gain.gain.setValueAtTime(0.20, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(350, now);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.28);
+        break;
+      }
       case 'hit': {
         // Quick high-passed noise-like pop
         const osc = ctx.createOscillator();
@@ -493,7 +514,9 @@ let player = {
   rapidBootsTimer: 0,      // Burst duration remaining (ticks)
   rapidBootsCD: 0,         // Cooldown remaining after burst (ticks)
   rustyTurretLevel: 0,      // Rusty Turret upgrade level
-  rustyTurretTimer: 0       // Timer before spawning next turret (ticks)
+  rustyTurretTimer: 0,      // Timer before spawning next turret (ticks)
+  bomberTurretLevel: 0,     // Bomber Turret upgrade level
+  bomberTurretTimer: 0      // Timer before spawning next bomber turret (ticks)
 };
 
 // Keyboard Input Tracker
@@ -628,6 +651,16 @@ const UPGRADES_REGISTRY = [
     rarity: 'rare',
     apply: () => {
       player.fireRate = Math.max(150, player.fireRate - 45);
+    }
+  },
+  {
+    id: 'bomberturret',
+    name: 'Bomber Turret',
+    icon: '[MORTAR]',
+    description: 'Deploy a heavy stationary mortar turret every 12 seconds that fires slow explosive shells in a 240px range and despawns after 45s (Capped at Level 5).',
+    rarity: 'rare',
+    apply: () => {
+      player.bomberTurretLevel = Math.min(5, player.bomberTurretLevel + 1);
     }
   },
   {
@@ -928,6 +961,7 @@ const UPGRADES_REGISTRY = [
 // Capped upgrades are excluded from the selection pool so they never appear as choices.
 // Upgrades with no hard cap (pierce, lightning, heavycaliber) are omitted — always available.
 const UPGRADE_CAPS = {
+  bomberturret:      () => player.bomberTurretLevel >= 5,
   rustyturret:       () => player.rustyTurretLevel >= 5,
   doubleshot:        () => player.spreadShotCount >= 7,
   damage:            () => player.bulletDamage >= 100,
@@ -975,6 +1009,7 @@ let gameParticles = []; // For muzzle flashes, blood splatters, and impact spark
 let explosions = [];    // For high-fidelity animated radial explosions
 let activeMines = [];   // For dropped explosive mines in world bounds
 let activeTurrets = []; // For deployed Rusty Turrets
+let activeBomberTurrets = []; // For deployed Bomber Turrets
 let pendingSummons = []; // Necromancer warning circles before summoned enemies appear
 
 // Patient Zero Boss Tracking
@@ -1253,6 +1288,7 @@ function bindCheatPanelQuickControls() {
     explosions = [];
     activeMines = [];
     activeTurrets = [];
+    activeBomberTurrets = [];
     pendingSummons = [];
 
     // If we were on the intermission/upgrade screen, forcibly exit it so the
@@ -1603,6 +1639,8 @@ function startGame() {
   player.rapidBootsCD = 0;
   player.rustyTurretLevel = 0;
   player.rustyTurretTimer = 0;
+  player.bomberTurretLevel = 0;
+  player.bomberTurretTimer = 0;
 
   // Clear chosen upgrades
   upgradesChosen = [];
@@ -1621,6 +1659,7 @@ function startGame() {
   explosions = [];
   activeMines = [];
   activeTurrets = [];
+  activeBomberTurrets = [];
   pendingSummons = [];
   screenShake.amount = 0;
   screenShake.frames = 0;
@@ -1884,6 +1923,132 @@ function update() {
         audio.playSfx('shoot_turret');
 
         turret.fireCooldown = 60; // 0.5 seconds at 120Hz
+      }
+    }
+  }
+
+  // Update Bomber Turrets spawning & lifetimes
+  if (player.bomberTurretLevel > 0) {
+    player.bomberTurretTimer = (player.bomberTurretTimer || 0) - 1;
+    if (player.bomberTurretTimer <= 0) {
+      activeBomberTurrets.push({
+        x: player.x,
+        y: player.y,
+        angle: 0,
+        fireCooldown: 0,
+        life: 45 * 120, // 45 seconds at 120Hz (5400 ticks)
+        maxLife: 45 * 120
+      });
+      player.bomberTurretTimer = 12 * 120; // 12 seconds at 120Hz (1440 ticks)
+      // Visual feedback: explosive fire/red sparks when spawning
+      for (let s = 0; s < 12; s++) {
+        const a = Math.random() * Math.PI * 2;
+        const f = Math.random() * 2.5 + 1;
+        gameParticles.push({
+          x: player.x,
+          y: player.y,
+          vx: Math.cos(a) * f,
+          vy: Math.sin(a) * f,
+          size: Math.floor(Math.random() * 4) + 2,
+          color: s % 2 === 0 ? '#ff4500' : '#ffcc00', // orange-red active sparks
+          life: 0.65,
+          decay: 0.04
+        });
+      }
+    }
+  }
+
+  // Update Bomber Turrets shooting & lifetimes
+  for (let tIdx = activeBomberTurrets.length - 1; tIdx >= 0; tIdx--) {
+    const turret = activeBomberTurrets[tIdx];
+    turret.life -= 1;
+    if (turret.life <= 0) {
+      // Spawn heavy scrap and smoke debris on despawn
+      for (let sp = 0; sp < 10; sp++) {
+        const sAngle = Math.random() * Math.PI * 2;
+        gameParticles.push({
+          x: turret.x + (Math.random() - 0.5) * 20,
+          y: turret.y + (Math.random() - 0.5) * 20,
+          vx: Math.cos(sAngle) * (Math.random() * 2.5 + 0.5),
+          vy: Math.sin(sAngle) * (Math.random() * 2.5 + 0.5),
+          size: Math.floor(Math.random() * 5) + 3,
+          color: sp % 2 === 0 ? '#3a3a3a' : '#8c583c', // dark metal and soot
+          life: 0.75,
+          decay: 0.035
+        });
+      }
+      activeBomberTurrets.splice(tIdx, 1);
+      continue;
+    }
+
+    if (turret.fireCooldown > 0) {
+      turret.fireCooldown -= 1;
+    }
+
+    // Target the nearest zombie (shorter range: 240px)
+    let nearestZ = null;
+    let minDistSq = Infinity;
+    const fireRange = 240; // Shorter mortar fire range compared to 320px
+    
+    for (let zIdx = 0; zIdx < zombies.length; zIdx++) {
+      const z = zombies[zIdx];
+      const dx = z.x - turret.x;
+      const dy = z.y - turret.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < minDistSq) {
+        minDistSq = distSq;
+        nearestZ = z;
+      }
+    }
+
+    if (nearestZ && minDistSq < fireRange * fireRange) {
+      // Aim at target
+      const targetAngle = Math.atan2(nearestZ.y - turret.y, nearestZ.x - turret.x);
+      turret.angle = targetAngle;
+
+      if (turret.fireCooldown <= 0) {
+        // Fire slow-moving explosive mortar shell!
+        const bSpeed = 4.2; // Slow-moving heavy mortar
+        const bDamage = 8 + player.bomberTurretLevel * 5; // Balanced Rare tier mortar shell: 13 to 33 AoE damage
+        const bx = turret.x + Math.cos(turret.angle) * 16;
+        const by = turret.y + Math.sin(turret.angle) * 16;
+
+        bullets.push({
+          x: bx,
+          y: by,
+          vx: Math.cos(turret.angle) * bSpeed,
+          vy: Math.sin(turret.angle) * bSpeed,
+          damage: bDamage,
+          size: 9, // Heavy black bomb projectile
+          color: '#121212', 
+          bounceLimit: 0,
+          bounceLeft: 0,
+          bulletPierceLimit: 1,
+          isTurretBullet: true, // Bypass generic player multipliers
+          isMortarShell: true,  // Trigger AoE explosion on contact
+          isFire: false,
+          isCryo: false
+        });
+
+        // Heavy smoke/muzzle blast
+        for (let sp = 0; sp < 6; sp++) {
+          const sAngle = turret.angle + (Math.random() - 0.5) * 0.5;
+          const sForce = Math.random() * 2 + 1;
+          gameParticles.push({
+            x: bx,
+            y: by,
+            vx: Math.cos(sAngle) * sForce,
+            vy: Math.sin(sAngle) * sForce,
+            size: Math.floor(Math.random() * 4) + 4,
+            color: sp % 2 === 0 ? 'rgba(70, 70, 70, 0.45)' : '#ff5500', // thick smoke or flame spark
+            life: 0.5,
+            decay: 0.05
+          });
+        }
+
+        audio.playSfx('shoot_mortar');
+
+        turret.fireCooldown = 180; // Slower fire rate: 1.5 seconds at 120Hz
       }
     }
   }
@@ -3173,6 +3338,12 @@ function update() {
         }
 
         // Apply damage to zombie
+        if (b.isMortarShell) {
+          triggerExplosion(b.x, b.y, damageDealt, true, false, 80);
+          bullets.splice(bIdx, 1);
+          break;
+        }
+
         damageZombie(z, damageDealt, true);
 
         // Cryo rounds slow zombies only when this specific bullet rolled cryo.
@@ -4118,6 +4289,12 @@ function handleBulletObstacleCollision(bullet, bulletIndex, prevX, prevY) {
 
     if (!circleRectCollision(bullet.x, bullet.y, radius, obstacle)) {
       continue;
+    }
+
+    if (bullet.isMortarShell) {
+      triggerExplosion(bullet.x, bullet.y, bullet.damage, true, false, 80);
+      bullets.splice(bulletIndex, 1);
+      return true;
     }
 
     if (bullet.bounceLeft > 0) {
@@ -5158,6 +5335,9 @@ function render() {
   // 3.75. Draw stationary Rusty Turrets
   drawTurrets();
 
+  // 3.78. Draw stationary Bomber Turrets
+  drawBomberTurrets();
+
   // 4. Draw Dotted Aim Guide Sight
   drawAimGuide();
 
@@ -5974,6 +6154,26 @@ function drawBullets() {
         ctx.moveTo(coreTailX, coreTailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
+      } else if (b.isMortarShell) {
+        // Thick mortar smoke trail
+        ctx.strokeStyle = 'rgba(70, 70, 70, 0.4)';
+        ctx.lineWidth = b.size * 1.1;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // Hot burning fuse path
+        ctx.strokeStyle = '#ffa500';
+        ctx.lineWidth = b.size * 0.25;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(coreTailX, coreTailY);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
       } else if (b.isTurretBullet) {
         // Glow sheath
         ctx.strokeStyle = 'rgba(212, 128, 71, 0.4)'; // rusty orange
@@ -6035,6 +6235,18 @@ function drawBullets() {
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
       ctx.fillStyle = '#e9ffff';
       ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
+    } else if (b.isMortarShell) {
+      // Round black ordnance bomb body
+      ctx.fillStyle = '#121212';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, half, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Burning hot fuse spark core
+      ctx.fillStyle = '#ffa500';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, half * 0.35, 0, Math.PI * 2);
+      ctx.fill();
     } else if (b.isTurretBullet) {
       ctx.fillStyle = '#b85823'; // copper/bronze body
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
@@ -6217,71 +6429,317 @@ function drawTurrets() {
   activeTurrets.forEach(t => {
     if (!isInView(t.x, t.y, 40)) return;
 
-    // 1. Draw Object Shadow beneath the turret base
-    drawObjectShadow(t.x - 20, t.y - 12, 40, 24, 0.45);
+    // 0. Draw elegant, highly visible dotted range circle in world space (weathered amber radar sweep)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(229, 142, 56, 0.24)'; // Highly visible warm scrap-amber (24% opacity)
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([8, 12]);
+    ctx.lineDashOffset = -gameTick * 0.12; // slow mechanical rotation
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, 320, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // 1. Draw heavy Object Shadow beneath the turret base (proportional to larger size)
+    drawObjectShadow(t.x - 25, t.y - 15, 50, 30, 0.50);
 
     ctx.save();
     ctx.translate(t.x, t.y);
 
-    // 2. Draw Rusty Metal Base (circular, with an industrial feel)
-    ctx.fillStyle = '#6e4533'; // rusty brown
-    ctx.strokeStyle = '#42281d'; // dark rust
-    ctx.lineWidth = 2.5;
+    // 2. Draw Heavy Scrap-Metal Plate Base (oxidized copper & heavy rust, 25% larger size)
+    ctx.fillStyle = '#7a452e'; // Oxidized copper brown
+    ctx.strokeStyle = '#2d180f'; // Dark soot-rust border
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.arc(0, 0, 19, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
 
-    // Rivets on base (8 metal dots around the rim)
-    ctx.fillStyle = '#8b5a42';
+    // Weathered metal plates overlay (drawing 2 scrap segments for visual grit)
+    ctx.fillStyle = '#613623'; // darker steel rust
+    ctx.beginPath();
+    ctx.arc(0, 0, 19, -Math.PI / 4, Math.PI / 4);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(0, 0, 19, Math.PI * 0.75, Math.PI * 1.25);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Redraw outline to keep it clean
+    ctx.beginPath();
+    ctx.arc(0, 0, 19, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Weathered Brass Rivets (8 metal bolts around the rim)
     for (let i = 0; i < 8; i++) {
       const a = (i * Math.PI * 2) / 8;
+      ctx.fillStyle = '#b5743b'; // weathered brass
       ctx.beginPath();
-      ctx.arc(Math.cos(a) * 11, Math.sin(a) * 11, 1.8, 0, Math.PI * 2);
+      ctx.arc(Math.cos(a) * 15, Math.sin(a) * 15, 2, 0, Math.PI * 2);
+      ctx.fill();
+      // Bolt reflection dot
+      ctx.fillStyle = '#ffd1a4';
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * 15 - 0.6, Math.sin(a) * 15 - 0.6, 0.6, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // 3. Draw Rotational Components (barrel and turret head)
+    // 3. Draw Rotational Components (casing and dual gun barrels)
     ctx.save();
     ctx.rotate(t.angle);
 
-    // Rusty Dual Barrel
-    ctx.fillStyle = '#2d1b13'; // dark burnt gunmetal
-    ctx.strokeStyle = '#5a3d2e';
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(4, -4, 13, 3);
-    ctx.strokeRect(4, -4, 13, 3);
-    ctx.fillRect(4, 1, 13, 3);
-    ctx.strokeRect(4, 1, 13, 3);
+    // Dual Heavy Iron Gun Barrels (matte dark iron with soot tips, longer and chunkier)
+    ctx.fillStyle = '#30221a'; // dark weathered iron
+    ctx.strokeStyle = '#1d1510'; // deep soot
+    ctx.lineWidth = 1.8;
+    
+    // Top barrel (w=18, h=4.5)
+    ctx.fillRect(4, -5.5, 18, 4.5);
+    ctx.strokeRect(4, -5.5, 18, 4.5);
+    // Bottom barrel
+    ctx.fillRect(4, 1.5, 18, 4.5);
+    ctx.strokeRect(4, 1.5, 18, 4.5);
+    
+    // Soot-covered muzzle ends (dark carbon soot tips)
+    ctx.fillStyle = '#120d0a';
+    ctx.fillRect(20, -5.5, 2, 4.5);
+    ctx.fillRect(20, 1.5, 2, 4.5);
 
-    // Turret Center Head/Cap
-    ctx.fillStyle = '#7c4b35'; // glowing rusty iron
-    ctx.strokeStyle = '#4a2c1d';
-    ctx.lineWidth = 2;
+    // Heavy Iron Center Cap (scrap dome head casing)
+    ctx.fillStyle = '#4c3527'; // oxidized iron dome
+    ctx.strokeStyle = '#2d180f';
+    ctx.lineWidth = 2.4;
     ctx.beginPath();
-    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.arc(0, 0, 11, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
 
-    // Highlight detail line
-    ctx.strokeStyle = '#a66a4e';
+    // Central Combustion Heat Reactor (warm glowing furnace slots)
+    ctx.fillStyle = '#ff6a00'; // Hot combustion orange
+    ctx.fillRect(-4, -4, 8, 8);
+    ctx.fillStyle = '#ffcc00'; // Bright white-hot core
+    ctx.fillRect(-2, -2, 4, 4);
+
+    // Weathered circular highlights
+    ctx.strokeStyle = '#8a583e';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(-2, -2, 4, Math.PI, Math.PI * 1.5);
+    ctx.arc(-3, -3, 5, Math.PI, Math.PI * 1.5);
     ctx.stroke();
 
     ctx.restore(); // end barrel rotation
 
-    // 4. Draw Radial Lifetime Indicator Circle (cool green-to-red depleting ring)
+    // 4. Draw Radial Combustion Timeline (cool combustion fire-amber depleting indicator)
     const lifePct = Math.max(0, t.life / t.maxLife);
-    ctx.shadowBlur = 4;
-    ctx.shadowColor = `hsla(${lifePct * 120}, 90%, 50%, 0.6)`;
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = `hsla(${20 + lifePct * 40}, 100%, 50%, 0.7)`; // warm red-orange to golden-yellow glow
     
-    ctx.strokeStyle = `hsla(${lifePct * 120}, 90%, 45%, 0.7)`;
-    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = `hsla(${20 + lifePct * 40}, 100%, 45%, 0.85)`;
+    ctx.lineWidth = 2.6;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.arc(0, 0, 19, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifePct);
+    ctx.arc(0, 0, 23.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifePct);
+    ctx.stroke();
+
+    ctx.restore(); // end individual turret space
+  });
+  ctx.restore();
+}
+
+/**
+ * Renders active, stationary Bomber Turrets on the canvas, with hazard stripes, pivoting mortars, and red warning lines.
+ */
+function drawBomberTurrets() {
+  ctx.save();
+  activeBomberTurrets.forEach(t => {
+    if (!isInView(t.x, t.y, 50)) return;
+
+    // 0. Premium Military-HUD Radar Overlay (Rotating warning circle & compass guidelines)
+    ctx.save();
+    // Subtle pulsing background aura
+    const auraPulse = 0.018 + Math.sin(gameTick * 0.05) * 0.007;
+    ctx.fillStyle = `rgba(255, 69, 0, ${auraPulse})`;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, 240, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dotted warning sweep line
+    ctx.strokeStyle = 'rgba(255, 69, 0, 0.32)'; // Warn orange-red
+    ctx.lineWidth = 2.0;
+    ctx.setLineDash([8, 14]);
+    ctx.lineDashOffset = -gameTick * 0.12; // slow warning crawl
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, 240, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Compass Cardinal Ticks (Top, Bottom, Left, Right reticles)
+    ctx.strokeStyle = 'rgba(255, 69, 0, 0.45)';
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([]); // solid tick marks
+    
+    // North Reticle
+    ctx.beginPath(); ctx.moveTo(t.x, t.y - 246); ctx.lineTo(t.x, t.y - 232); ctx.stroke();
+    // South Reticle
+    ctx.beginPath(); ctx.moveTo(t.x, t.y + 232); ctx.lineTo(t.x, t.y + 246); ctx.stroke();
+    // West Reticle
+    ctx.beginPath(); ctx.moveTo(t.x - 246, t.y); ctx.lineTo(t.x - 232, t.y); ctx.stroke();
+    // East Reticle
+    ctx.beginPath(); ctx.moveTo(t.x + 232, t.y); ctx.lineTo(t.x + 246, t.y); ctx.stroke();
+    ctx.restore();
+
+    // 1. Draw heavy Object Shadow beneath the mortar base
+    drawObjectShadow(t.x - 30, t.y - 18, 60, 36, 0.55);
+
+    ctx.save();
+    ctx.translate(t.x, t.y);
+
+    // 2. Heavy Caution-Striped Base (Radius 22, industrial double plate)
+    ctx.fillStyle = '#424248'; // heavy iron plate
+    ctx.strokeStyle = '#1d1d22'; // industrial border
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Caution Hazard Stripes Overlay on base
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.clip(); // clip drawing inside base circle
+    
+    ctx.strokeStyle = '#e67e22'; // caution orange
+    ctx.lineWidth = 4.2;
+    ctx.beginPath();
+    // Draw diagonal hazard stripes
+    for (let x = -30; x < 30; x += 12) {
+      ctx.moveTo(x, -25);
+      ctx.lineTo(x + 15, 25);
+    }
+    ctx.stroke();
+
+    // Industrial Mesh Overlay (grating grid)
+    ctx.strokeStyle = 'rgba(20, 20, 25, 0.35)';
+    ctx.lineWidth = 1.0;
+    ctx.beginPath();
+    for (let gX = -22; gX <= 22; gX += 5) {
+      ctx.moveTo(gX, -22); ctx.lineTo(gX, 22);
+      ctx.moveTo(-22, gX); ctx.lineTo(22, gX);
+    }
+    ctx.stroke();
+
+    // Heavy grease/soot leak stains to simulate weathered scrap machinery
+    ctx.fillStyle = 'rgba(10, 8, 8, 0.65)';
+    ctx.beginPath();
+    ctx.ellipse(-10, 5, 4, 2, Math.PI / 6, 0, Math.PI * 2);
+    ctx.ellipse(8, -12, 5, 2.5, -Math.PI / 4, 0, Math.PI * 2);
+    ctx.ellipse(-2, -6, 3, 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Redraw base outline to cover clip and grids cleanly
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Heavy weathered steel Rivets
+    ctx.fillStyle = '#8c8c96';
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI * 2) / 8;
+      const rx = Math.cos(a) * 18;
+      const ry = Math.sin(a) * 18;
+      ctx.fillStyle = '#686870'; // rivet dark edge
+      ctx.beginPath();
+      ctx.arc(rx, ry, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#b0b0b8'; // rivet silver head
+      ctx.beginPath();
+      ctx.arc(rx - 0.5, ry - 0.5, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Draw Rotational Components (aiming barrel and dome cap)
+    ctx.save();
+    ctx.rotate(t.angle);
+
+    // Dynamic Mortar Combustion Glow (pulses brighter depending on reload tick countdown)
+    const fireCooldownTicks = t.fireCooldown || 0;
+    const reloadPct = fireCooldownTicks > 0 ? (fireCooldownTicks / 180) : 0; // 0 when fully cooled (ready to fire)
+    
+    // Chunky wide-mouth mortar barrel (large scale flared artillery launcher)
+    ctx.fillStyle = '#1e1e24'; // deep matte launcher steel
+    ctx.strokeStyle = '#2d2d35';
+    ctx.lineWidth = 2.0;
+
+    // Mortar Barrel Outline (tapered flared pipe shape)
+    ctx.beginPath();
+    ctx.moveTo(3, -5.5); // base top
+    ctx.lineTo(13, -7.5); // flared mid top
+    ctx.lineTo(18, -9.5); // flared muzzle muzzle ring top
+    ctx.lineTo(18, 9.5);  // flared muzzle muzzle ring bottom
+    ctx.lineTo(13, 7.5);  // flared mid bottom
+    ctx.lineTo(3, 5.5);   // base bottom
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Reinforcement Steel Ring Clamp halfway down barrel
+    ctx.fillStyle = '#2d2d33';
+    ctx.fillRect(8, -6.5, 3.2, 13);
+    ctx.strokeRect(8, -6.5, 3.2, 13);
+
+    // Wide open muzzle mouth (combustion orange charge glow, cooling down dynamically)
+    if (reloadPct > 0) {
+      // Hot orange charge decaying to dark red
+      ctx.fillStyle = `rgb(255, ${Math.floor(69 + (1 - reloadPct) * 140)}, 0)`;
+    } else {
+      // White-hot pilot spark when ready to fire
+      ctx.fillStyle = '#ffcc00';
+    }
+    ctx.fillRect(16.5, -7.5, 1.8, 15);
+
+    // Heavy spherical dome head cap (turret core dome)
+    ctx.fillStyle = '#2d2d33';
+    ctx.strokeStyle = '#1d1d22';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // 3D Hemispherical Shading Arc on dome
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(-3, -3, 8, Math.PI, Math.PI * 1.55);
+    ctx.stroke();
+
+    // Glowing cooling ventilation lines on launcher dome
+    if (reloadPct > 0) {
+      ctx.fillStyle = `rgba(255, ${Math.floor(69 + (1 - reloadPct) * 120)}, 0, ${0.4 + reloadPct * 0.6})`;
+    } else {
+      ctx.fillStyle = '#551505'; // dark cold embers
+    }
+    ctx.fillRect(-6, -4, 2.5, 8);
+    ctx.fillRect(-2, -6, 4, 1.5);
+    ctx.fillRect(-2, 4.5, 4, 1.5);
+
+    ctx.restore(); // end mortar rotation
+
+    // 4. Draw depleting timing timeline segment
+    const lifePct = Math.max(0, t.life / t.maxLife);
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = `hsla(${15 + lifePct * 45}, 100%, 50%, 0.7)`;
+    ctx.strokeStyle = `hsla(${15 + lifePct * 45}, 100%, 45%, 0.85)`;
+    ctx.lineWidth = 2.8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, 26.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifePct);
     ctx.stroke();
 
     ctx.restore(); // end individual turret space
