@@ -275,6 +275,23 @@ const audio = {
         }
         break;
       }
+      case 'shield': {
+        // High cyber-upward sweep for technological shielding
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(1400, now + 0.25);
+
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 0.25);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+        break;
+      }
     }
   },
 
@@ -1250,7 +1267,8 @@ function spawnSpecificZombie(type) {
     spitter: { size: 38, health: 25, speed: 0.7, damage: 10, score: 25, attackCooldown: 2000 },
     necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 },
     exploder: { size: 42, health: 15, speed: 1.45, damage: 45, score: 25, attackCooldown: 1000 },
-    rusher: { size: 46, health: 45, speed: 1.55, damage: 18, score: 40, attackCooldown: 1000 }
+    rusher: { size: 46, health: 45, speed: 1.55, damage: 18, score: 40, attackCooldown: 1000 },
+    shielder: { size: 44, health: 50, speed: 0.65, damage: 10, score: 60, attackCooldown: 1000 }
   };
 
   const config = typesConfig[type] || typesConfig.normal;
@@ -2095,8 +2113,8 @@ function update() {
     if (z.isOnToxicTrail) {
       z.lastToxicDamageTime = z.lastToxicDamageTime || 0;
       if (now - z.lastToxicDamageTime >= 500) {
-        z.health -= 1.5 * player.toxicTrailLevel; // 3 HP/sec per stack = 1.5 HP per 500ms
-        z.flashTicks = 8; // Satisfying green hit flash
+        damageZombie(z, 1.5 * player.toxicTrailLevel, false); // isDirect = false
+        if (!z.hasShield) z.flashTicks = 8; // Satisfying green hit flash if no shield
         z.lastToxicDamageTime = now;
 
         // Spawn occasional green bubbles on damage tick
@@ -2320,8 +2338,7 @@ function update() {
         const distSq = bDx * bDx + bDy * bDy;
 
         if (distSq < contactRadiusSq) {
-          z.health -= 0.8; // Dealing high shred contact damage per blade contact
-          z.flashTicks = Math.max(z.flashTicks || 0, 2); // White hit flash when sliced
+          damageZombie(z, 0.8, true);
 
           // Spawn contact sparks
           if (Math.random() < 0.25) {
@@ -2351,7 +2368,7 @@ function update() {
     // Burn Bullet DoT check
     if (z.burnTicks > 0) {
       z.burnTicks -= 1;
-      z.health -= 3 / 60; // Fire bullets burn for a steady 3 HP/sec instead of scaling twice.
+      damageZombie(z, 3 / 60, false); // Fire bullets burn for a steady 3 HP/sec instead of scaling twice (absorbed by shield)
 
       // Spawn volatile rising ember/flame particles
       if (Math.random() < 0.15) {
@@ -2394,6 +2411,55 @@ function update() {
             color: '#73ff00',
             life: 0.8,
             decay: Math.random() * 0.1 + 0.08
+          });
+        }
+      }
+    }
+
+    // Shielder Zombie periodic shielding logic (Every 10 seconds, shields 5 random nearby active zombies)
+    if (z.type === 'shielder') {
+      z.lastShieldCastTime = z.lastShieldCastTime || now;
+      z.shieldCastInterval = 10000; // 10 real seconds
+
+      if (now - z.lastShieldCastTime >= z.shieldCastInterval && gameState.isRunning) {
+        z.lastShieldCastTime = now;
+
+        // Find other alive active zombies that don't have a shield
+        const candidates = zombies.filter(candidate => candidate !== z && !candidate.hasShield && candidate.health > 0);
+        
+        let targets = [];
+        if (candidates.length <= 5) {
+          targets = candidates;
+        } else {
+          // Select 5 randomly
+          const shuffled = candidates.sort(() => 0.5 - Math.random());
+          targets = shuffled.slice(0, 5);
+        }
+
+        if (targets.length > 0) {
+          // Trigger visual casting indicator wave on Shielder
+          z.shieldCastIndicatorTicks = 45; // ~0.375s hex wave
+          audio.playSfx('shield'); // synthesized retro cyber shield sound
+
+          targets.forEach(t => {
+            t.hasShield = true;
+            t.shieldPulseTick = 0; // initialize pulse ticker
+
+            // Spawn cyan shielding tech birth sparks at target
+            for (let sp = 0; sp < 6; sp++) {
+              const sAngle = Math.random() * Math.PI * 2;
+              const sForce = Math.random() * 2 + 1;
+              gameParticles.push({
+                x: t.x,
+                y: t.y,
+                vx: Math.cos(sAngle) * sForce,
+                vy: Math.sin(sAngle) * sForce,
+                size: Math.floor(Math.random() * 3) + 2,
+                color: '#00f0ff',
+                life: 0.8,
+                decay: Math.random() * 0.08 + 0.05
+              });
+            }
           });
         }
       }
@@ -2591,8 +2657,16 @@ function update() {
         if (player.killFrenzyLevel > 0) {
           const nowMs = Date.now();
           player.killFrenzyHistory.push(nowMs);
-          // Track kills within the last 3 seconds
-          player.killFrenzyHistory = player.killFrenzyHistory.filter(t => nowMs - t <= 3000);
+          // Prune kills older than 3s in-place (avoids array allocation from .filter() on every kill)
+          let fhLen = player.killFrenzyHistory.length;
+          for (let fi = 0; fi < fhLen; ) {
+            if (nowMs - player.killFrenzyHistory[fi] > 3000) {
+              player.killFrenzyHistory[fi] = player.killFrenzyHistory[--fhLen];
+            } else {
+              fi++;
+            }
+          }
+          player.killFrenzyHistory.length = fhLen;
           // Requires 10 kills in 3s and must not be on cooldown
           if (player.killFrenzyHistory.length >= 10 && player.killFrenzyCD <= 0) {
             player.killFrenzyTimer = Math.min(600, (player.killFrenzyTimer || 0) + 360); // add 3s (360 ticks), cap at 5s (600 ticks)
@@ -2709,8 +2783,7 @@ function update() {
         }
 
         // Apply damage to zombie
-        z.health -= damageDealt;
-        z.flashTicks = 5; // Trigger white hit flash
+        damageZombie(z, damageDealt, true);
 
         // Cryo rounds slow zombies only when this specific bullet rolled cryo.
         if (b.isCryo) {
@@ -2788,10 +2861,10 @@ function update() {
     }
   }
 
-  // Cap active particles to keep frame time low on all devices
-  // Truncate from the end (O(1)) instead of splice(0, n) which shifts the whole array
-  if (gameParticles.length > 200) {
-    gameParticles.length = 200;
+  // Cap active particles. Raised to 300 so burst-combat sparks aren't immediately truncated.
+  // Truncate from the end (O(1)) — order doesn't matter after swap-and-pop.
+  if (gameParticles.length > 300) {
+    gameParticles.length = 300;
   }
 
   // 7. Update pixel particles (muzzle flashes, blood, sparks)
@@ -3398,13 +3471,25 @@ function chooseZombieType(wave) {
     return 'normal';
   }
 
-  // Wave 31+
-  if (roll < 0.14) return 'exploder';
-  if (roll < 0.24) return 'rusher';
-  if (roll < 0.34) return 'necromancer';
-  if (roll < 0.50) return 'spitter';
-  if (roll < 0.68) return 'tank';
-  if (roll < 0.88) return 'fast';
+  // Wave 31-39
+  if (wave < 40) {
+    if (roll < 0.14) return 'exploder';
+    if (roll < 0.24) return 'rusher';
+    if (roll < 0.34) return 'necromancer';
+    if (roll < 0.50) return 'spitter';
+    if (roll < 0.68) return 'tank';
+    if (roll < 0.88) return 'fast';
+    return 'normal';
+  }
+
+  // Wave 40+: Debut SHIELD zombies!
+  if (roll < 0.10) return 'shielder';      // debuts at wave 40!
+  if (roll < 0.22) return 'exploder';
+  if (roll < 0.32) return 'rusher';
+  if (roll < 0.42) return 'necromancer';
+  if (roll < 0.55) return 'spitter';
+  if (roll < 0.70) return 'tank';
+  if (roll < 0.86) return 'fast';
   return 'normal';
 }
 
@@ -4064,9 +4149,8 @@ function triggerChainLightning() {
     if (closestZ) {
       // Hit zombie!
       targetsChain.push(closestZ);
-      closestZ.health -= damage;
-      closestZ.flashTicks = 5; // Trigger white hit flash
-      closestZ.stunTicks = 60; // 1 second stun at 60 fps
+      damageZombie(closestZ, damage, true);
+      if (!closestZ.hasShield) closestZ.stunTicks = 60; // 1 second stun at 60 fps if shield popped/direct hit
 
       // Save segment into lightning arcs for rendering
       lightningArcs.push({
@@ -4146,6 +4230,57 @@ function spawnImpactSparks(bx, by) {
       decay: Math.random() * 0.12 + 0.08
     });
   }
+}
+
+/**
+ * Deal damage to a zombie, cleanly processing technological shields.
+ * Shields completely absorb exactly 1 hit of any size before popping.
+ */
+function damageZombie(z, amount, isDirect = true) {
+  if (z.hasShield) {
+    if (isDirect) {
+      z.hasShield = false;
+      triggerShieldPopVisuals(z.x, z.y, z.size);
+    }
+    return; // Block damage completely!
+  }
+  z.health -= amount;
+  z.flashTicks = 5;
+}
+
+/**
+ * Triggers an electric cyber burst and expands a cyan technological shockwave when a shield is popped.
+ */
+function triggerShieldPopVisuals(sx, sy, size) {
+  audio.playSfx('hit');
+
+  // Spawn high-velocity electric cyber sparks
+  for (let i = 0; i < 8; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const force = Math.random() * 3.5 + 2.0;
+    gameParticles.push({
+      x: sx,
+      y: sy,
+      vx: Math.cos(angle) * force,
+      vy: Math.sin(angle) * force,
+      size: Math.floor(Math.random() * 3) + 3,
+      color: '#00ccff', // glowing tech cyan
+      life: 0.8,
+      decay: Math.random() * 0.08 + 0.04
+    });
+  }
+
+  // Spawn expanding tech-cyan shockwave ring
+  gameParticles.push({
+    type: 'shockwave',
+    x: sx,
+    y: sy,
+    maxRadius: size * 1.3,
+    lineWidth: 3,
+    color: '#00f0ff',
+    life: 1.0,
+    decay: 0.06
+  });
 }
 
 /**
@@ -4291,10 +4426,7 @@ function triggerExplosion(ex, ey, maxDamage) {
     if (zDist < explosionRadius) {
       const factor = (explosionRadius - zDist) / explosionRadius;
       const dmg = Math.floor(maxDamage * factor);
-      if (dmg > 0) {
-        z.health -= dmg;
-        z.flashTicks = 5;
-      }
+        damageZombie(z, dmg, true);
     }
   }
 
@@ -4401,8 +4533,7 @@ function triggerNecroBombExplosion(ex, ey) {
       const factor = (radius - tDist) / radius;
       const splashDamage = Math.floor(damage * factor);
       if (splashDamage > 0) {
-        zTarget.health -= splashDamage;
-        zTarget.flashTicks = 5; // Trigger white hit flash
+        damageZombie(zTarget, splashDamage, true);
         if (zTarget.health <= 0) {
           zTarget.killedByNecroBomb = true; // Mark as killed by Necro-Bomb to prevent recursive explosions
         }
@@ -4545,6 +4676,10 @@ function buildStaticFloor() {
 }
 
 function render() {
+  // Flush HUD DOM writes once per visual frame — deferred from the physics loop
+  // so multiple zombie deaths in one tick only trigger one CSS recalculation.
+  if (_hudDirty) _flushHUD();
+
   const shakeOffset = getScreenShakeOffset();
 
   // Clear the screen with deep background color
@@ -5897,6 +6032,7 @@ function drawZombies() {
       tank: 40,
       necromancer: 36,
       rusher: 36,
+      shielder: 34,
       patient_zero: 112
     };
     const spriteScale = size / (baseSpriteSizes[z.type] || baseSpriteSizes.normal);
@@ -5913,14 +6049,11 @@ function drawZombies() {
     ctx.rotate(angle); // Pivot zombie space towards player
     ctx.scale(spriteScale, spriteScale); // Match the sprite to its larger hitbox
 
-    // Apply bright white hit flash filter if recently damaged
+    // Track hit flash state — overlay drawn AFTER body (avoids expensive ctx.filter)
     let isFlashed = false;
     if (z.flashTicks > 0) {
       z.flashTicks -= 1;
       isFlashed = true;
-      if (typeof ctx.filter === 'string') {
-        ctx.filter = 'brightness(0) invert(1)';
-      }
     }
 
     if (z.type === 'tank') {
@@ -6490,10 +6623,42 @@ function drawZombies() {
       ctx.fillStyle = '#ffffff'; // visor reflection dot
       ctx.fillRect(3, -2, 1, 2);
 
-      // 9. Outer Black Pixel Art Outline Border
+    } else if (z.type === 'shielder') {
+      // Shielder Zombie Sprite Design (34px base size)
+      // 1. Floor Drop Shadow (heavy block shadow)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fillRect(-13, -13, 26, 26);
+
+      // 2. Heavy armored carapace back plate (charcoal metal)
+      ctx.fillStyle = '#1c2430';
+      ctx.fillRect(-14, -10, 8, 20);
+
+      // 3. Exposed spine battery (cyan glowing cells)
+      ctx.fillStyle = '#00f0ff';
+      ctx.fillRect(-15, -4, 2, 8);
+
+      // 4. Main heavy iron chassis body (steel blue)
+      ctx.fillStyle = '#2b3b5c';
+      ctx.fillRect(-10, -11, 20, 22);
+
+      // 5. Tech shield projector plates (heavy sides)
+      ctx.fillStyle = '#42537a';
+      ctx.fillRect(-6, -13, 12, 3); // top plate
+      ctx.fillRect(-6, 10, 12, 3);  // bottom plate
+      ctx.fillStyle = '#00f0ff'; // glowing emitter dots
+      ctx.fillRect(-2, -12, 4, 1);
+      ctx.fillRect(-2, 11, 4, 1);
+
+      // 6. Cybernetic visor eyes (glowing tech cyan)
+      ctx.fillStyle = '#00f0ff';
+      ctx.fillRect(4, -5, 4, 10);
+      ctx.fillStyle = '#ffffff'; // white energy reflection
+      ctx.fillRect(6, -3, 2, 2);
+
+      // 7. Outer Black Outline Border
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 3;
-      ctx.strokeRect(-12, -12, 20, 24);
+      ctx.strokeRect(-10, -11, 20, 22);
 
     } else {
       // Normal Zombie Sprite Design (32px)
@@ -6620,9 +6785,68 @@ function drawZombies() {
       }
     }
 
-    // Restore canvas filter if it was set
-    if (isFlashed && typeof ctx.filter === 'string') {
-      ctx.filter = 'none';
+    // 9.6 Draw active Electric Shield bubble (Cyan high-tech defensive shield)
+    if (z.hasShield && !isFlashed) {
+      const radius = size * 0.62;
+      z.shieldPulseTick = (z.shieldPulseTick || 0) + 1;
+      
+      // Outer pulsing neon cyan energy sheath
+      ctx.strokeStyle = 'rgba(0, 200, 255, 0.72)';
+      ctx.lineWidth = 2.4 + Math.sin(z.shieldPulseTick * 0.12) * 0.6;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Translucent cyan barrier fill
+      ctx.fillStyle = 'rgba(0, 200, 255, 0.11)';
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Futuristic revolving tech dots on the shell
+      ctx.fillStyle = '#ffffff';
+      const angle1 = z.shieldPulseTick * 0.04;
+      const angle2 = angle1 + Math.PI;
+      ctx.fillRect(Math.cos(angle1) * radius - 2, Math.sin(angle1) * radius - 2, 4, 4);
+      ctx.fillRect(Math.cos(angle2) * radius - 2, Math.sin(angle2) * radius - 2, 4, 4);
+    }
+
+    // 9.7 Draw active casting indicators (Shielder casting aura)
+    if (z.type === 'shielder' && z.shieldCastIndicatorTicks > 0) {
+      z.shieldCastIndicatorTicks -= 1;
+      
+      const castProgress = 1 - (z.shieldCastIndicatorTicks / 45); // 0 to 1
+      const auraRadius = size * (0.5 + castProgress * 1.5);
+      
+      // Draw expanding, spinning technological hexagonal pulse ring
+      ctx.strokeStyle = `rgba(0, 240, 255, ${1 - castProgress})`;
+      ctx.lineWidth = 2.5;
+      
+      ctx.beginPath();
+      const sides = 6;
+      for (let s = 0; s <= sides; s++) {
+        const a = (s * Math.PI * 2 / sides) + (castProgress * Math.PI * 0.5);
+        const x = Math.cos(a) * auraRadius;
+        const y = Math.sin(a) * auraRadius;
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      // Center bright cyber flash
+      ctx.fillStyle = `rgba(255, 255, 255, ${(1 - castProgress) * 0.65})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // White hit flash overlay — drawn OVER the full sprite in local sprite space.
+    // This replaces ctx.filter which was software-rendered and caused GPU pipeline flushes.
+    if (isFlashed) {
+      const spBase = baseSpriteSizes[z.type] || baseSpriteSizes.normal;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
+      ctx.fillRect(-spBase / 2, -spBase / 2, spBase, spBase);
     }
 
     ctx.restore();
@@ -6652,25 +6876,25 @@ function drawZombies() {
 function drawGameParticles() {
   gameParticles.forEach(p => {
     if (!isInView(p.x, p.y, 20)) return;
-    // Set particle opacity to fit current lifetime
-    ctx.globalAlpha = p.life;
 
+    // Shockwave rings are fixed-size and need explicit alpha fade — handle separately
     if (p.type === 'shockwave') {
+      ctx.globalAlpha = p.life;
       ctx.strokeStyle = p.color;
       ctx.lineWidth = p.lineWidth || 3;
       ctx.beginPath();
-      const currentRadius = p.maxRadius * (1 - p.life);
-      ctx.arc(p.x, p.y, currentRadius, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.maxRadius * (1 - p.life), 0, Math.PI * 2);
       ctx.stroke();
+      ctx.globalAlpha = 1.0;
       return;
     }
 
-    // Calculate shrinking physical dimension based on current lifetime
+    // All other particles shrink via activeSize — no per-particle globalAlpha needed.
+    // Removing ctx.globalAlpha saves ~200 canvas pipeline flushes per frame.
     const activeSize = Math.max(1, Math.floor(p.size * p.life));
-
     ctx.fillStyle = p.color;
 
-    // Draw blood splatters and enemy flesh chunks as circles, others as retro squares
+    // Draw blood/flesh particles as circles, sparks/debris as retro pixel squares
     if (p.color === '#ff1111' || p.color === '#2d8a1e' || p.color === '#8a0000') {
       ctx.beginPath();
       ctx.arc(p.x, p.y, activeSize / 2, 0, Math.PI * 2);
@@ -6684,9 +6908,6 @@ function drawGameParticles() {
       );
     }
   });
-
-  // Reset globalAlpha to full opacity
-  ctx.globalAlpha = 1.0;
 }
 
 /**
@@ -6826,7 +7047,12 @@ function drawAimGuide() {
 // Update HUD
 // Syncs the on-screen HUD with the current player stats.
 
-function updateHUD() {
+// Dirty flag: set by updateHUD(), flushed once per render frame to avoid
+// multiple DOM writes + CSS recalculations per physics tick.
+let _hudDirty = false;
+
+function _flushHUD() {
+  _hudDirty = false;
   healthValue.textContent = Math.round(player.health);
   scoreValue.textContent  = gameState.score;
   waveValue.textContent   = gameState.wave;
@@ -6835,6 +7061,14 @@ function updateHUD() {
   if (healthFill) {
     const healthPercent = Math.max(0, Math.min(100, (player.health / player.maxHealth) * 100));
     healthFill.style.width = healthPercent + '%';
+  }
+}
+
+function updateHUD() {
+  if (gameState.isRunning) {
+    _hudDirty = true; // Defer DOM write to next render() — prevents repeated layout recalcs per physics tick
+  } else {
+    _flushHUD(); // Immediate outside the game loop (wave screen, menus, cheat panel, etc.)
   }
 }
 
