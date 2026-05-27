@@ -115,6 +115,21 @@ const audio = {
     const ctx = this.ctx;
     const now = ctx.currentTime;
 
+    // Rate-limit high-frequency sounds to prevent Web Audio CPU exhaustion and audio crackling
+    this.lastPlayTimes = this.lastPlayTimes || {};
+    const minDelay = {
+      'hit': 0.05,      // max 20 hits per second
+      'shoot': 0.04,    // max 25 shots per second
+      'kill': 0.06      // max 16 kills per second
+    };
+    if (minDelay[type] !== undefined) {
+      const lastTime = this.lastPlayTimes[type] || 0;
+      if (now - lastTime < minDelay[type]) {
+        return; // Skip playing this sound effect to preserve main thread CPU cycles
+      }
+      this.lastPlayTimes[type] = now;
+    }
+
     switch (type) {
       case 'shoot': {
         // High-to-low retro laser sweep
