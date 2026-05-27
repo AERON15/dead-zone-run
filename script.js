@@ -1500,13 +1500,40 @@ function startGame() {
 }
 
 
-// Core Game Loop
-// Executes 60 times a second using requestAnimationFrame.
+let lastLoopTime = 0;
+let loopAccumulator = 0;
+const timestep = 1000 / 60; // Exactly 16.67ms per game tick
 
-function gameLoop() {
-  if (!gameState.isRunning || isWaveIntermission || isPaused) return;
+function gameLoop(timestamp) {
+  if (!gameState.isRunning || isWaveIntermission || isPaused) {
+    lastLoopTime = 0; // Reset tracking on pause/intermission
+    return;
+  }
 
-  update();
+  if (!timestamp) {
+    timestamp = performance.now();
+  }
+
+  if (!lastLoopTime) {
+    lastLoopTime = timestamp;
+  }
+
+  let elapsed = timestamp - lastLoopTime;
+  
+  // Guard against "spiral of death" (cap catch-up time to 250ms)
+  if (elapsed > 250) {
+    elapsed = 250;
+  }
+
+  lastLoopTime = timestamp;
+  loopAccumulator += elapsed;
+
+  // Run updates at a fixed 60Hz rate
+  while (loopAccumulator >= timestep) {
+    update();
+    loopAccumulator -= timestep;
+  }
+
   render();
 
   animationFrameId = requestAnimationFrame(gameLoop);
