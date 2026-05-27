@@ -516,7 +516,8 @@ let player = {
   rustyTurretLevel: 0,      // Rusty Turret upgrade level
   rustyTurretTimer: 0,      // Timer before spawning next turret (ticks)
   bomberTurretLevel: 0,     // Bomber Turret upgrade level
-  bomberTurretTimer: 0      // Timer before spawning next bomber turret (ticks)
+  bomberTurretTimer: 0,     // Timer before spawning next bomber turret (ticks)
+  rerollTokens: 0           // Banked reroll tokens (1 awarded every 5 waves, stackable)
 };
 
 // Keyboard Input Tracker
@@ -929,7 +930,7 @@ const UPGRADES_REGISTRY = [
     id: 'rapidboots',
     name: 'Rapid Boots',
     icon: '[BOOTS]',
-    description: 'Permanently reduces your speed by 30%, but every 6 kills triggers a 4s burst of +60% speed and a glowing trail. Each stack cuts kills needed by 1 (min 2) and adds +12% burst power. 3s CD. (Capped at 6 stacks)',
+    description: 'Permanently reduces your speed by 20%, but every 8 kills triggers a 4s burst of +65% speed and a glowing trail. Upgrades cut kills needed (min 4) and cooldown from 3s down to 2s. (Capped at 6 stacks)',
     rarity: 'epic',
     apply: () => {
       player.rapidBootsLevel = Math.min(6, player.rapidBootsLevel + 1);
@@ -1641,6 +1642,7 @@ function startGame() {
   player.rustyTurretTimer = 0;
   player.bomberTurretLevel = 0;
   player.bomberTurretTimer = 0;
+  player.rerollTokens = 0;
 
   // Clear chosen upgrades
   upgradesChosen = [];
@@ -2224,8 +2226,8 @@ function update() {
 
   // Rapid Boots — passive penalty + burst timer + CD + trail
   if (player.rapidBootsLevel > 0) {
-    // -30% passive speed penalty (always active while equipped)
-    currentSpeed -= player.speed * 0.30;
+    // -20% passive speed penalty (always active while equipped)
+    currentSpeed -= player.speed * 0.20;
 
     // Tick down CD
     if (player.rapidBootsCD > 0) {
@@ -2235,7 +2237,7 @@ function update() {
     // Tick down burst and apply speed bonus + trail
     if (player.rapidBootsTimer > 0) {
       player.rapidBootsTimer -= 1;
-      const burstBonus = 0.60 + (player.rapidBootsLevel - 1) * 0.12;
+      const burstBonus = 0.65; // Fixed 65% speed boost
       currentSpeed += player.speed * burstBonus;
 
       // Speed trail: 2 particles per tick, electric gold + white glow
@@ -2255,9 +2257,9 @@ function update() {
         }
       }
 
-      // Start CD after burst expires
+      // Start CD after burst expires (scales down from 3s to 2s based on level)
       if (player.rapidBootsTimer === 0) {
-        player.rapidBootsCD = 360; // 3 seconds at 120Hz
+        player.rapidBootsCD = Math.max(240, 360 - (player.rapidBootsLevel - 1) * 24);
       }
     }
   }
@@ -2670,13 +2672,12 @@ function update() {
         // Toxic Trail slow effect (20% slow per level, capped at 70% slow)
         let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.70, 0.20 * player.toxicTrailLevel)) : 1.0;
 
-        // Cryo Capsule slow effect (70% slow)
+        // Cryo Capsule slow effect (80% slow for fast types, 70% for all others — no immunity)
         z.cryoSlowTicks = z.cryoSlowTicks || 0;
         if (z.cryoSlowTicks > 0) {
           z.cryoSlowTicks -= 1;
-          if (z.type !== 'rusher') {
-            slowFactor *= 0.30;
-          }
+          const isFastType = z.type === 'rusher' || z.type === 'fast' || z.type === 'exploder';
+          slowFactor *= isFastType ? 0.20 : 0.30;
         }
 
         const desiredSpeed = z.speed * slowFactor;
@@ -3242,7 +3243,7 @@ function update() {
         // Rapid Boots kill counter — only counts while no burst is active and not on CD
         if (player.rapidBootsLevel > 0 && player.rapidBootsTimer <= 0 && player.rapidBootsCD <= 0) {
           player.rapidBootsKillCount += 1;
-          const killsNeeded = Math.max(2, 7 - player.rapidBootsLevel);
+          const killsNeeded = Math.max(4, 9 - player.rapidBootsLevel);
           if (player.rapidBootsKillCount >= killsNeeded) {
             player.rapidBootsKillCount = 0;
             player.rapidBootsTimer = 480; // 4 seconds at 120Hz
@@ -3379,7 +3380,7 @@ function update() {
 
         // Cryo rounds slow zombies only when this specific bullet rolled cryo.
         if (b.isCryo) {
-          z.cryoSlowTicks = 90; // 1.5 seconds at 60 fps
+          z.cryoSlowTicks = 180; // 1.5 seconds at 120 Hz
 
           for (let cs = 0; cs < 6; cs++) {
             const cAngle = Math.random() * Math.PI * 2;
@@ -3546,6 +3547,12 @@ function clearWave() {
   const nextSize = getWaveZombieTotal(gameState.wave + 1);
   nextWaveZombies.textContent = nextSize;
 
+  // Award reroll token every 5 waves
+  if (gameState.wave % 5 === 0) {
+    player.rerollTokens += 1;
+    console.log(`Reroll token awarded! Tokens: ${player.rerollTokens}`);
+  }
+
   // Render 3 randomized upgrade choices
   renderUpgradeChoices();
 
@@ -3688,6 +3695,23 @@ function renderUpgradeChoices() {
 
     container.appendChild(card);
   });
+
+  // Sync reroll button state
+  const rerollBtn = document.getElementById('reroll-btn');
+  const rerollCount = document.getElementById('reroll-token-count');
+  const rerollHint = document.getElementById('reroll-hint');
+  if (rerollBtn) {
+    const hasTokens = player.rerollTokens > 0;
+    rerollBtn.disabled = !hasTokens;
+    if (rerollCount) {
+      rerollCount.textContent = hasTokens ? `${player.rerollTokens}x` : '';
+    }
+    if (rerollHint) {
+      rerollHint.textContent = hasTokens
+        ? `${player.rerollTokens} reroll${player.rerollTokens > 1 ? 's' : ''} available — earned every 5 waves`
+        : 'Earned every 5 waves · Stacks unused';
+    }
+  }
 }
 
 
@@ -8797,6 +8821,15 @@ menuBtn.addEventListener('click', function() {
 });
 
 // Upgrades chosen listener / continue action handled directly on card selections
+
+// Reroll button — spend one token to re-roll the upgrade choices
+document.getElementById('reroll-btn').addEventListener('click', () => {
+  if (player.rerollTokens > 0) {
+    player.rerollTokens--;
+    audio.playSfx('upgrade'); // reuse upgrade click sound for feedback
+    renderUpgradeChoices();
+  }
+});
 
 
 // Keyboard Shortcut for Testing

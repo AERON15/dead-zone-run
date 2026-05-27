@@ -317,6 +317,16 @@
         <!-- Cards loaded dynamically via javascript -->
       </div>
 
+      <!-- Reroll row: shown only when the player has at least 1 token -->
+      <div id="reroll-row" class="reroll-row" aria-live="polite">
+        <button id="reroll-btn" class="reroll-btn" disabled>
+          <span class="reroll-icon">↺</span>
+          <span class="reroll-label">REROLL</span>
+          <span id="reroll-token-count" class="reroll-token-count"></span>
+        </button>
+        <p class="reroll-hint" id="reroll-hint"></p>
+      </div>
+
       <div class="hazard-bar" aria-hidden="true"></div>
     </div>
   </div>
