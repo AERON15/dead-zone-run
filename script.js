@@ -3118,11 +3118,12 @@ function update() {
       // Hit! Verify individual zombie attack rate limits
       if (z.type !== 'spitter' && z.type !== 'exploder') {
         if (now - z.lastAttackTime >= z.attackCooldown) {
-          damagePlayer(z.damage);
+          const hitLanded = damagePlayer(z.damage);
           z.lastAttackTime = now;
 
-          // Stun the player on Rusher first hit!
-          if (z.type === 'rusher' && !z.hasHitPlayer) {
+          // Stun the player on Rusher first hit — but ONLY if the hit landed.
+          // A Phase Shift dodge or Bio-Shield block must also negate the stun.
+          if (hitLanded && z.type === 'rusher' && !z.hasHitPlayer) {
             z.hasHitPlayer = true;
             player.stunTicks = 90; // Stun the player for 1.5 seconds (90 frames)
             startScreenShake(12, 18);
@@ -4454,13 +4455,26 @@ function spawnEvadeParticles(x, y) {
  * Inflicts damage on the player, applying Phase Shift evasion, Thick Skin reduction, and Retaliate speed triggers.
  * @param {number} rawAmount - The base damage before reductions
  */
+/**
+ * Inflicts damage on the player, applying Phase Shift evasion, Bio-Shield
+ * blocking, Thick Skin reduction, and Retaliate speed triggers.
+ *
+ * Returns TRUE  when the hit actually landed (damage dealt).
+ * Returns FALSE when the attack was negated (dodge/shield/dead).
+ *
+ * Callers MUST check the return value before applying any secondary effect
+ * tied to the hit (e.g. Rusher stun) — a negated hit negates those too.
+ *
+ * @param {number} rawAmount - Base damage before reductions.
+ * @returns {boolean} Whether the hit landed.
+ */
 function damagePlayer(rawAmount) {
-  if (player.health <= 0) return;
+  if (player.health <= 0) return false;
 
   // Bio-Shield hit blocking (Epic upgrade)
   if (player.bioShieldLevel > 0 && player.bioShieldActive) {
     player.bioShieldActive = false;
-    
+
     // Cooldown: 45s base, reduces by 2.5s per stack, capped at 30s minimum
     const cdSec = Math.max(30.0, 45.0 - (player.bioShieldLevel - 1) * 2.5);
     player.bioShieldTimer = cdSec * 120; // 120 ticks per second (120Hz physics)
@@ -4483,16 +4497,16 @@ function damagePlayer(rawAmount) {
 
     // Trigger subtle screen shake visual response
     startScreenShake(3, 5);
-    return; // Block hit completely!
+    return false; // Hit negated — secondary effects (stun etc.) must NOT apply
   }
 
   // 1. Evade check (Phase Shift)
-  if (player.dodgeChance > 0) {
-    if (Math.random() < player.dodgeChance) {
-      // Dodged! Spawn evasive particles and bypass all damage
-      spawnEvadeParticles(player.x, player.y);
-      return;
-    }
+  if (player.dodgeChance > 0 && Math.random() < player.dodgeChance) {
+    // Dodged! Bypass all damage AND any secondary hit effects (stun, knockback…)
+    spawnEvadeParticles(player.x, player.y);
+    // A lucky dodge also breaks any active stun so the player can react immediately
+    player.stunTicks = 0;
+    return false;
   }
 
   // 2. Thick Skin damage reduction
@@ -4506,7 +4520,6 @@ function damagePlayer(rawAmount) {
   // 3. Deal damage
   player.health = Math.max(0, player.health - actualDamage);
   audio.playSfx('playerHit');
-  // (Player blood spray and floor stains removed to clean up visual clutter)
   startScreenShake(7, 12);
   updateHUD();
 
@@ -4544,11 +4557,13 @@ function damagePlayer(rawAmount) {
           decay: Math.random() * 0.05 + 0.02
         });
       }
-      return; // Player survived!
+      return true; // Hit landed (revive triggered), player survived
     }
 
     gameOver();
   }
+
+  return true; // Hit landed
 }
 
 
@@ -8653,7 +8668,11 @@ function triggerReflexDash() {
   player.reflexDashVx = Math.cos(angle) * desiredSpeed * dashMultiplier;
   player.reflexDashVy = Math.sin(angle) * desiredSpeed * dashMultiplier;
   player.reflexDashDuration = 11; // Dash lasts 11 frames (~0.18 seconds of invulnerable surge)
-  
+
+  // Dashing breaks any active stun — every zombie type's stun is cleared,
+  // including the Rusher's first-hit charge stun.
+  player.stunTicks = 0;
+
   // (Cooldown is started in the physics loop after reflexDashDuration reaches 0)
 
   // Trigger high weight screen shake on dash start
