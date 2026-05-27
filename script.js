@@ -64,6 +64,7 @@ let waveZombiesSpawned = 0;   // Zombies spawned so far
 let isWaveIntermission = false; // True when showing wave completed screen
 let waveKillCount = 0;         // Kills made in the current wave (used by Slow Start)
 let waveStartTick = 0;         // Game tick when the current wave began
+let shielderDebutSpawned = false; // True once the guaranteed wave-40+ debut shielder has been forced in
 
 // Roguelike Upgrades Selection Tracker
 let upgradesChosen = [];
@@ -1058,7 +1059,13 @@ function getZombieStatScales(wave) {
 }
 
 function isBossWave(wave) {
-  return wave >= 20 && wave % 20 === 0;
+  // Wave 20 is the first boss fight.
+  // Wave 40 is reserved for the Shielder debut — boss is moved to wave 45 so
+  // the shielder introduction isn't buried under the Patient Zero fight.
+  // After wave 45 the boss recurs every 25 waves (45, 70, 95, …).
+  if (wave === 20) return true;
+  if (wave < 45) return false;
+  return (wave - 45) % 25 === 0;
 }
 
 // Procedural ground features array
@@ -1224,10 +1231,10 @@ function bindCheatPanelQuickControls() {
   // helper function to skip wave and clean active threats
   function changeWave(offset) {
     if (!gameState.isRunning) return;
-    
+
     // Adjust wave number
     gameState.wave = Math.max(1, gameState.wave + offset);
-    
+
     // Recalculate wave metrics
     waveZombiesTotal = isBossWave(gameState.wave)
       ? Math.floor(getWaveZombieTotal(gameState.wave) * 0.4)
@@ -1235,6 +1242,7 @@ function bindCheatPanelQuickControls() {
     waveZombiesSpawned = 0;
     waveKillCount = 0;
     activeBoss = null;
+    shielderDebutSpawned = false; // Reset so wave 40+ will guarantee the debut shielder
 
     // Clear currently active entities on the board
     zombies = [];
@@ -1246,6 +1254,15 @@ function bindCheatPanelQuickControls() {
     activeMines = [];
     activeTurrets = [];
     pendingSummons = [];
+
+    // If we were on the intermission/upgrade screen, forcibly exit it so the
+    // game loop can restart when the cheat panel closes. Without this, the
+    // spawn loop's !isWaveIntermission guard keeps zombies from ever spawning.
+    if (isWaveIntermission) {
+      isWaveIntermission = false;
+      lastZombieSpawnTime = Date.now(); // breathing room before first spawn
+      showScreen(gameScreen);
+    }
 
     // Trigger visual/haptic response
     startScreenShake(8, 12);
@@ -1517,6 +1534,7 @@ function startGame() {
   waveZombiesTotal = getWaveZombieTotal(gameState.wave);
   waveZombiesSpawned = 0;
   isWaveIntermission = false;
+  shielderDebutSpawned = false;
 
   // Reset player configuration
   player.health = 100;
@@ -3439,6 +3457,7 @@ function renderUpgradeChoices() {
       waveKillCount = 0;
       waveStartTick = gameTick;
       activeBoss = null;
+      shielderDebutSpawned = false; // Reset each wave so wave 40+ can force the debut shielder
       waveZombiesTotal = isBossWave(gameState.wave)
         ? Math.floor(getWaveZombieTotal(gameState.wave) * 0.4)
         : getWaveZombieTotal(gameState.wave);
@@ -3499,7 +3518,15 @@ function spawnZombie() {
   zy = Math.max(16, Math.min(world.height - 16, zy));
 
   // Determine zombie type based on progressive wave weights.
-  const zombieType = chooseZombieType(gameState.wave);
+  // At wave 40+, guarantee one shielder as the very first spawn so the debut
+  // is never buried by bad RNG (15% chance could take many spawns to hit).
+  let zombieType;
+  if (gameState.wave >= 40 && !shielderDebutSpawned) {
+    zombieType = 'shielder';
+    shielderDebutSpawned = true;
+  } else {
+    zombieType = chooseZombieType(gameState.wave);
+  }
 
   if (zombieType === 'tank') {
     // Spawn Heavy Tank Zombie (Bulky armored speed sponge)
