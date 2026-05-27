@@ -1807,9 +1807,10 @@ function update() {
   if (player.rustyTurretLevel > 0) {
     player.rustyTurretTimer = (player.rustyTurretTimer || 0) - 1;
     if (player.rustyTurretTimer <= 0) {
+      const rPos = findTurretSpawnPos(player.x, player.y);
       activeTurrets.push({
-        x: player.x,
-        y: player.y,
+        x: rPos.x,
+        y: rPos.y,
         angle: 0,
         fireCooldown: 0,
         life: 45 * 120, // 45 seconds at 120Hz (5400 ticks)
@@ -1821,8 +1822,8 @@ function update() {
         const a = Math.random() * Math.PI * 2;
         const f = Math.random() * 2 + 1;
         gameParticles.push({
-          x: player.x,
-          y: player.y,
+          x: rPos.x,
+          y: rPos.y,
           vx: Math.cos(a) * f,
           vy: Math.sin(a) * f,
           size: Math.floor(Math.random() * 3) + 2,
@@ -1931,9 +1932,10 @@ function update() {
   if (player.bomberTurretLevel > 0) {
     player.bomberTurretTimer = (player.bomberTurretTimer || 0) - 1;
     if (player.bomberTurretTimer <= 0) {
+      const bPos = findTurretSpawnPos(player.x, player.y);
       activeBomberTurrets.push({
-        x: player.x,
-        y: player.y,
+        x: bPos.x,
+        y: bPos.y,
         angle: 0,
         fireCooldown: 0,
         life: 45 * 120, // 45 seconds at 120Hz (5400 ticks)
@@ -1945,8 +1947,8 @@ function update() {
         const a = Math.random() * Math.PI * 2;
         const f = Math.random() * 2.5 + 1;
         gameParticles.push({
-          x: player.x,
-          y: player.y,
+          x: bPos.x,
+          y: bPos.y,
           vx: Math.cos(a) * f,
           vy: Math.sin(a) * f,
           size: Math.floor(Math.random() * 4) + 2,
@@ -8443,6 +8445,50 @@ function generateGroundDetails() {
       });
     }
   }
+}
+
+/**
+ * Returns a world-space position near (px, py) where a new turret can be placed
+ * without overlapping any existing turret (rusty or bomber).
+ *
+ * Strategy: try the player's exact position first, then walk outward in expanding
+ * rings (8 → 16 → 24 candidates per ring) until a clear slot is found.
+ * Falls back to the player position if the arena is somehow fully packed.
+ *
+ * MIN_TURRET_SEP is the minimum centre-to-centre distance between any two turrets.
+ * The largest turret sprite radius is ~26px, so 70px gives a comfortable visual gap.
+ */
+function findTurretSpawnPos(px, py) {
+  const MIN_TURRET_SEP = 70;
+  const allTurrets = activeTurrets.concat(activeBomberTurrets);
+
+  function isClear(cx, cy) {
+    for (let i = 0; i < allTurrets.length; i++) {
+      const t = allTurrets[i];
+      const dx = cx - t.x;
+      const dy = cy - t.y;
+      if (dx * dx + dy * dy < MIN_TURRET_SEP * MIN_TURRET_SEP) return false;
+    }
+    return true;
+  }
+
+  // 1. Ideal: player's current position
+  if (isClear(px, py)) return { x: px, y: py };
+
+  // 2. Walk outward in rings until a gap is found
+  for (let ring = 1; ring <= 4; ring++) {
+    const radius = ring * MIN_TURRET_SEP;
+    const steps  = ring * 8; // more candidates per ring as radius grows
+    for (let step = 0; step < steps; step++) {
+      const angle = (step / steps) * Math.PI * 2;
+      const cx = Math.max(30, Math.min(world.width  - 30, px + Math.cos(angle) * radius));
+      const cy = Math.max(30, Math.min(world.height - 30, py + Math.sin(angle) * radius));
+      if (isClear(cx, cy)) return { x: cx, y: cy };
+    }
+  }
+
+  // 3. Fallback — spawn at player position regardless (extremely rare)
+  return { x: px, y: py };
 }
 
 // Minimum clear corridor width guaranteed between any two obstacle surfaces.
