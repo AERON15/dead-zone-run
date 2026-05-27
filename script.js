@@ -449,7 +449,8 @@ let player = {
   overclockShotCounter: 0,
   killFrenzyLevel: 0,
   killFrenzyHistory: [],
-  killFrenzyTimer: 0
+  killFrenzyTimer: 0,
+  killFrenzyCD: 0
 };
 
 // Keyboard Input Tracker
@@ -696,10 +697,10 @@ const UPGRADES_REGISTRY = [
     id: 'necrobomb',
     name: 'Necro-Bomb',
     icon: '[BOMB]',
-    description: 'Killed zombies have 20% chance to explode, dealing AoE splash damage (Stackable!)',
+    description: 'Killed zombies have a 25% chance to trigger a toxic plague explosion, dealing AoE splash damage (Capped at 100% chance / Level 4)',
     rarity: 'legendary',
     apply: () => {
-      player.necroBombLevel += 1;
+      player.necroBombLevel = Math.min(4, player.necroBombLevel + 1);
     }
   },
   {
@@ -822,7 +823,7 @@ const UPGRADES_REGISTRY = [
     id: 'killfrenzy',
     name: 'Kill Frenzy',
     icon: '[FRENZY]',
-    description: 'Defeating 7 zombies quickly grants +20% speed and +20% fire rate for 3s (Capped at 8s duration)',
+    description: 'Defeat 10 zombies quickly to trigger +25% speed and +25% fire rate for 3s (Capped at 5s duration, 10s cooldown between activations)',
     rarity: 'rare',
     apply: () => {
       player.killFrenzyLevel = Math.min(6, player.killFrenzyLevel + 1);
@@ -832,7 +833,7 @@ const UPGRADES_REGISTRY = [
     id: 'slowstart',
     name: 'Slow Start',
     icon: '[RAMP]',
-    description: 'Begin each wave at -50% attack speed. Speed ramps up linearly over 10 seconds to reach 2.5x. Stacks raise the cap to 3x.',
+    description: 'Begin each wave at -60% attack speed. Speed ramps up linearly over 15 seconds to reach 2.5x. Stacks raise the cap to 3x.',
     rarity: 'legendary',
     apply: () => {
       player.slowStartLevel = Math.min(3, player.slowStartLevel + 1);
@@ -1447,6 +1448,7 @@ function startGame() {
   player.killFrenzyLevel = 0;
   player.killFrenzyHistory = [];
   player.killFrenzyTimer = 0;
+  player.killFrenzyCD = 0;
   player.slowStartLevel = 0;
 
   // Clear chosen upgrades
@@ -1598,6 +1600,8 @@ function update() {
         x: player.x,
         y: player.y,
         size: 20,
+        triggerRadius: 48, // Larger invisible pressure-plate detection zone
+        life: 1800,        // 15 real seconds at 120Hz before self-destruct
         damage: 50 + player.labMineLevel * 25
       });
       // Reset cooldown timer: reduces from 8s to 3s
@@ -1606,15 +1610,39 @@ function update() {
     }
   }
 
-  // Check Mines triggers against zombies
+  // Check Mines triggers against zombies, and tick down despawn timers
   for (let mIdx = activeMines.length - 1; mIdx >= 0; mIdx--) {
     const mine = activeMines[mIdx];
+
+    // Tick despawn life down every physics tick
+    mine.life -= 1;
+    if (mine.life <= 0) {
+      // Mine expires silently — small fizzle sparks
+      for (let sp = 0; sp < 5; sp++) {
+        const sAngle = Math.random() * Math.PI * 2;
+        gameParticles.push({
+          x: mine.x + (Math.random() - 0.5) * mine.size,
+          y: mine.y + (Math.random() - 0.5) * mine.size,
+          vx: Math.cos(sAngle) * (Math.random() * 1.5 + 0.5),
+          vy: Math.sin(sAngle) * (Math.random() * 1.5 + 0.5),
+          size: Math.floor(Math.random() * 3) + 1,
+          color: '#888888',
+          life: 0.5,
+          decay: 0.06
+        });
+      }
+      activeMines.splice(mIdx, 1);
+      continue;
+    }
+
+    // Collision check: use triggerRadius for a bigger pressure-plate zone
+    const triggerR = mine.triggerRadius || mine.size / 2;
     for (let zIdx = 0; zIdx < zombies.length; zIdx++) {
       const z = zombies[zIdx];
       const mDx = z.x - mine.x;
       const mDy = z.y - mine.y;
       const distSq = mDx * mDx + mDy * mDy;
-      const rangeSum = z.size / 2 + mine.size / 2;
+      const rangeSum = z.size / 2 + triggerR;
 
       if (distSq < rangeSum * rangeSum) {
         // Boom! Explode the mine!
@@ -1625,28 +1653,49 @@ function update() {
     }
   }
 
-  // Update Toxic Trail puddle lifetimes
-  for (let i = toxicTrails.length - 1; i >= 0; i--) {
-    toxicTrails[i].life -= 1;
-    if (toxicTrails[i].life <= 0) {
-      toxicTrails.splice(i, 1);
+  // Update Toxic Trail puddle lifetimes (swap-and-pop for O(1) removal)
+  {
+    let tLen = toxicTrails.length;
+    let i = 0;
+    while (i < tLen) {
+      toxicTrails[i].life -= 1;
+      if (toxicTrails[i].life <= 0) {
+        toxicTrails[i] = toxicTrails[--tLen];
+      } else {
+        i++;
+      }
     }
+    toxicTrails.length = tLen;
   }
 
-  // Update Lightning Arcs segment lifespans
-  for (let i = lightningArcs.length - 1; i >= 0; i--) {
-    lightningArcs[i].life -= lightningArcs[i].decay;
-    if (lightningArcs[i].life <= 0) {
-      lightningArcs.splice(i, 1);
+  // Update Lightning Arcs segment lifespans (swap-and-pop for O(1) removal)
+  {
+    let laLen = lightningArcs.length;
+    let i = 0;
+    while (i < laLen) {
+      lightningArcs[i].life -= lightningArcs[i].decay;
+      if (lightningArcs[i].life <= 0) {
+        lightningArcs[i] = lightningArcs[--laLen];
+      } else {
+        i++;
+      }
     }
+    lightningArcs.length = laLen;
   }
 
-  // Update Explosions lifespans
-  for (let i = explosions.length - 1; i >= 0; i--) {
-    explosions[i].life -= explosions[i].decay;
-    if (explosions[i].life <= 0) {
-      explosions.splice(i, 1);
+  // Update Explosions lifespans (swap-and-pop for O(1) removal)
+  {
+    let exLen = explosions.length;
+    let i = 0;
+    while (i < exLen) {
+      explosions[i].life -= explosions[i].decay;
+      if (explosions[i].life <= 0) {
+        explosions[i] = explosions[--exLen];
+      } else {
+        i++;
+      }
     }
+    explosions.length = exLen;
   }
 
   // 0. Handle player stun status (inflicted by Rusher zombie)
@@ -1706,10 +1755,19 @@ function update() {
     currentSpeed += player.stimulantLevel * 0.15;
   }
 
-  // Kill Frenzy speed boost (+20% movement speed)
+  // Kill Frenzy reactivation cooldown decrement
+  if (player.killFrenzyCD > 0) {
+    player.killFrenzyCD -= 1;
+  }
+
+  // Kill Frenzy speed boost (+25% movement speed)
   if (player.killFrenzyTimer > 0) {
     player.killFrenzyTimer -= 1;
-    currentSpeed += player.speed * 0.20;
+    currentSpeed += player.speed * 0.25;
+    // When the active window expires, start the 10s reactivation cooldown
+    if (player.killFrenzyTimer === 0) {
+      player.killFrenzyCD = 1200; // 10 seconds at 120Hz
+    }
   }
 
   // Reflex Dash Cooldown decrement
@@ -1919,7 +1977,7 @@ function update() {
         }
 
         // Reset hit history so it can pierce/hit again!
-        b.hitZombies = [];
+        b.hitZombies = new Set();
       } else {
         // Trigger Splinter Shot shrapnel split on final death
         if (player.splinterShotLevel > 0 && !b.isShrapnel && !b.hasSplintered) {
@@ -2533,9 +2591,12 @@ function update() {
         if (player.killFrenzyLevel > 0) {
           const nowMs = Date.now();
           player.killFrenzyHistory.push(nowMs);
+          // Track kills within the last 3 seconds
           player.killFrenzyHistory = player.killFrenzyHistory.filter(t => nowMs - t <= 3000);
-          if (player.killFrenzyHistory.length >= 7) {
-            player.killFrenzyTimer = Math.min(960, (player.killFrenzyTimer || 0) + 360); // add 3s (360 ticks), cap at 8s (960 ticks)
+          // Requires 10 kills in 3s and must not be on cooldown
+          if (player.killFrenzyHistory.length >= 10 && player.killFrenzyCD <= 0) {
+            player.killFrenzyTimer = Math.min(600, (player.killFrenzyTimer || 0) + 360); // add 3s (360 ticks), cap at 5s (600 ticks)
+            player.killFrenzyHistory = []; // reset kill window so back-to-back triggers are earned, not free
             // Spawn green/pink frenzy particles around the player
             for (let fP = 0; fP < 5; fP++) {
               gameParticles.push({
@@ -2559,7 +2620,7 @@ function update() {
 
         // Necro-Bomb triggering (Legendary upgrade)
         if (player.necroBombLevel > 0 && !z.killedByNecroBomb) {
-          const chance = player.necroBombLevel * 0.20;
+          const chance = player.necroBombLevel * 0.25;
           if (Math.random() < chance) {
             triggerNecroBombExplosion(z.x, z.y);
           }
@@ -2615,7 +2676,7 @@ function update() {
       let z = zombies[zIdx];
 
       // Prevent hitting the same zombie twice with a single piercing bullet
-      if (b.hitZombies && b.hitZombies.includes(z)) continue;
+      if (b.hitZombies && b.hitZombies.has(z)) continue;
 
       // Fast Manhattan AABB pre-filtering check to bypass 95% of math calculations immediately
       const limit = (b.size + z.size) / 2 + 5; // collision limit with small safety buffer
@@ -2708,9 +2769,9 @@ function update() {
           z.burnTicks = Math.max(z.burnTicks || 0, 180); // 3 seconds at 60 fps
         }
 
-        // Keep track of hit zombies on this bullet
-        if (!b.hitZombies) b.hitZombies = [];
-        b.hitZombies.push(z);
+        // Keep track of hit zombies on this bullet (Set gives O(1) lookup vs O(n) array.includes)
+        if (!b.hitZombies) b.hitZombies = new Set();
+        b.hitZombies.add(z);
 
         // Spawn yellow plasma collision sparks
         spawnImpactSparks(b.x, b.y);
@@ -2728,29 +2789,43 @@ function update() {
   }
 
   // Cap active particles to keep frame time low on all devices
+  // Truncate from the end (O(1)) instead of splice(0, n) which shifts the whole array
   if (gameParticles.length > 200) {
-    gameParticles.splice(0, gameParticles.length - 200);
+    gameParticles.length = 200;
   }
 
   // 7. Update pixel particles (muzzle flashes, blood, sparks)
-  for (let i = gameParticles.length - 1; i >= 0; i--) {
-    let p = gameParticles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life -= p.decay;
-
-    // Remove expired particles
-    if (p.life <= 0) {
-      gameParticles.splice(i, 1);
+  // Swap-and-pop removal is O(1) per dead particle vs O(n) for splice
+  {
+    let pLen = gameParticles.length;
+    let i = 0;
+    while (i < pLen) {
+      const p = gameParticles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+      if (p.life <= 0) {
+        gameParticles[i] = gameParticles[--pLen]; // swap with last alive
+      } else {
+        i++;
+      }
     }
+    gameParticles.length = pLen;
   }
 
-  // Slowly fade old combat stains without wiping the arena clean.
-  for (let i = floorStains.length - 1; i >= 0; i--) {
-    floorStains[i].life -= floorStains[i].decay;
-    if (floorStains[i].life <= 0) {
-      floorStains.splice(i, 1);
+  // Slowly fade old combat stains without wiping the arena clean (swap-and-pop for O(1) removal).
+  {
+    let fsLen = floorStains.length;
+    let i = 0;
+    while (i < fsLen) {
+      floorStains[i].life -= floorStains[i].decay;
+      if (floorStains[i].life <= 0) {
+        floorStains[i] = floorStains[--fsLen];
+      } else {
+        i++;
+      }
     }
+    floorStains.length = fsLen;
   }
 
   if (screenShake.frames > 0) {
@@ -3546,7 +3621,7 @@ function handleBulletObstacleCollision(bullet, bulletIndex, prevX, prevY) {
       }
 
       bounceBulletFromObstacle(bullet, obstacle, prevX, prevY);
-      bullet.hitZombies = [];
+      bullet.hitZombies = new Set();
       spawnObstacleImpactSparks(bullet.x, bullet.y, '#ffaa00');
       return true;
     }
@@ -3791,7 +3866,7 @@ function spawnSplinterShrapnel(x, y, vx, vy, parentDamage, hitZombie = null, isF
       age: 0,
       pierceLeft: 1, // pierces 1 zombie then dies
       bounceLeft: 0, // shrapnel does not bounce to avoid infinite recursion
-      hitZombies: hitZombie ? [hitZombie] : [], // Pre-exclude the target zombie that got hit to prevent instant double-hits!
+      hitZombies: hitZombie ? new Set([hitZombie]) : new Set(), // Pre-exclude the target zombie that got hit to prevent instant double-hits!
       isShrapnel: true,
       hasSplintered: true,
       life: 45, // Shrapnel expires in 45 frames (~0.75 seconds)
@@ -3827,14 +3902,14 @@ function shootWeapon() {
     currentFireRate *= (1 - stimBonus);
   }
   if (player.killFrenzyTimer > 0) {
-    currentFireRate *= 0.80; // +20% fire rate reduction (faster firing)
+    currentFireRate *= 0.75; // +25% fire rate reduction (faster firing)
   }
 
-  // Slow Start ramp: starts at 0.5x speed, scales linearly to maxMult speed (2.5x–3x) over 10 seconds (600 ticks) from wave start
+  // Slow Start ramp: starts at 0.4x speed (-60%), scales linearly to maxMult speed (2.5x–3x) over 15 seconds (1800 ticks at 120Hz)
   if (player.slowStartLevel > 0) {
     const maxMult = Math.min(3.0, 2.25 + player.slowStartLevel * 0.25); // L1=2.5x, L2=2.75x, L3=3.0x
-    const progress = Math.min(1, (gameTick - waveStartTick) / 600); // 10 seconds at 60fps = 600 ticks
-    const startCd = currentFireRate * 2.0;
+    const progress = Math.min(1, (gameTick - waveStartTick) / 1800); // 15 seconds at 120Hz = 1800 ticks
+    const startCd = currentFireRate * 2.5; // 0.4x fire speed = 2.5× cooldown (-60%)
     const endCd = currentFireRate / maxMult;
     currentFireRate = Math.max(50, startCd + (endCd - startCd) * progress);
   }
@@ -3904,7 +3979,7 @@ function shootWeapon() {
           pierceLeft: player.bulletPierceLimit,
           maxBounces: player.bounceLimit,
           bounceLeft: player.bounceLimit, // Bouncing Casings Limit
-          hitZombies: [],
+          hitZombies: new Set(),
           isShrapnel: false,
           life: 150, // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
           isFire: element.isFire,
@@ -3934,7 +4009,7 @@ function shootWeapon() {
           age: 0,
           maxBounces: player.bounceLimit,
           bounceLeft: player.bounceLimit,
-          hitZombies: [],
+          hitZombies: new Set(),
           isShrapnel: false,
           life: 150, // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
           isFire: element.isFire,
@@ -4245,8 +4320,8 @@ function triggerExplosion(ex, ey, maxDamage) {
  */
 function triggerNecroBombExplosion(ex, ey) {
   audio.playSfx('explosion');
-  const radius = 110 + player.necroBombLevel * 25; // Massive upgraded base radius
-  const damage = Math.floor((18 + player.necroBombLevel * 6) * 0.8); // Nerfed by an additional 20% to keep damage highly controlled
+  const radius = 135 + player.necroBombLevel * 30; // Substantially buffed upgraded base radius
+  const damage = Math.floor((22 + player.necroBombLevel * 8) * 0.8); // Perfectly balanced plague splash damage
   startExplosionShake(ex, ey, 12 + player.necroBombLevel * 2);
   addFloorScorch(ex, ey, radius * 0.55, 'necro'); // Glowing toxic crater with custom cracks
 
@@ -5486,21 +5561,24 @@ function drawMines() {
   ctx.save();
   activeMines.forEach(m => {
     if (!isInView(m.x, m.y, m.size + 10)) return;
-    // Pulse rate depends on mine size/level
-    const isPulsing = (gameTick % 20 < 10);
-    
+
+    // Low-life warning: blink faster and swap border to orange when under 360 ticks (~3s)
+    const isExpiring = m.life <= 360;
+    const blinkRate = isExpiring ? 8 : 20; // fast blink at low life
+    const isPulsing = (gameTick % blinkRate < blinkRate / 2);
+
     // Outer shadow
     drawObjectShadow(m.x - m.size * 0.6, m.y - m.size * 0.4, m.size * 1.2, m.size * 0.8, 0.4);
 
     // Mine base cylinder (dark industrial grey with metallic edges)
-    ctx.fillStyle = '#2f2f3a';
+    ctx.fillStyle = isExpiring ? '#3a2a1a' : '#2f2f3a'; // warm tint when expiring
     ctx.beginPath();
     ctx.arc(m.x, m.y, m.size / 2, 0, Math.PI * 2);
     ctx.fill();
-    
-    // Metallic border outline
-    ctx.strokeStyle = '#1c1c24';
-    ctx.lineWidth = 2;
+
+    // Metallic border outline — orange when expiring
+    ctx.strokeStyle = isExpiring ? (isPulsing ? '#ff7700' : '#883300') : '#1c1c24';
+    ctx.lineWidth = isExpiring ? 2.5 : 2;
     ctx.beginPath();
     ctx.arc(m.x, m.y, m.size / 2, 0, Math.PI * 2);
     ctx.stroke();
@@ -5511,15 +5589,17 @@ function drawMines() {
     ctx.arc(m.x, m.y, m.size * 0.28, 0, Math.PI * 2);
     ctx.fill();
 
-    // Blinking red central diode
-    ctx.fillStyle = isPulsing ? '#ff0033' : '#550000';
+    // Blinking red central diode — turns orange-white when expiring
+    ctx.fillStyle = isPulsing
+      ? (isExpiring ? '#ffaa00' : '#ff0033')
+      : (isExpiring ? '#664400' : '#550000');
     ctx.beginPath();
     ctx.arc(m.x, m.y, m.size * 0.12, 0, Math.PI * 2);
     ctx.fill();
-    
+
     // Glowing aura if diode is active
     if (isPulsing) {
-      ctx.strokeStyle = 'rgba(255, 0, 50, 0.3)';
+      ctx.strokeStyle = isExpiring ? 'rgba(255, 140, 0, 0.4)' : 'rgba(255, 0, 50, 0.3)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(m.x, m.y, m.size * 0.2, 0, Math.PI * 2);
@@ -6623,14 +6703,69 @@ function drawExplosions() {
 
     // Layered concentric circles approximate the gradient without creating one per frame
     if (exp.type === 'necro') {
-      ctx.fillStyle = 'rgba(100,10,180,0.35)';
-      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(176,38,255,0.55)';
-      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.65, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(57,255,20,0.8)';
-      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.35, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.14, 0, Math.PI * 2); ctx.fill();
+      // 1. Layered Concentric Plasma Rings (Rich Neon Gas Clouds)
+      // Layer A: Outer radioactive purple cloud
+      ctx.fillStyle = 'rgba(130, 0, 220, 0.18)';
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Layer B: Mid toxic lime-green glow
+      ctx.fillStyle = 'rgba(57, 255, 20, 0.32)';
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, currentRadius * 0.72, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Layer C: Inner hot cyan-green core
+      ctx.fillStyle = 'rgba(0, 255, 180, 0.52)';
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, currentRadius * 0.42, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Layer D: Superheated electric white-yellow center
+      ctx.fillStyle = 'rgba(240, 255, 200, 0.85)';
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, currentRadius * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Radioactive Energy Cross Spikes (Flares)
+      const spikeLen = currentRadius * 1.22;
+      if (spikeLen > 5) {
+        // Thick lime-green glow spikes
+        ctx.strokeStyle = 'rgba(57, 255, 20, 0.45)';
+        ctx.lineWidth = Math.max(1, 5 * exp.life);
+        ctx.beginPath();
+        ctx.moveTo(exp.x - spikeLen, exp.y); ctx.lineTo(exp.x + spikeLen, exp.y);
+        ctx.moveTo(exp.x, exp.y - spikeLen); ctx.lineTo(exp.x, exp.y + spikeLen);
+        ctx.stroke();
+
+        // Thin sharp hot-white core spikes
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.lineWidth = Math.max(1, 2.2 * exp.life);
+        ctx.beginPath();
+        ctx.moveTo(exp.x - spikeLen * 0.6, exp.y); ctx.lineTo(exp.x + spikeLen * 0.6, exp.y);
+        ctx.moveTo(exp.x, exp.y - spikeLen * 0.6); ctx.lineTo(exp.x, exp.y + spikeLen * 0.6);
+        ctx.stroke();
+      }
+
+      // 3. Boiling Acidic Plague Bubbles (Asymmetrical orbs)
+      ctx.strokeStyle = 'rgba(57, 255, 20, 0.7)';
+      ctx.lineWidth = Math.max(1, 2 * exp.life);
+      
+      // Bubble A (top-left)
+      ctx.beginPath();
+      ctx.arc(exp.x - currentRadius * 0.32, exp.y - currentRadius * 0.22, currentRadius * 0.14, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Bubble B (top-right)
+      ctx.beginPath();
+      ctx.arc(exp.x + currentRadius * 0.28, exp.y - currentRadius * 0.38, currentRadius * 0.09, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Bubble C (bottom-center)
+      ctx.beginPath();
+      ctx.arc(exp.x - currentRadius * 0.08, exp.y + currentRadius * 0.34, currentRadius * 0.11, 0, Math.PI * 2);
+      ctx.stroke();
     } else {
       ctx.fillStyle = 'rgba(176,0,0,0.4)';
       ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.fill();
