@@ -70,6 +70,10 @@ let currentIntermissionRarity = null; // Locked rarity for the current wave inte
 // Roguelike Upgrades Selection Tracker
 let upgradesChosen = [];
 
+// Floating damage number popups
+let floatingTexts = [];
+let showDamageNumbers = true;
+
 // Sound & Music Synthesizer Engine (Vanilla Web Audio API)
 const audio = {
   ctx: null,
@@ -447,7 +451,7 @@ let player = {
   size: 32, // blocky size for retro aesthetic
   health: 100,
   maxHealth: 100,
-  speed: 1.7, // Decreased base player speed for high-tension survival gameplay
+  speed: 2.0, // Base player speed — high enough to survive without speed cards
 
   // Weapon Stats
   bulletDamage: 10,
@@ -556,10 +560,10 @@ const UPGRADES_REGISTRY = [
     id: 'speed',
     name: 'Speed Up',
     icon: '[MOVE]',
-    description: 'Increase player speed by 0.25 spd (Capped at +2.5 spd max)',
+    description: 'Increase player speed by 0.25 spd (Capped at +1.2 spd max)',
     rarity: 'common',
     apply: () => {
-      player.speed = Number((Math.min(4.2, player.speed + 0.25)).toFixed(2));
+      player.speed = Number((Math.min(3.2, player.speed + 0.25)).toFixed(2));
     }
   },
   {
@@ -941,7 +945,7 @@ const UPGRADES_REGISTRY = [
     id: 'fairyaura',
     name: 'Fairy Aura',
     icon: '[AURA]',
-    description: 'A magical aura radiates around you, pulsing every 0.5s to deal 3 DPS to all nearby zombies. Each stack widens the radius by 20px and adds 2.5 DPS. (Capped at 5 stacks, max 160px radius / 11 DPS)',
+    description: 'A magical aura radiates around you, pulsing every 0.5s to deal 3 DPS to all nearby zombies. Each stack widens the radius by 20px and adds 2.5 DPS. (Capped at 5 stacks, max 190px radius / 11 DPS)',
     rarity: 'legendary',
     apply: () => {
       player.fairyAuraLevel = Math.min(5, player.fairyAuraLevel + 1);
@@ -967,7 +971,7 @@ const UPGRADE_CAPS = {
   rustyturret:       () => player.rustyTurretLevel >= 5,
   doubleshot:        () => player.spreadShotCount >= 7,
   damage:            () => player.bulletDamage >= 100,
-  speed:             () => player.speed >= 4.2,
+  speed:             () => player.speed >= 3.2,
   maxhealth:         () => player.maxHealth >= 350,
   heal:              () => player.waveHealPercentage >= 0.35,
   bulletspeed:       () => player.bulletSpeed >= 20,
@@ -1089,8 +1093,8 @@ function getZombieStatScales(wave) {
 
   return {
     health: (1 + steadyWaves * 0.03 + lateWaves * 0.05 + Math.pow(lateWaves, 1.25) * 0.015) * bossHealthBonus,
-    speed: (1 + steadyWaves * 0.008 + Math.min(0.70, lateWaves * 0.012)) * bossSpeedBonus,
-    damage: (1 + steadyWaves * 0.012 + lateWaves * 0.025 + Math.pow(lateWaves, 1.1) * 0.003) * bossDamageBonus,
+    speed: (1 + steadyWaves * 0.008 + Math.min(0.45, lateWaves * 0.008)) * bossSpeedBonus,
+    damage: (1 + steadyWaves * 0.012 + lateWaves * 0.035 + Math.pow(lateWaves, 1.1) * 0.003) * bossDamageBonus,
     score: 1 + extraWaves * 0.055
   };
 }
@@ -1577,7 +1581,7 @@ function startGame() {
   // Reset player configuration
   player.health = 100;
   player.maxHealth = 100;
-  player.speed = 1.7; // Decreased base player speed
+  player.speed = 2.0;
   player.lastShotTime = 0;
   player.bulletDamage = 10;
   player.fireRate = 500;
@@ -1645,8 +1649,9 @@ function startGame() {
   player.bomberTurretTimer = 0;
   player.rerollTokens = 0;
 
-  // Clear chosen upgrades
+  // Clear chosen upgrades and floating text pool
   upgradesChosen = [];
+  floatingTexts = [];
   gameTick = 0;
   waveKillCount = 0;
   waveStartTick = 0;
@@ -2579,7 +2584,7 @@ function update() {
 
   // Fairy Aura DoT — damages all zombies within the aura radius every 60 ticks (0.5s)
   if (player.fairyAuraLevel > 0 && gameTick % 60 === 0) {
-    const auraRadius = 80 + (player.fairyAuraLevel - 1) * 20;
+    const auraRadius = 110 + (player.fairyAuraLevel - 1) * 20;
     const auraRadiusSq = auraRadius * auraRadius;
     const dmgPerPulse = 1.5 + (player.fairyAuraLevel - 1) * 1.25; // 3 DPS at L1, 11 DPS at L5
     for (let i = zombies.length - 1; i >= 0; i--) {
@@ -3415,6 +3420,17 @@ function update() {
               decay: Math.random() * 0.08 + 0.04
             });
           }
+        }
+
+        // Spawn floating damage number
+        if (showDamageNumbers) {
+          floatingTexts.push({
+            x: z.x - camera.x,
+            y: z.y - z.size / 2 - camera.y,
+            value: damageDealt,
+            isCrit,
+            life: 1.0
+          });
         }
 
         // Apply physical knockback pushback force (Knockback Rounds)
@@ -5436,6 +5452,46 @@ function buildStaticFloor() {
   }
 }
 
+function drawFloatingTexts() {
+  ctx.save();
+  ctx.textAlign = 'center';
+  for (let i = floatingTexts.length - 1; i >= 0; i--) {
+    const ft = floatingTexts[i];
+    ft.y -= 1.0;
+    ft.life -= 0.022;
+    if (ft.life <= 0) { floatingTexts.splice(i, 1); continue; }
+    ctx.globalAlpha = Math.min(1, ft.life * 2.5);
+    if (ft.isCrit) {
+      ctx.font = 'bold 18px monospace';
+      ctx.strokeStyle = 'rgba(100, 60, 0, 0.85)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(ft.value + '!', ft.x, ft.y);
+      ctx.fillStyle = '#ffee00';
+      ctx.fillText(ft.value + '!', ft.x, ft.y);
+    } else {
+      ctx.font = 'bold 13px monospace';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.strokeText(ft.value, ft.x, ft.y);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(ft.value, ft.x, ft.y);
+    }
+  }
+  ctx.restore();
+}
+
+function drawLowHealthWarning() {
+  const ratio = player.health / player.maxHealth;
+  if (ratio >= 0.25) return;
+  const pulse = (Math.sin(gameTick * 0.15) + 1) / 2;
+  const alpha = ((0.25 - ratio) / 0.25) * (0.2 + pulse * 0.3);
+  ctx.save();
+  ctx.strokeStyle = `rgba(255, 20, 20, ${alpha})`;
+  ctx.lineWidth = 24;
+  ctx.strokeRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
 function render() {
   // Flush HUD DOM writes once per visual frame — deferred from the physics loop
   // so multiple zombie deaths in one tick only trigger one CSS recalculation.
@@ -5535,6 +5591,12 @@ function render() {
 
   // 11. Boss health bar HUD (screen-space, drawn after vignette so it's always visible)
   drawBossHealthBar();
+
+  // 12. Floating damage numbers (screen-space)
+  if (showDamageNumbers) drawFloatingTexts();
+
+  // 13. Low health warning — red border pulse below 25% HP
+  if (gameState.isRunning && player.health > 0) drawLowHealthWarning();
 }
 
 function drawLightingOverlay() {
@@ -7001,7 +7063,7 @@ function drawLightningArcs() {
 function drawFairyAura() {
   if (player.fairyAuraLevel <= 0) return;
 
-  const R = 80 + (player.fairyAuraLevel - 1) * 20;
+  const R = 110 + (player.fairyAuraLevel - 1) * 20;
   const t = gameTick;
 
   ctx.save();
@@ -8498,6 +8560,12 @@ function _flushHUD() {
     const healthPercent = Math.max(0, Math.min(100, (player.health / player.maxHealth) * 100));
     healthFill.style.width = healthPercent + '%';
   }
+
+  // Update zombies remaining counter
+  const enemiesEl = document.getElementById('hud-enemies-value');
+  if (enemiesEl) {
+    enemiesEl.textContent = isWaveIntermission ? '—' : Math.max(0, waveZombiesTotal - waveKillCount);
+  }
 }
 
 function updateHUD() {
@@ -8983,6 +9051,24 @@ function togglePause() {
     if (pauseSoundBtn) {
       pauseSoundBtn.textContent = audio.isMuted ? 'Sound: OFF' : 'Sound: ON';
     }
+
+    // Populate upgrade history
+    const upgradeList = document.getElementById('pause-upgrades-list');
+    if (upgradeList) {
+      if (upgradesChosen.length === 0) {
+        upgradeList.innerHTML = '<span style="color:#555;font-size:0.7rem;font-family:monospace;">No upgrades yet</span>';
+      } else {
+        const counts = {};
+        upgradesChosen.forEach(u => { counts[u] = (counts[u] || 0) + 1; });
+        upgradeList.innerHTML = Object.entries(counts)
+          .map(([name, count]) => `<span class="pause-upgrade-tag">${name}${count > 1 ? ' \xD7' + count : ''}</span>`)
+          .join('');
+      }
+    }
+
+    // Sync damage numbers button
+    const dmgBtn = document.getElementById('pause-damage-btn');
+    if (dmgBtn) dmgBtn.textContent = showDamageNumbers ? 'Damage Numbers: ON' : 'Damage Numbers: OFF';
   } else {
     pauseScreen.classList.remove('active');
     document.getElementById('pause-icon').textContent = '⏸';
@@ -8996,6 +9082,7 @@ function togglePause() {
 const pauseBtn = document.getElementById('pause-btn');
 const resumeBtn = document.getElementById('resume-btn');
 const pauseSoundBtn = document.getElementById('pause-sound-btn');
+const pauseDamageBtn = document.getElementById('pause-damage-btn');
 const exitBtn = document.getElementById('exit-btn');
 
 if (pauseBtn) {
@@ -9030,6 +9117,14 @@ if (pauseSoundBtn) {
         mainSoundBtn.classList.remove('muted');
       }
     }
+  });
+}
+
+if (pauseDamageBtn) {
+  pauseDamageBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showDamageNumbers = !showDamageNumbers;
+    pauseDamageBtn.textContent = showDamageNumbers ? 'Damage Numbers: ON' : 'Damage Numbers: OFF';
   });
 }
 
