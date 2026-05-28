@@ -349,26 +349,31 @@
       <h1 class="title pause-title" style="color: #ffaa00; text-shadow: 0 0 10px rgba(255,170,0,0.5);">SYSTEM PAUSED</h1>
       <p class="tagline">Tactical retreat or short breather?</p>
 
-      <!-- Upgrade History -->
-      <div id="pause-upgrades-section">
-        <p class="pause-upgrades-label">UPGRADES COLLECTED</p>
-        <div id="pause-upgrades-list"></div>
-      </div>
+      <!-- Two-column body: upgrades left, buttons right -->
+      <div class="pause-body">
 
-      <!-- Buttons -->
-      <div class="menu-buttons pause-buttons" style="flex-direction: column; gap: 1rem; width: 100%; max-width: 320px; margin: 1.2rem auto;">
-        <button id="resume-btn" class="btn btn-primary" style="width: 100%;">
-          Resume Mission
-        </button>
-        <button id="pause-sound-btn" class="btn btn-secondary" style="width: 100%;">
-          Sound: ON
-        </button>
-        <button id="pause-damage-btn" class="btn btn-secondary" style="width: 100%;">
-          Damage Numbers: ON
-        </button>
-        <button id="exit-btn" class="btn btn-secondary" style="width: 100%;">
-          Exit to Menu
-        </button>
+        <div class="pause-left">
+          <div id="pause-upgrades-section">
+            <p class="pause-upgrades-label">UPGRADES COLLECTED</p>
+            <div id="pause-upgrades-list"></div>
+          </div>
+        </div>
+
+        <div class="pause-right">
+          <button id="resume-btn" class="btn btn-primary" style="width: 100%;">
+            Resume Mission
+          </button>
+          <button id="pause-sound-btn" class="btn btn-secondary" style="width: 100%;">
+            Sound: ON
+          </button>
+          <button id="pause-damage-btn" class="btn btn-secondary" style="width: 100%;">
+            Damage Numbers: ON
+          </button>
+          <button id="exit-btn" class="btn btn-secondary" style="width: 100%;">
+            Exit to Menu
+          </button>
+        </div>
+
       </div>
 
       <div class="hazard-bar" aria-hidden="true"></div>

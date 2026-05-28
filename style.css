@@ -830,11 +830,35 @@ html, body {
   text-shadow: 0 0 3px rgba(255, 50, 50, 0.3);
 }
 
+/* Pause screen — wide two-column layout */
+.pause-container {
+  max-width: min(820px, 92vw);
+  width: 92vw;
+}
+
+.pause-body {
+  display: flex;
+  flex-direction: row;
+  gap: 1.5rem;
+  width: 100%;
+  align-items: flex-start;
+}
+
+.pause-left {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.pause-right {
+  flex: 0 0 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 /* Pause screen — upgrade history */
 #pause-upgrades-section {
   width: 100%;
-  max-width: 320px;
-  margin: 0 auto 0.5rem;
 }
 
 .pause-upgrades-label {
@@ -843,31 +867,33 @@ html, body {
   font-family: var(--font-terminal);
   letter-spacing: 2px;
   text-align: center;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
 }
 
 #pause-upgrades-list {
-  max-height: 110px;
+  max-height: 280px;
   overflow-y: auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-content: center;
-  padding: 6px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 170, 0, 0.18);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 170, 0, 0.2);
   border-radius: 4px;
 }
 
 .pause-upgrade-tag {
-  background: rgba(255, 170, 0, 0.12);
-  border: 1px solid rgba(255, 170, 0, 0.28);
+  background: rgba(255, 170, 0, 0.07);
+  border: 1px solid rgba(255, 170, 0, 0.2);
+  border-left: 3px solid rgba(255, 170, 0, 0.6);
   color: #ffcc44;
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-family: var(--font-terminal);
-  padding: 2px 7px;
+  padding: 6px 9px;
   border-radius: 3px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Segmented Retro Health Meter */
