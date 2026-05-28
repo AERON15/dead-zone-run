@@ -5483,12 +5483,23 @@ function drawFloatingTexts() {
 function drawLowHealthWarning() {
   const ratio = player.health / player.maxHealth;
   if (ratio >= 0.25) return;
-  const pulse = (Math.sin(gameTick * 0.15) + 1) / 2;
-  const alpha = ((0.25 - ratio) / 0.25) * (0.2 + pulse * 0.3);
+  const danger = (0.25 - ratio) / 0.25; // 0 at 25% HP, 1 at 0 HP
+  const pulse = (Math.sin(gameTick * 0.18) + 1) / 2;
+  const edgeAlpha = danger * (0.55 + pulse * 0.45); // up to full 1.0 at 0 HP
   ctx.save();
-  ctx.strokeStyle = `rgba(255, 20, 20, ${alpha})`;
-  ctx.lineWidth = 24;
+  // Thick hard border
+  ctx.strokeStyle = `rgba(255, 0, 0, ${edgeAlpha})`;
+  ctx.lineWidth = 18;
   ctx.strokeRect(0, 0, canvas.width, canvas.height);
+  // Soft red vignette bleeding inward from all edges
+  const grad = ctx.createRadialGradient(
+    canvas.width / 2, canvas.height / 2, canvas.height * 0.25,
+    canvas.width / 2, canvas.height / 2, canvas.width * 0.85
+  );
+  grad.addColorStop(0, 'rgba(180, 0, 0, 0)');
+  grad.addColorStop(1, `rgba(200, 0, 0, ${danger * (0.35 + pulse * 0.3)})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.restore();
 }
 
