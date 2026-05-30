@@ -4489,54 +4489,33 @@ function renderUpgradeChoices() {
   }
   const rolledRarity = currentIntermissionRarity;
 
-  // Filter upgrades by rolled rarity, excluding only capped upgrades; conflicts are shown locked
+  // Filter upgrades by rolled rarity, excluding capped and weapon-incompatible upgrades
   const gunConflicts = new Set(GUNS[selectedGun]?.conflictIds || []);
-  const activeGunName = GUNS[selectedGun]?.name || 'this weapon';
   const isNotCapped = u => !(UPGRADE_CAPS[u.id]?.());
-  let pool = UPGRADES_REGISTRY.filter(u => u.rarity === rolledRarity && isNotCapped(u));
+  const isNotConflict = u => !gunConflicts.has(u.id);
+  let pool = UPGRADES_REGISTRY.filter(u => u.rarity === rolledRarity && isNotCapped(u) && isNotConflict(u));
 
-  // Fallback: if the rarity pool is exhausted (all capped), draw from any non-capped upgrade
+  // Fallback: if the rarity pool is exhausted, draw from any non-capped non-conflict upgrade
   if (pool.length === 0) {
-    pool = UPGRADES_REGISTRY.filter(u => isNotCapped(u));
+    pool = UPGRADES_REGISTRY.filter(u => isNotCapped(u) && isNotConflict(u));
   }
 
-  // Pick 3: try to include at least some non-conflict cards; conflicts can fill remaining slots
-  const compatible = pool.filter(u => !gunConflicts.has(u.id));
-  const incompatible = pool.filter(u => gunConflicts.has(u.id));
-  const shuffledCompat = [...compatible].sort(() => 0.5 - Math.random());
-  const shuffledIncompat = [...incompatible].sort(() => 0.5 - Math.random());
-  // Fill up to 3 slots: prefer compatible, pad with locked if needed
-  const combined = [...shuffledCompat, ...shuffledIncompat];
-  let selectedUpgrades = combined.slice(0, 3);
+  let selectedUpgrades = [...pool].sort(() => 0.5 - Math.random()).slice(0, 3);
 
   selectedUpgrades.forEach(upgrade => {
-    const isLocked = gunConflicts.has(upgrade.id);
-
     // Create card element
     const card = document.createElement('div');
-    card.className = 'upgrade-card rarity-' + rolledRarity + (isLocked ? ' card-gun-locked' : '');
-    if (!isLocked) {
-      card.setAttribute('role', 'button');
-      card.setAttribute('tabindex', '0');
-    }
+    card.className = 'upgrade-card rarity-' + rolledRarity;
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
     card.setAttribute('aria-label', `${upgrade.name}: ${upgrade.description}`);
-    card.title = isLocked
-      ? `Incompatible with ${activeGunName}`
-      : `${upgrade.name}: ${upgrade.description}`;
+    card.title = `${upgrade.name}: ${upgrade.description}`;
 
     // Rivets for retro styling
     const rivetTL = document.createElement('div'); rivetTL.className = 'rivet top-left'; card.appendChild(rivetTL);
     const rivetTR = document.createElement('div'); rivetTR.className = 'rivet top-right'; card.appendChild(rivetTR);
     const rivetBL = document.createElement('div'); rivetBL.className = 'rivet bottom-left'; card.appendChild(rivetBL);
     const rivetBR = document.createElement('div'); rivetBR.className = 'rivet bottom-right'; card.appendChild(rivetBR);
-
-    // Lock badge for incompatible upgrades
-    if (isLocked) {
-      const lockBadge = document.createElement('div');
-      lockBadge.className = 'card-lock-badge';
-      lockBadge.textContent = `⊘ INCOMPATIBLE WITH ${activeGunName.toUpperCase()}`;
-      card.appendChild(lockBadge);
-    }
 
     // Card Icon (Bracketed Text)
     const icon = document.createElement('div');
@@ -4565,11 +4544,6 @@ function renderUpgradeChoices() {
     }
     desc.textContent = displayedDescription;
     card.appendChild(desc);
-
-    if (isLocked) {
-      container.appendChild(card);
-      return; // no click handler for locked cards
-    }
 
     // Bind click trigger
     card.addEventListener('click', () => {
@@ -4882,7 +4856,7 @@ function spawnDreadnaught() {
   by = Math.max(30, Math.min(world.height - 30, by));
 
   const bossHealthScale = 1 + bossesDefeated * 0.15; // Scales harder than Patient Zero (+15% vs +10%)
-  const baseHP = Math.ceil((1600 + gameState.wave * 80) * bossHealthScale);
+  const baseHP = Math.ceil((2000 + gameState.wave * 80) * bossHealthScale);
 
   const boss = {
     type: 'dreadnaught',
