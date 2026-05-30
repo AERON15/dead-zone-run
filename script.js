@@ -65,6 +65,7 @@ let isWaveIntermission = false; // True when showing wave completed screen
 let waveKillCount = 0;         // Kills made in the current wave (used by Slow Start)
 let waveStartTick = 0;         // Game tick when the current wave began
 let shielderDebutSpawned = false; // True once the guaranteed wave-40+ debut shielder has been forced in
+let juggernautDebutSpawned = false; // True once the guaranteed wave-50+ debut juggernaut has been forced in
 let currentIntermissionRarity = null; // Locked rarity for the current wave intermission (rerolls keep same tier)
 
 // Roguelike Upgrades Selection Tracker
@@ -74,6 +75,47 @@ let upgradesChosen = [];
 let floatingTexts = [];
 let showDamageNumbers = true;
 
+// Auth & profile state
+let currentUser = null;
+let currentProfile = null;
+let coinsEarnedThisRun = 0;
+
+// Weapon selection state
+let selectedGun = 'pistol';
+let isCharging = false;
+let chargeStartTime = 0;
+function getActiveFireRateMultiplier() {
+  let mult = 1.0;
+  
+  // 1. Slow Start (Ramp)
+  if (player.slowStartLevel > 0) {
+    const maxMult = Math.min(2.8, 2.35 + player.slowStartLevel * 0.15);
+    const progress = Math.min(1, (gameTick - waveStartTick) / 1200); // 10 seconds at 120Hz
+    const startVal = 0.4; // 0.4x speed (-60%)
+    const endVal = maxMult;
+    mult *= (startVal + (endVal - startVal) * progress);
+  }
+  
+  // 2. Stimulant
+  if (player.stimulantLevel > 0 && player.stimulantActive) {
+    const stimBonus = Math.min(0.40, player.stimulantLevel * 0.10);
+    mult *= (1 / (1 - stimBonus));
+  }
+  
+  // 3. Kill Frenzy
+  if (player.killFrenzyTimer > 0) {
+    mult *= (1 / 0.75); // +25% cooldown reduction (faster firing)
+  }
+  
+  return mult;
+}
+
+function getDynamicMaxChargeMs() {
+  const baseRate = 600;
+  const mult = getActiveFireRateMultiplier();
+  return Math.max(300, 1500 * (player.fireRate / baseRate) / mult);
+}
+
 // Sound & Music Synthesizer Engine (Vanilla Web Audio API)
 const audio = {
   ctx: null,
@@ -81,6 +123,60 @@ const audio = {
   musicTimer: null,
   musicStep: 0,
   musicBpm: 125,
+  chargeOsc: null,
+  chargeGain: null,
+
+  startChargeSound() {
+    if (this.isMuted) return;
+    this.resume();
+    if (!this.ctx) return;
+    this.stopChargeSound(); // prevent overlapping
+
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    this.chargeOsc = ctx.createOscillator();
+    this.chargeGain = ctx.createGain();
+
+    this.chargeOsc.type = 'sine';
+    this.chargeOsc.frequency.setValueAtTime(80, now); // comfortable low-frequency hum
+
+    this.chargeGain.gain.setValueAtTime(0.005, now);
+    this.chargeGain.gain.linearRampToValueAtTime(0.015, now + 0.15);
+
+    this.chargeOsc.connect(this.chargeGain);
+    this.chargeGain.connect(ctx.destination);
+
+    this.chargeOsc.start(now);
+  },
+
+  updateChargeSound(fraction) {
+    if (this.isMuted || !this.ctx || !this.chargeOsc || !this.chargeGain) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    const targetFreq = 80 + fraction * 300; // Sweeps up smoothly from 80Hz to 380Hz (warm, pleasant midrange hum)
+    this.chargeOsc.frequency.setValueAtTime(targetFreq, now);
+
+    const targetVol = 0.015 + fraction * 0.025; // Dev volume scaled down to comfortable 0.04 peak gain
+    this.chargeGain.gain.setValueAtTime(targetVol, now);
+  },
+
+  stopChargeSound() {
+    if (this.chargeOsc) {
+      try {
+        this.chargeOsc.stop();
+        this.chargeOsc.disconnect();
+      } catch (e) {}
+      this.chargeOsc = null;
+    }
+    if (this.chargeGain) {
+      try {
+        this.chargeGain.disconnect();
+      } catch (e) {}
+      this.chargeGain = null;
+    }
+  },
 
   init() {
     if (this.ctx) return;
@@ -225,6 +321,32 @@ const audio = {
         osc.stop(now + 0.15);
         break;
       }
+      case 'coin': {
+        // High-pitched retro sweet ping/chime sound
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(987.77, now); // B5 note
+        osc1.frequency.setValueAtTime(1318.51, now + 0.08); // E6 note (classic arpeggiated coin chord!)
+
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(1975.53, now); // B6 note (sparkle overtone)
+
+        gain.gain.setValueAtTime(0.02, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 0.35);
+        osc2.stop(now + 0.35);
+        break;
+      }
       case 'playerHit': {
         // Deep low frequency warning punch
         const osc = ctx.createOscillator();
@@ -274,6 +396,166 @@ const audio = {
         gain.connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.65);
+        break;
+      }
+      case 'shoot_shotgun': {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + 0.35);
+
+        gain.gain.setValueAtTime(0.40, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.35);
+        break;
+      }
+      case 'shoot_smg': {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(950, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.12);
+
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 0.12);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+        break;
+      }
+      case 'shoot_pulse': {
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(800, now);
+        osc1.frequency.exponentialRampToValueAtTime(100, now + 0.26);
+
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(400, now);
+        osc2.frequency.exponentialRampToValueAtTime(50, now + 0.26);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(600, now);
+        filter.frequency.linearRampToValueAtTime(120, now + 0.26);
+        filter.Q.setValueAtTime(6, now);
+
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.26);
+
+        osc1.connect(filter);
+        osc2.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 0.26);
+        osc2.stop(now + 0.26);
+        break;
+      }
+      case 'shoot_charge': {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(450, now); // deeper, safer frequency
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.38);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(550, now);
+        filter.frequency.exponentialRampToValueAtTime(110, now + 0.38);
+        filter.Q.setValueAtTime(8, now); // sci-fi resonance
+
+        gain.gain.setValueAtTime(0.18, now); // reduced peak gain
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 0.38);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.38);
+        break;
+      }
+      case 'shoot_disc': {
+        // Spinning disc whoosh — rising triangle sweep with buzz undertone
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc1.type = 'triangle';
+        osc1.frequency.setValueAtTime(200, now);
+        osc1.frequency.exponentialRampToValueAtTime(800, now + 0.15);
+        osc1.frequency.exponentialRampToValueAtTime(400, now + 0.28);
+
+        osc2.type = 'sawtooth';
+        osc2.frequency.setValueAtTime(150, now);
+        osc2.frequency.exponentialRampToValueAtTime(600, now + 0.15);
+        osc2.frequency.exponentialRampToValueAtTime(300, now + 0.28);
+
+        gain.gain.setValueAtTime(0.07, now);
+        gain.gain.linearRampToValueAtTime(0.12, now + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 0.28);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 0.28);
+        osc2.stop(now + 0.28);
+        break;
+      }
+      case 'explode_pulse': {
+        const oscImplode = ctx.createOscillator();
+        const gainImplode = ctx.createGain();
+        oscImplode.type = 'sine';
+        oscImplode.frequency.setValueAtTime(80, now);
+        oscImplode.frequency.exponentialRampToValueAtTime(600, now + 0.12);
+        gainImplode.gain.setValueAtTime(0.01, now);
+        gainImplode.gain.linearRampToValueAtTime(0.18, now + 0.12);
+
+        const oscExplode = ctx.createOscillator();
+        const gainExplode = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        oscExplode.type = 'triangle';
+        oscExplode.frequency.setValueAtTime(160, now + 0.10);
+        oscExplode.frequency.exponentialRampToValueAtTime(20, now + 0.75);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(400, now + 0.10);
+        filter.frequency.exponentialRampToValueAtTime(50, now + 0.75);
+        filter.Q.setValueAtTime(8, now + 0.10);
+
+        gainExplode.gain.setValueAtTime(0.0, now);
+        gainExplode.gain.setValueAtTime(0.48, now + 0.10);
+        gainExplode.gain.exponentialRampToValueAtTime(0.01, now + 0.75);
+
+        oscImplode.connect(gainImplode);
+        gainImplode.connect(ctx.destination);
+
+        oscExplode.connect(filter);
+        filter.connect(gainExplode);
+        gainExplode.connect(ctx.destination);
+
+        oscImplode.start(now);
+        oscImplode.stop(now + 0.12);
+
+        oscExplode.start(now + 0.10);
+        oscExplode.stop(now + 0.75);
         break;
       }
       case 'upgrade': {
@@ -594,7 +876,8 @@ const UPGRADES_REGISTRY = [
     description: 'Increase bullet speed by 3 (Capped at 20 max)',
     rarity: 'common',
     apply: () => {
-      player.bulletSpeed = Number((Math.min(20, player.bulletSpeed + 3.00)).toFixed(2));
+      const maxSpeed = selectedGun === 'pulse_cannon' ? 10.0 : 20.0;
+      player.bulletSpeed = Number((Math.min(maxSpeed, player.bulletSpeed + 3.00)).toFixed(2));
     }
   },
   {
@@ -653,10 +936,10 @@ const UPGRADES_REGISTRY = [
     id: 'firerate',
     name: 'Fire Rate Up',
     icon: '[FAST]',
-    description: 'Reduce fire rate cooldown by 45ms (min 150ms)',
+    description: 'Reduce fire rate cooldown by 45ms (min 200ms)',
     rarity: 'rare',
     apply: () => {
-      player.fireRate = Math.max(150, player.fireRate - 45);
+      player.fireRate = Math.max(200, player.fireRate - 45);
     }
   },
   {
@@ -748,7 +1031,8 @@ const UPGRADES_REGISTRY = [
     description: 'Adds +1 bullet! But all bullets deal -35% damage. Shoots parallel side-by-side; switches to narrow fan at 4+ bullets. (Capped at 8 bullets)',
     rarity: 'epic',
     apply: () => {
-      player.spreadShotCount = Math.min(7, player.spreadShotCount + 1);
+      const maxCount = selectedGun === 'pulse_cannon' ? 4 : (selectedGun === 'plasma_smg' ? 4 : 7);
+      player.spreadShotCount = Math.min(maxCount, player.spreadShotCount + 1);
     }
   },
   {
@@ -915,7 +1199,7 @@ const UPGRADES_REGISTRY = [
     id: 'killfrenzy',
     name: 'Kill Frenzy',
     icon: '[FRENZY]',
-    description: 'Defeat 10 zombies quickly to trigger +25% speed and +25% fire rate for 3s (Capped at 5s duration, 10s cooldown between activations)',
+    description: 'Defeat 10 zombies in 3s to trigger +25% speed and +25% fire rate for 3s. Each stack reduces kills needed (min 5) and cooldown by 1s (min 5s). (Capped at 5s duration)',
     rarity: 'rare',
     apply: () => {
       player.killFrenzyLevel = Math.min(6, player.killFrenzyLevel + 1);
@@ -955,7 +1239,7 @@ const UPGRADES_REGISTRY = [
     id: 'slowstart',
     name: 'Slow Start',
     icon: '[RAMP]',
-    description: 'Begin each wave at -60% attack speed. Speed ramps up linearly over 15 seconds to reach 2.5x. Stacks raise the cap to 3x.',
+    description: 'Begin each wave at -60% attack speed. Speed ramps up linearly over 10 seconds to reach 2.5x. Stacks raise the cap to 2.8x.',
     rarity: 'legendary',
     apply: () => {
       player.slowStartLevel = Math.min(3, player.slowStartLevel + 1);
@@ -969,17 +1253,17 @@ const UPGRADES_REGISTRY = [
 const UPGRADE_CAPS = {
   bomberturret:      () => player.bomberTurretLevel >= 5,
   rustyturret:       () => player.rustyTurretLevel >= 5,
-  doubleshot:        () => player.spreadShotCount >= 7,
+  doubleshot:        () => player.spreadShotCount >= (selectedGun === 'pulse_cannon' ? 4 : (selectedGun === 'plasma_smg' ? 4 : 7)),
   damage:            () => player.bulletDamage >= 100,
   speed:             () => player.speed >= 3.2,
   maxhealth:         () => player.maxHealth >= 350,
   heal:              () => player.waveHealPercentage >= 0.35,
-  bulletspeed:       () => player.bulletSpeed >= 20,
+  bulletspeed:       () => player.bulletSpeed >= (selectedGun === 'pulse_cannon' ? 10.0 : 20.0),
   thickskin:         () => player.damageReduction >= 0.50,
   runnershigh:       () => player.runnersHighLevel >= 5,   // 5 × 0.20 = 1.0 (speed cap)
   giantbullets:      () => player.bulletSizeModifier >= 1.2,
   retaliate:         () => player.retaliateLevel >= 4,     // 4 × 0.40 = 1.60 → clamped to 1.5 (speed cap)
-  firerate:          () => player.fireRate <= 150,
+  firerate:          () => player.fireRate <= 200,
   lifesteal:         () => player.lifestealAmount >= 5.0,
   knockbackrounds:   () => player.knockbackModifier >= 1.5,
   bouncingcasings:   () => player.bounceLimit >= 5,
@@ -1005,6 +1289,69 @@ const UPGRADE_CAPS = {
   rapidboots:        () => player.rapidBootsLevel >= 6,
 };
 
+const GUNS = {
+  pistol: {
+    id: 'pistol',
+    name: 'Pistol',
+    icon: '[GUN]',
+    price: 0,
+    rarity: 'common',
+    description: 'Reliable starter handgun. Fast base fire rate and works perfectly with all upgrades.',
+    stats: { bulletDamage: 10, fireRate: 500, bulletSpeed: 7 },
+    conflictIds: []
+  },
+  shotgun: {
+    id: 'shotgun',
+    name: 'Vector Shotgun',
+    icon: '[SGN]',
+    price: 3000,
+    rarity: 'rare',
+    description: 'Close-range crowd-clearing beast. Fires a fanned spread of 5 buckshot pellets that pack a heavy punch.',
+    stats: { bulletDamage: 8, fireRate: 750, bulletSpeed: 9 },
+    conflictIds: []
+  },
+  plasma_smg: {
+    id: 'plasma_smg',
+    name: 'Plasma SMG',
+    icon: '[SMG]',
+    price: 10000,
+    rarity: 'rare',
+    description: 'Rapid-fire tactical plasma hose. Alternates cyan and magenta laser bolts with slight automatic spread recoil.',
+    stats: { bulletDamage: 5, fireRate: 150, bulletSpeed: 14 },
+    conflictIds: []
+  },
+  charge_rifle: {
+    id: 'charge_rifle',
+    name: 'Charge Rifle',
+    icon: '[CHG]',
+    price: 35000,
+    rarity: 'epic',
+    description: 'Advanced high-voltage cyber rifle. Hold to charge, release to fire. Full charge inflicts 4x damage and auto-pierces all targets.',
+    stats: { bulletDamage: 14, fireRate: 600, bulletSpeed: 6.5 },
+    conflictIds: []
+  },
+  pulse_cannon: {
+    id: 'pulse_cannon',
+    name: 'Pulse Cannon',
+    icon: '[ORB]',
+    price: 50000,
+    rarity: 'legendary',
+    description: 'Legendary heavy singularity weapon. Fires slow, massive gravity orbs that implode and detonate in a massive 150px void pull.',
+    stats: { bulletDamage: 22, fireRate: 850, bulletSpeed: 4.8 },
+    conflictIds: ['pierce']
+  },
+  boomerang_disc: {
+    id: 'boomerang_disc',
+    name: 'Boomerang Disc',
+    icon: '[DISC]',
+    price: 15000,
+    rarity: 'epic',
+    description: 'Throws a spinning energy disc that flies out ~280px then curves back to you, shredding zombies on BOTH passes. Resets hit list on return!',
+    stats: { bulletDamage: 16, fireRate: 700, bulletSpeed: 8 },
+    conflictIds: []
+  }
+};
+
 // Combat Arrays
 let bullets = [];
 let zombies = [];
@@ -1014,6 +1361,7 @@ let lightningArcs = []; // For chain lightning cyan arc drawings
 let gameParticles = []; // For muzzle flashes, blood splatters, and impact sparks
 let explosions = [];    // For high-fidelity animated radial explosions
 let activeMines = [];   // For dropped explosive mines in world bounds
+let droppedCoins = [];  // For dropped physical coins from defeated zombies
 let activeTurrets = []; // For deployed Rusty Turrets
 let activeBomberTurrets = []; // For deployed Bomber Turrets
 let pendingSummons = []; // Necromancer warning circles before summoned enemies appear
@@ -1105,6 +1453,7 @@ function isBossWave(wave) {
   // the shielder introduction isn't buried under the Patient Zero fight.
   // After wave 45 the boss recurs every 25 waves (45, 70, 95, …).
   if (wave === 20) return true;
+  if (wave === 50) return true; // Dreadnaught
   if (wave < 45) return false;
   return (wave - 45) % 25 === 0;
 }
@@ -1284,6 +1633,7 @@ function bindCheatPanelQuickControls() {
     waveKillCount = 0;
     activeBoss = null;
     shielderDebutSpawned = false; // Reset so wave 40+ will guarantee the debut shielder
+    juggernautDebutSpawned = false;
 
     // Clear currently active entities on the board
     zombies = [];
@@ -1295,6 +1645,7 @@ function bindCheatPanelQuickControls() {
     activeMines = [];
     activeTurrets = [];
     activeBomberTurrets = [];
+    droppedCoins = [];
     pendingSummons = [];
 
     // If we were on the intermission/upgrade screen, forcibly exit it so the
@@ -1395,12 +1746,20 @@ function bindCheatPanelQuickControls() {
   if (bossBtn) {
     bossBtn.addEventListener('click', () => {
       if (!gameState.isRunning) return;
-      if (activeBoss) {
-        console.log('[CHEAT PANEL] Boss already active!');
-        return;
-      }
+      if (activeBoss) { console.log('[CHEAT PANEL] Boss already active!'); return; }
       spawnPatientZero();
       console.log('[CHEAT PANEL] Summoned Patient Zero boss!');
+    });
+  }
+
+  // Dreadnaught summon button
+  const reaperBtn = document.getElementById('cheat-summon-dreadnaught-btn');
+  if (reaperBtn) {
+    reaperBtn.addEventListener('click', () => {
+      if (!gameState.isRunning) return;
+      if (activeBoss) { console.log('[CHEAT PANEL] Boss already active!'); return; }
+      spawnDreadnaught();
+      console.log('[CHEAT PANEL] Summoned Dreadnaught!');
     });
   }
 }
@@ -1435,7 +1794,8 @@ function spawnSpecificZombie(type) {
     necromancer: { size: 46, health: 40, speed: 0.6, damage: 12, score: 50, attackCooldown: 1000 },
     exploder: { size: 42, health: 15, speed: 1.45, damage: 45, score: 25, attackCooldown: 1000 },
     rusher: { size: 46, health: 45, speed: 1.55, damage: 18, score: 40, attackCooldown: 1000 },
-    shielder: { size: 52, health: 90, speed: 0.50, damage: 10, score: 60, attackCooldown: 1000 }
+    shielder: { size: 52, health: 90, speed: 0.50, damage: 10, score: 60, attackCooldown: 1000 },
+    juggernaut: { size: 54, health: 380, speed: 0.65, damage: 16, score: 80, attackCooldown: 3200 }
   };
 
   const config = typesConfig[type] || typesConfig.normal;
@@ -1563,9 +1923,14 @@ window.addEventListener('resize', resizeCanvas);
 // Called when the player clicks "Start Game" or presses Enter.
 
 function startGame() {
-  // Read the player's name (use default if left blank)
-  const name = playerNameInput.value.trim();
-  gameState.playerName = name || 'Anonymous Survivor';
+  // Use account username if logged in, otherwise read the guest name input
+  if (currentUser && currentProfile) {
+    gameState.playerName = currentProfile.username;
+  } else {
+    const name = playerNameInput ? playerNameInput.value.trim() : '';
+    gameState.playerName = name || 'Anonymous Survivor';
+  }
+  coinsEarnedThisRun = 0;
 
   // Reset general game state
   gameState.score = 0;
@@ -1577,15 +1942,23 @@ function startGame() {
   waveZombiesSpawned = 0;
   isWaveIntermission = false;
   shielderDebutSpawned = false;
+  juggernautDebutSpawned = false;
 
   // Reset player configuration
   player.health = 100;
   player.maxHealth = 100;
   player.speed = 2.0;
   player.lastShotTime = 0;
-  player.bulletDamage = 10;
-  player.fireRate = 500;
-  player.bulletSpeed = 7;
+
+  // Apply selected gun base stats
+  const _gunStats = GUNS[selectedGun]?.stats || GUNS.pistol.stats;
+  player.bulletDamage = _gunStats.bulletDamage;
+  player.fireRate      = _gunStats.fireRate;
+  player.bulletSpeed   = _gunStats.bulletSpeed;
+
+  // Reset charge state
+  isCharging = false;
+  chargeStartTime = 0;
   player.doubleShotCount = 0;
   player.spreadShotCount = 0;
   player.bulletPierceLimit = 1;
@@ -1668,6 +2041,7 @@ function startGame() {
   activeMines = [];
   activeTurrets = [];
   activeBomberTurrets = [];
+  droppedCoins = [];
   pendingSummons = [];
   screenShake.amount = 0;
   screenShake.frames = 0;
@@ -1763,6 +2137,9 @@ function gameLoop(timestamp) {
 
 function update() {
   gameTick += 1;
+
+  // Update physical coin physics & pickup magnetic attraction
+  updateDroppedCoins();
 
   // Update Orbiting Defender rotating blades angle (molten blades orbit)
   if (player.orbitingDefenderLevel > 0) {
@@ -2224,10 +2601,6 @@ function update() {
   if (player.killFrenzyTimer > 0) {
     player.killFrenzyTimer -= 1;
     currentSpeed += player.speed * 0.25;
-    // When the active window expires, start the 10s reactivation cooldown
-    if (player.killFrenzyTimer === 0) {
-      player.killFrenzyCD = 1200; // 10 seconds at 120Hz
-    }
   }
 
   // Rapid Boots — passive penalty + burst timer + CD + trail
@@ -2376,7 +2749,7 @@ function update() {
   if (player.y > world.height - halfSize) player.y = world.height - halfSize;
 
   // 2. Continuous shooting behavior when holding down mouse
-  if (mouse.isDown) {
+  if (mouse.isDown && selectedGun !== 'charge_rifle') {
     shootWeapon();
   }
 
@@ -2404,7 +2777,21 @@ function update() {
     const spawnMultiplier = bullets.length > 20 ? 20 / bullets.length : 1.0;
 
     // Spawn floating sparks in bullet wake (ash/embers/smoke/ice motes - optimized probabilities to reduce CPU allocations)
-    if (b.isCryo) {
+    if (b.isBoomerangDisc) {
+      if (Math.random() < 0.28 * spawnMultiplier) {
+        const pColor = b.isFire ? '#ff6600' : (b.isCryo ? '#00ddff' : (b.isOverclocked ? '#ff0055' : '#44ff88'));
+        gameParticles.push({
+          x: b.x + (Math.random() - 0.5) * 8,
+          y: b.y + (Math.random() - 0.5) * 8,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: (Math.random() - 0.5) * 0.8,
+          size: Math.floor(Math.random() * 3) + 2,
+          color: pColor,
+          life: 0.8,
+          decay: Math.random() * 0.08 + 0.05
+        });
+      }
+    } else if (b.isCryo) {
       if (Math.random() < 0.15 * spawnMultiplier) {
         gameParticles.push({
           x: b.x + (Math.random() - 0.5) * 7,
@@ -2459,6 +2846,72 @@ function update() {
       }
     }
 
+    // Boomerang Disc return physics
+    if (b.isBoomerangDisc) {
+      b.spinAngle = (b.spinAngle || 0) + 0.45; // faster spinning visual rotation for higher impact feel
+
+      // Update trail history for beautiful neon ribbon trail
+      if (!b.trailHistory) b.trailHistory = [];
+      b.trailHistory.push({ x: b.x, y: b.y });
+      if (b.trailHistory.length > 12) {
+        b.trailHistory.shift();
+      }
+
+      if (b.boomerangPhase === 'outward') {
+        b.boomerangOutwardTicks += 1;
+        
+        // 100% Pinpoint Aim Accuracy: Fly perfectly straight on the outward phase.
+        // This ensures the initial throw functions exactly like a standard rifle/laser shot.
+        if (b.boomerangOutwardTicks >= b.boomerangMaxOutward) {
+          // Decelerate to a stop over 8 ticks at the peak of the throw
+          const decelProgress = (b.boomerangOutwardTicks - b.boomerangMaxOutward) / 8;
+          const decelFactor = Math.max(0, 1 - decelProgress);
+          b.vx *= decelFactor;
+          b.vy *= decelFactor;
+
+          if (decelProgress >= 1) {
+            // Switch to returning phase — reset hit list so enemies get hit again!
+            b.boomerangPhase = 'returning';
+            b.hitZombies = new Set();
+          }
+        }
+      }
+
+      if (b.boomerangPhase === 'returning') {
+        // Home toward the player's CURRENT position
+        const dx = player.x - b.x;
+        const dy = player.y - b.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < 25) {
+          // Disc reached the player — remove it
+          bullets.splice(i, 1);
+          continue;
+        }
+
+        // Beautiful Curved Returning Orbit Loop!
+        // We add a perpendicular velocity component that forces the returning disc to sweep
+        // outwards in a wide, elegant loop before spiraling directly back into the player.
+        // The curve decay ensures it smoothly locks onto the player's chest as it gets close.
+        const homeSpeed = player.bulletSpeed * 1.35;
+        const dirX = dx / dist;
+        const dirY = dy / dist;
+        
+        // Perpendicular vector for the sweeping curve (curving left or right)
+        const perpX = -dirY;
+        const perpY = dirX;
+        
+        // Curve strength decays as the disc approaches the player
+        const curveFactor = Math.min(1.0, dist / 320) * 0.52 * (b.curveDir || 1);
+        
+        const targetVx = (dirX + perpX * curveFactor) * homeSpeed;
+        const targetVy = (dirY + perpY * curveFactor) * homeSpeed;
+        
+        b.vx += (targetVx - b.vx) * 0.12; // smooth homing curve
+        b.vy += (targetVy - b.vy) * 0.12;
+      }
+    }
+
     b.x += b.vx;
     b.y += b.vy;
 
@@ -2467,8 +2920,8 @@ function update() {
       continue;
     }
 
-    // Handle world boundary collision (discard or bounce)
-    if (b.x < 0 || b.x > world.width || b.y < 0 || b.y > world.height) {
+    // Handle world boundary collision (discard or bounce) — boomerang discs skip this entirely
+    if (!b.isBoomerangDisc && (b.x < 0 || b.x > world.width || b.y < 0 || b.y > world.height)) {
       if (b.bounceLeft > 0) {
         b.bounceLeft -= 1;
 
@@ -2560,9 +3013,10 @@ function update() {
   // 4. Spawn zombies. Later waves spawn faster and in small batches.
   const now = Date.now();
 
-  // Boss wave: spawn Patient Zero at the start of the wave
+  // Boss wave: spawn the appropriate boss at the start of the wave
   if (isBossWave(gameState.wave) && !activeBoss && waveZombiesSpawned === 0) {
-    spawnPatientZero();
+    if (gameState.wave === 50) spawnDreadnaught();
+    else spawnPatientZero();
   }
 
   if (!isWaveIntermission && waveZombiesSpawned < waveZombiesTotal) {
@@ -2686,6 +3140,15 @@ function update() {
           slowFactor *= isFastType ? 0.20 : 0.30;
         }
 
+        // Pulse Cannon EMP slow effect (60% slow)
+        z.pulseSlowTicks = z.pulseSlowTicks || 0;
+        if (z.pulseSlowTicks > 0) {
+          z.pulseSlowTicks -= 1;
+          if (z.type !== 'rusher') {
+            slowFactor *= 0.40; // Heavy EMP slowdown
+          }
+        }
+
         const desiredSpeed = z.speed * slowFactor;
 
         let vx = 0;
@@ -2700,6 +3163,19 @@ function update() {
           if (currentLen > 0) {
             vx = (vx / currentLen) * desiredSpeed;
             vy = (vy / currentLen) * desiredSpeed;
+          }
+        } else if (z.type === 'juggernaut') {
+          // Juggernaut kites aggressively — backs away fast when player closes in
+          const jMin = 280, jMax = 420;
+          if (distance > jMax) {
+            vx = (zDx / distance) * desiredSpeed;
+            vy = (zDy / distance) * desiredSpeed;
+          } else if (distance < jMin) {
+            vx = -(zDx / distance) * desiredSpeed * 1.5; // backs away faster than it approaches
+            vy = -(zDy / distance) * desiredSpeed * 1.5;
+          } else {
+            vx = 0;
+            vy = 0;
           }
         } else if (z.type === 'spitter' || z.type === 'necromancer') {
           const sweetSpotMax = z.type === 'necromancer' ? 450 : 340;
@@ -2733,7 +3209,7 @@ function update() {
         if ((gameTick - z.lastStuckCheckTick) >= 90) {
           const movedSq  = (z.x - z.lastStuckCheckX) ** 2 + (z.y - z.lastStuckCheckY) ** 2;
           const minMove  = z.size * 0.35; // must travel at least 35% of own size in 90 ticks
-          if (movedSq < minMove * minMove && z.type !== 'spitter' && z.type !== 'necromancer') {
+          if (movedSq < minMove * minMove && z.type !== 'spitter' && z.type !== 'necromancer' && z.type !== 'juggernaut') {
             // Find nearest obstacle surface and push opposite to it
             let escX = zDx, escY = zDy; // fallback: toward player
             let bestD = Infinity;
@@ -2974,6 +3450,42 @@ function update() {
       }
     }
 
+    // Juggernaut fan cannon attack
+    if (z.type === 'juggernaut') {
+      if (distance < 500 && now - z.lastAttackTime >= z.attackCooldown) {
+        z.lastAttackTime = now;
+        const baseAngle = Math.atan2(zDy, zDx);
+        const fanShots = 6;
+        const fanSpacing = 0.20; // ~11.5° between shots, ~57° total spread
+        for (let f = 0; f < fanShots; f++) {
+          const offsetIndex = f - (fanShots - 1) / 2;
+          const shotAngle = baseAngle + offsetIndex * fanSpacing;
+          enemyProjectiles.push({
+            x: z.x,
+            y: z.y,
+            vx: Math.cos(shotAngle) * 2.0,
+            vy: Math.sin(shotAngle) * 2.0,
+            size: 20,
+            damage: z.damage,
+            color: '#ff6600',
+            isJuggernaut: true
+          });
+        }
+        // Muzzle flash particles
+        for (let p = 0; p < 8; p++) {
+          const pa = baseAngle + (Math.random() - 0.5) * 1.2;
+          gameParticles.push({
+            x: z.x, y: z.y,
+            vx: Math.cos(pa) * (Math.random() * 3 + 1),
+            vy: Math.sin(pa) * (Math.random() * 3 + 1),
+            size: Math.floor(Math.random() * 4) + 2,
+            color: Math.random() < 0.5 ? '#ff8800' : '#ffdd00',
+            life: 0.7, decay: Math.random() * 0.08 + 0.06
+          });
+        }
+      }
+    }
+
     // Shielder Zombie periodic shielding logic (Every 10 seconds, shields 5 random nearby active zombies)
     if (z.type === 'shielder') {
       z.lastShieldCastTime = z.lastShieldCastTime || now;
@@ -3106,6 +3618,226 @@ function update() {
       }
     }
 
+    // Dreadnaught boss AI
+    if (z.type === 'dreadnaught') {
+      const hpRatio = z.health / z.maxHealth;
+
+      // Spitting fire trail from dual reactor thrusters as it glides!
+      if (gameState.isRunning) {
+        const faceAngle = Math.atan2(player.y - z.y, player.x - z.x);
+        const dirX = Math.cos(faceAngle);
+        const dirY = Math.sin(faceAngle);
+        const perpX = -Math.sin(faceAngle);
+        const perpY = Math.cos(faceAngle);
+
+        // Rear thruster nozzles world coordinates (X: -36, Y: -17 and 17)
+        const t1x = z.x - dirX * 36 + perpX * -17;
+        const t1y = z.y - dirY * 36 + perpY * -17;
+        const t2x = z.x - dirX * 36 + perpX * 17;
+        const t2y = z.y - dirY * 36 + perpY * 17;
+
+        [ {x: t1x, y: t1y}, {x: t2x, y: t2y} ].forEach((thruster, tIdx) => {
+          // 1. High-speed central thermal flame plume (white-hot to neon orange needle)
+          const plumeAngle = faceAngle + Math.PI + (Math.random() - 0.5) * 0.15; // very narrow needle!
+          const plumeSpeed = 3.6 + Math.random() * 2.0; // high speed backward!
+          const pulseSize = 2 + Math.floor(Math.sin(gameTick * 0.3 + tIdx) * 1.5) + Math.random() * 1.5;
+
+          gameParticles.push({
+            x: thruster.x,
+            y: thruster.y,
+            vx: Math.cos(plumeAngle) * plumeSpeed + (Math.random() - 0.5) * 0.15,
+            vy: Math.sin(plumeAngle) * plumeSpeed + (Math.random() - 0.5) * 0.15,
+            size: Math.max(2, Math.min(6, pulseSize)),
+            // Thermal gradient: white-hot -> orange -> red
+            color: Math.random() > 0.65 ? '#ffffff' : (Math.random() > 0.35 ? '#ffaa00' : '#ff3300'),
+            life: 0.55,
+            decay: 0.09 + Math.random() * 0.04
+          });
+
+          // 2. Lingering mechanical charcoal smoke (creates a beautiful drifting wake trail)
+          if (gameTick % 3 === 0) {
+            const smokeAngle = faceAngle + Math.PI + (Math.random() - 0.5) * 0.5; // wider drift
+            const smokeSpeed = 0.8 + Math.random() * 1.2;
+            gameParticles.push({
+              x: thruster.x + (Math.random() - 0.5) * 4,
+              y: thruster.y + (Math.random() - 0.5) * 4,
+              vx: Math.cos(smokeAngle) * smokeSpeed + (Math.random() - 0.5) * 0.3,
+              vy: Math.sin(smokeAngle) * smokeSpeed + (Math.random() - 0.5) * 0.3,
+              size: Math.floor(Math.random() * 3) + 4, // expands slightly
+              color: 'rgba(54, 50, 68, 0.45)', // dark carbon exhaust smoke Y-tinted
+              life: 1.1,
+              decay: 0.03 + Math.random() * 0.02
+            });
+          }
+
+          // 3. Unstable plasma sparks venting out
+          if (Math.random() > 0.65) {
+            const sparkAngle = faceAngle + Math.PI + (Math.random() - 0.5) * 0.8; // wide sparks
+            const sparkSpeed = 2.0 + Math.random() * 2.5;
+            gameParticles.push({
+              x: thruster.x,
+              y: thruster.y,
+              vx: Math.cos(sparkAngle) * sparkSpeed,
+              vy: Math.sin(sparkAngle) * sparkSpeed,
+              size: Math.floor(Math.random() * 2) + 2,
+              color: '#ffdd00', // glowing heat spark
+              life: 0.4,
+              decay: 0.12
+            });
+          }
+        });
+      }
+
+      // Wraith Phase: below 40% HP take 55% reduced damage (handled in damageZombie)
+      z.isWraith = hpRatio <= 0.50;
+
+      // Tick down blink flash visual
+      if (z.blinkFlash > 0) z.blinkFlash -= 1;
+
+      // Blink — teleport to random position near screen edge every 6s
+      if (now - z.lastBlinkTime >= 6000) {
+        z.lastBlinkTime = now;
+        z.blinkFlash = 18;
+        // Departure — orange implosion rings + ember shard burst
+        gameParticles.push({ type: 'shockwave', x: z.x, y: z.y, maxRadius: 90, lineWidth: 4, color: '#ff6600', life: 1.0, decay: 0.10 });
+        gameParticles.push({ type: 'shockwave', x: z.x, y: z.y, maxRadius: 55, lineWidth: 2, color: '#ffffff', life: 1.0, decay: 0.14 });
+        for (let bp = 0; bp < 16; bp++) {
+          const ba = (bp / 16) * Math.PI * 2;
+          const spd = Math.random() * 4 + 2;
+          gameParticles.push({
+            x: z.x, y: z.y,
+            vx: Math.cos(ba) * spd, vy: Math.sin(ba) * spd,
+            size: Math.floor(Math.random() * 4) + 3,
+            color: bp % 3 === 0 ? '#ffffff' : bp % 3 === 1 ? '#ff6600' : '#ff3300',
+            life: 0.85, decay: Math.random() * 0.04 + 0.03
+          });
+        }
+        // Teleport to random screen-edge position
+        const blinkSide = Math.floor(Math.random() * 4);
+        const blinkBuf = 100;
+        if (blinkSide === 0) { z.x = camera.x + Math.random() * canvas.width; z.y = camera.y + blinkBuf; }
+        else if (blinkSide === 1) { z.x = camera.x + canvas.width - blinkBuf; z.y = camera.y + Math.random() * canvas.height; }
+        else if (blinkSide === 2) { z.x = camera.x + Math.random() * canvas.width; z.y = camera.y + canvas.height - blinkBuf; }
+        else { z.x = camera.x + blinkBuf; z.y = camera.y + Math.random() * canvas.height; }
+        z.x = Math.max(40, Math.min(world.width - 40, z.x));
+        z.y = Math.max(40, Math.min(world.height - 40, z.y));
+        // Arrival — orange expanding rings + ember burst
+        gameParticles.push({ type: 'shockwave', x: z.x, y: z.y, maxRadius: 110, lineWidth: 5, color: '#ff5500', life: 1.0, decay: 0.07 });
+        gameParticles.push({ type: 'shockwave', x: z.x, y: z.y, maxRadius: 70,  lineWidth: 3, color: '#ffaa00', life: 1.0, decay: 0.09 });
+        gameParticles.push({ type: 'shockwave', x: z.x, y: z.y, maxRadius: 40,  lineWidth: 2, color: '#ffffff', life: 1.0, decay: 0.13 });
+        for (let bp = 0; bp < 16; bp++) {
+          const ba = (bp / 16) * Math.PI * 2;
+          const spd = Math.random() * 3 + 1.5;
+          gameParticles.push({
+            x: z.x, y: z.y,
+            vx: Math.cos(ba) * spd, vy: Math.sin(ba) * spd,
+            size: Math.floor(Math.random() * 5) + 2,
+            color: bp % 3 === 0 ? '#ff6600' : bp % 3 === 1 ? '#ffaa00' : '#ffffff',
+            life: 0.75, decay: Math.random() * 0.04 + 0.03
+          });
+        }
+        startScreenShake(4, 8);
+      }
+
+      // Heavy Dual-Cannon Barrage — fires a colossal, balanced 4-bullet fan arc from EACH of its side-mounted cannons (8 bullets total!)
+      // (Provides a massive, devastating defensive spread that coordinates with the Dreadnought's heavy siege theme)
+      if (now - z.lastFanTime >= 5000 && gameState.isRunning) {
+        z.lastFanTime = now;
+        audio.playSfx('shoot'); // play discharge sound!
+
+        const fanBase = Math.atan2(player.y - z.y, player.x - z.x);
+        const dirX = Math.cos(fanBase);
+        const dirY = Math.sin(fanBase);
+        const perpX = -Math.sin(fanBase);
+        const perpY = Math.cos(fanBase);
+
+        // Scale sprite coords to world space (sprite base size = 56)
+        const _mScale = z.size / 56;
+        // Barrel tips are at sprite (21, ±36)
+        const topCannonX = z.x + dirX * (21 * _mScale) + perpX * (-36 * _mScale);
+        const topCannonY = z.y + dirY * (21 * _mScale) + perpY * (-36 * _mScale);
+        const bottomCannonX = z.x + dirX * (21 * _mScale) + perpX * (36 * _mScale);
+        const bottomCannonY = z.y + dirY * (21 * _mScale) + perpY * (36 * _mScale);
+
+        // 2. Fire 4 projectiles from top cannon AND 4 projectiles from bottom cannon (8 projectiles total!)
+        const fanSpacing = 0.13; // spacing between bullets in the fan
+        
+        // Firing loops for both cannons
+        [ {x: topCannonX, y: topCannonY}, {x: bottomCannonX, y: bottomCannonY} ].forEach(muzzle => {
+          for (let f = 0; f < 4; f++) {
+            const offsetIndex = f - 1.5; // offsets: -1.5, -0.5, 0.5, 1.5
+            const shotAngle = fanBase + offsetIndex * fanSpacing;
+            
+            enemyProjectiles.push({
+              x: muzzle.x,
+              y: muzzle.y,
+              vx: Math.cos(shotAngle) * 3.6,
+              vy: Math.sin(shotAngle) * 3.6,
+              size: 26,
+              damage: z.damage,
+              color: '#ff6600',
+              isDreadnaught: true
+            });
+          }
+        });
+
+        // 3. Spawn mechanical muzzle flashes at both cannon nozzles
+        [ {x: topCannonX, y: topCannonY}, {x: bottomCannonX, y: bottomCannonY} ].forEach(muzzle => {
+          for (let p = 0; p < 8; p++) {
+            const pa = fanBase + (Math.random() - 0.5) * 0.8;
+            const speed = Math.random() * 3 + 1;
+            gameParticles.push({
+              x: muzzle.x,
+              y: muzzle.y,
+              vx: Math.cos(pa) * speed + (Math.random() - 0.5) * 0.2,
+              vy: Math.sin(pa) * speed + (Math.random() - 0.5) * 0.2,
+              size: Math.floor(Math.random() * 4) + 2,
+              color: Math.random() > 0.4 ? '#cc0000' : '#ff4400',
+              life: 0.6,
+              decay: Math.random() * 0.08 + 0.05
+            });
+          }
+        });
+      }
+
+      // 75% HP summon wave — 4 Juggernauts + 1 Shielder, once only
+      if (!z.summonDone && hpRatio <= 0.75) {
+        z.summonDone = true;
+        startScreenShake(10, 16);
+        const summonTypes = ['juggernaut', 'juggernaut', 'juggernaut', 'juggernaut', 'shielder'];
+        const summonConfigs = {
+          juggernaut: { size: 66, health: 420, speed: 0.65, damage: 18, score: 80, attackCooldown: 3200 },
+          shielder:   { size: 52, health: 90,  speed: 0.50, damage: 10, score: 60, attackCooldown: 1000 }
+        };
+        summonTypes.forEach((sType, idx) => {
+          const sAngle = (idx / summonTypes.length) * Math.PI * 2;
+          const sx = Math.max(20, Math.min(world.width - 20, z.x + Math.cos(sAngle) * 160));
+          const sy = Math.max(20, Math.min(world.height - 20, z.y + Math.sin(sAngle) * 160));
+          const sc = summonConfigs[sType];
+          addScaledZombie({
+            type: sType, x: sx, y: sy,
+            size: sc.size, health: sc.health, maxHealth: sc.health,
+            speed: sc.speed, damage: sc.damage,
+            scoreValue: sc.score, lastAttackTime: 0,
+            attackCooldown: sc.attackCooldown
+          });
+          // Summon arrival particles
+          for (let sp = 0; sp < 8; sp++) {
+            const sa = Math.random() * Math.PI * 2;
+            gameParticles.push({
+              x: sx, y: sy,
+              vx: Math.cos(sa) * (Math.random() * 2.5 + 0.5),
+              vy: Math.sin(sa) * (Math.random() * 2.5 + 0.5),
+              size: Math.floor(Math.random() * 4) + 2,
+              color: Math.random() < 0.5 ? '#cc00ff' : '#ffffff',
+              life: 0.8, decay: 0.04
+            });
+          }
+        });
+        console.log('[BOSS] Dreadnaught summoned 4 Juggernauts + 1 Shielder at 75% HP!');
+      }
+    }
+
     // Exploder Bomber kamikaze proximity detonation
     if (z.type === 'exploder') {
       if (distance < (player.size / 2 + z.size / 2 + 5)) {
@@ -3211,6 +3943,58 @@ function update() {
         gameState.score += z.scoreValue;
         gameState.kills += 1;
         waveKillCount += 1;
+        if (currentUser) {
+          // Coin drop economy — scaled by zombie type and wave progression
+          // Wave bonus: every 5 waves, coin values increase by +1 (incentivizes longer runs)
+          const waveBonus = Math.floor(gameState.wave / 5);
+          let dropChance = 0;
+          let coinMin = 1;
+          let coinMax = 1;
+
+          switch (z.type) {
+            case 'normal':
+              dropChance = 0.35;
+              coinMin = 1; coinMax = 2;
+              break;
+            case 'fast':
+              dropChance = 0.30;
+              coinMin = 1; coinMax = 1;
+              break;
+            case 'tank':
+            case 'necromancer':
+              dropChance = 0.60;
+              coinMin = 2; coinMax = 4;
+              break;
+            case 'spitter':
+            case 'rusher':
+              dropChance = 0.50;
+              coinMin = 1; coinMax = 3;
+              break;
+            case 'exploder':
+            case 'shielder':
+              dropChance = 0.45;
+              coinMin = 2; coinMax = 3;
+              break;
+            case 'patient_zero':
+              dropChance = 1.0;
+              coinMin = 25; coinMax = 35;
+              break;
+            default:
+              dropChance = 0.35;
+              coinMin = 1; coinMax = 2;
+              break;
+          }
+
+          if (Math.random() < dropChance) {
+            const baseValue = coinMin + Math.floor(Math.random() * (coinMax - coinMin + 1)) + waveBonus;
+            // Drop as a burst of individual coins for satisfying visual scatter
+            const dropCount = z.type === 'patient_zero' ? baseValue : Math.min(baseValue, 5);
+            const coinPer = z.type === 'patient_zero' ? 1 : Math.max(1, Math.ceil(baseValue / dropCount));
+            for (let cd = 0; cd < dropCount; cd++) {
+              spawnPhysicalCoin(z.x, z.y, coinPer);
+            }
+          }
+        }
 
         // Kill Frenzy trigger logic
         if (player.killFrenzyLevel > 0) {
@@ -3226,9 +4010,13 @@ function update() {
             }
           }
           player.killFrenzyHistory.length = fhLen;
-          // Requires 10 kills in 3s and must not be on cooldown
-          if (player.killFrenzyHistory.length >= 10 && player.killFrenzyCD <= 0) {
+          // Kill threshold scales down per level (L1=10, L2=9 ... L6=5)
+          const frenzyThreshold = Math.max(5, 10 - (player.killFrenzyLevel - 1));
+          // Cooldown scales down per level (L1=10s, L2=9s ... L6=5s), in ticks at 120Hz
+          const frenzyCD = Math.max(600, 1200 - (player.killFrenzyLevel - 1) * 120);
+          if (player.killFrenzyHistory.length >= frenzyThreshold && player.killFrenzyCD <= 0) {
             player.killFrenzyTimer = Math.min(600, (player.killFrenzyTimer || 0) + 360); // add 3s (360 ticks), cap at 5s (600 ticks)
+            player.killFrenzyCD = frenzyCD;
             player.killFrenzyHistory = []; // reset kill window so back-to-back triggers are earned, not free
             // Spawn green/pink frenzy particles around the player
             for (let fP = 0; fP < 5; fP++) {
@@ -3291,6 +4079,26 @@ function update() {
       // If it's an exploder zombie, detonate it! (skipPlayerDamage=false, skipZombieDamage=true — no friendly fire)
       if (z.type === 'exploder') {
         triggerExplosion(z.x, z.y, z.damage, false, true);
+      }
+
+      // Dreadnaught defeated
+      if (z.type === 'dreadnaught') {
+        bossesDefeated += 1;
+        activeBoss = null;
+        startScreenShake(12, 20);
+        for (let bp = 0; bp < 25; bp++) {
+          const bAngle = Math.random() * Math.PI * 2;
+          const bForce = Math.random() * 4 + 1.5;
+          gameParticles.push({
+            x: z.x, y: z.y,
+            vx: Math.cos(bAngle) * bForce,
+            vy: Math.sin(bAngle) * bForce,
+            size: Math.floor(Math.random() * 5) + 3,
+            color: bp % 3 === 0 ? '#cc00ff' : bp % 3 === 1 ? '#ff88ff' : '#ffffff',
+            life: 1.2, decay: 0.03
+          });
+        }
+        console.log(`[BOSS] Dreadnaught defeated! Bosses killed: ${bossesDefeated}.`);
       }
 
       // Patient Zero boss defeated: apply permanent scaling and bonus score
@@ -3382,6 +4190,13 @@ function update() {
           break;
         }
 
+        // Pulse orb — custom void detonation
+        if (b.isPulseOrb) {
+          triggerPulseExplosion(b.x, b.y, Math.round(damageDealt * 1.5), b.isFire, b.isCryo);
+          bullets.splice(bIdx, 1);
+          break;
+        }
+
         damageZombie(z, damageDealt, true);
 
         // Cryo rounds slow zombies only when this specific bullet rolled cryo.
@@ -3433,12 +4248,64 @@ function update() {
           });
         }
 
-        // Apply physical knockback pushback force (Knockback Rounds)
-        const travelAngle = Math.atan2(b.vy, b.vx);
-        const pushForce = b.isTurretBullet ? 3 : (8 * (1 + player.knockbackModifier)); // base push 8px
-        if (z.type !== 'rusher' && z.type !== 'patient_zero') {
-          z.x += Math.cos(travelAngle) * pushForce;
-          z.y += Math.sin(travelAngle) * pushForce;
+        // Upgraded physical knockback pushback force (Knockback Rounds)
+        if (b.isChargedShot) {
+          const travelAngle = Math.atan2(b.vy, b.vx);
+          const chargePush = (12 + b.chargeFraction * 20) * (1 + player.knockbackModifier);
+          if (z.type !== 'rusher' && z.type !== 'patient_zero') {
+            z.x += Math.cos(travelAngle) * chargePush;
+            z.y += Math.sin(travelAngle) * chargePush;
+          }
+
+          if (b.isOverclocked) {
+            z.stunTicks = Math.max(z.stunTicks || 0, 90); // 0.75s stun on direct overclock hit
+          }
+
+          // Localized kinetic sonic thunder clap shockwave along piercing path!
+          if (b.chargeFraction >= 0.5) {
+            gameParticles.push({
+              type: 'shockwave',
+              x: b.x,
+              y: b.y,
+              maxRadius: 36 + b.chargeFraction * 36,
+              lineWidth: 1.8,
+              color: b.isOverclocked ? '#ff0033' : (b.chargeFraction >= 1.0 ? '#ffea00' : '#00ffff'),
+              life: 1.0,
+              decay: 0.08
+            });
+
+            // Knock back adjacent zombies slightly away from the rail piercing trajectory
+            zombies.forEach(nz => {
+              if (nz === z || nz.health <= 0 || nz.type === 'patient_zero') return;
+              const nzDx = nz.x - b.x;
+              const nzDy = nz.y - b.y;
+              const nzDist = Math.hypot(nzDx, nzDy);
+              const maxDist = 50 + b.chargeFraction * 40;
+              if (nzDist < maxDist) {
+                const sidePush = (4 + b.chargeFraction * 8) * (1 - nzDist / maxDist);
+                nz.x += (nzDx / nzDist) * sidePush;
+                nz.y += (nzDy / nzDist) * sidePush;
+
+                // Element infusion on adjacent shockwave hits!
+                if (b.isFire) {
+                  nz.burnTicks = Math.max(nz.burnTicks || 0, 180);
+                }
+                if (b.isCryo) {
+                  nz.cryoSlowTicks = 180;
+                }
+                if (b.isOverclocked) {
+                  nz.stunTicks = Math.max(nz.stunTicks || 0, 60); // 0.5s stun on adjacent overclock shockwave hit
+                }
+              }
+            });
+          }
+        } else {
+          const travelAngle = Math.atan2(b.vy, b.vx);
+          const pushForce = b.isTurretBullet ? 3 : (8 * (1 + player.knockbackModifier));
+          if (z.type !== 'rusher' && z.type !== 'patient_zero') {
+            z.x += Math.cos(travelAngle) * pushForce;
+            z.y += Math.sin(travelAngle) * pushForce;
+          }
         }
 
         // Trigger Splinter Shot bullet split
@@ -3622,33 +4489,54 @@ function renderUpgradeChoices() {
   }
   const rolledRarity = currentIntermissionRarity;
 
-  // Filter upgrades by rolled rarity, excluding anything already at its cap
+  // Filter upgrades by rolled rarity, excluding only capped upgrades; conflicts are shown locked
+  const gunConflicts = new Set(GUNS[selectedGun]?.conflictIds || []);
+  const activeGunName = GUNS[selectedGun]?.name || 'this weapon';
   const isNotCapped = u => !(UPGRADE_CAPS[u.id]?.());
   let pool = UPGRADES_REGISTRY.filter(u => u.rarity === rolledRarity && isNotCapped(u));
 
   // Fallback: if the rarity pool is exhausted (all capped), draw from any non-capped upgrade
   if (pool.length === 0) {
-    pool = UPGRADES_REGISTRY.filter(isNotCapped);
+    pool = UPGRADES_REGISTRY.filter(u => isNotCapped(u));
   }
 
-  // Pick unique random choices (or all available if pool size is smaller)
-  let shuffled = [...pool].sort(() => 0.5 - Math.random());
-  let selectedUpgrades = shuffled.slice(0, 3);
+  // Pick 3: try to include at least some non-conflict cards; conflicts can fill remaining slots
+  const compatible = pool.filter(u => !gunConflicts.has(u.id));
+  const incompatible = pool.filter(u => gunConflicts.has(u.id));
+  const shuffledCompat = [...compatible].sort(() => 0.5 - Math.random());
+  const shuffledIncompat = [...incompatible].sort(() => 0.5 - Math.random());
+  // Fill up to 3 slots: prefer compatible, pad with locked if needed
+  const combined = [...shuffledCompat, ...shuffledIncompat];
+  let selectedUpgrades = combined.slice(0, 3);
 
   selectedUpgrades.forEach(upgrade => {
+    const isLocked = gunConflicts.has(upgrade.id);
+
     // Create card element
     const card = document.createElement('div');
-    card.className = 'upgrade-card rarity-' + rolledRarity;
-    card.setAttribute('role', 'button');
-    card.setAttribute('tabindex', '0');
+    card.className = 'upgrade-card rarity-' + rolledRarity + (isLocked ? ' card-gun-locked' : '');
+    if (!isLocked) {
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+    }
     card.setAttribute('aria-label', `${upgrade.name}: ${upgrade.description}`);
-    card.title = `${upgrade.name}: ${upgrade.description}`;
+    card.title = isLocked
+      ? `Incompatible with ${activeGunName}`
+      : `${upgrade.name}: ${upgrade.description}`;
 
     // Rivets for retro styling
     const rivetTL = document.createElement('div'); rivetTL.className = 'rivet top-left'; card.appendChild(rivetTL);
     const rivetTR = document.createElement('div'); rivetTR.className = 'rivet top-right'; card.appendChild(rivetTR);
     const rivetBL = document.createElement('div'); rivetBL.className = 'rivet bottom-left'; card.appendChild(rivetBL);
     const rivetBR = document.createElement('div'); rivetBR.className = 'rivet bottom-right'; card.appendChild(rivetBR);
+
+    // Lock badge for incompatible upgrades
+    if (isLocked) {
+      const lockBadge = document.createElement('div');
+      lockBadge.className = 'card-lock-badge';
+      lockBadge.textContent = `⊘ INCOMPATIBLE WITH ${activeGunName.toUpperCase()}`;
+      card.appendChild(lockBadge);
+    }
 
     // Card Icon (Bracketed Text)
     const icon = document.createElement('div');
@@ -3665,8 +4553,23 @@ function renderUpgradeChoices() {
     // Card Description
     const desc = document.createElement('p');
     desc.className = 'upgrade-card-desc';
-    desc.textContent = upgrade.description;
+    let displayedDescription = upgrade.description;
+    if (upgrade.id === 'bulletspeed' && selectedGun === 'pulse_cannon') {
+      displayedDescription = 'Increase bullet speed by 3 (Capped at 10 max for Pulse Cannon)';
+    } else if (upgrade.id === 'doubleshot' && selectedGun === 'pulse_cannon') {
+      displayedDescription = 'Adds +1 bullet! But all bullets deal -35% damage. Shoots parallel side-by-side; switches to narrow fan at 4+ bullets. (Capped at 5 bullets for Pulse Cannon)';
+    } else if (upgrade.id === 'doubleshot' && selectedGun === 'shotgun') {
+      displayedDescription = 'Adds +2 extra pellets per stack! But all pellets deal -35% damage. More buckshot = more crowd devastation. (Capped at 7 stacks)';
+    } else if (upgrade.id === 'doubleshot' && selectedGun === 'plasma_smg') {
+      displayedDescription = 'Adds +1 extra bolt per burst! But all bolts deal -35% damage. Extra bolts spray at the same target — more focused firepower, not spread. (Capped at 5 bolts for Plasma SMG)';
+    }
+    desc.textContent = displayedDescription;
     card.appendChild(desc);
+
+    if (isLocked) {
+      container.appendChild(card);
+      return; // no click handler for locked cards
+    }
 
     // Bind click trigger
     card.addEventListener('click', () => {
@@ -3692,6 +4595,7 @@ function renderUpgradeChoices() {
       waveStartTick = gameTick;
       activeBoss = null;
       shielderDebutSpawned = false; // Reset each wave so wave 40+ can force the debut shielder
+      juggernautDebutSpawned = false;
       waveZombiesTotal = isBossWave(gameState.wave)
         ? Math.floor(getWaveZombieTotal(gameState.wave) * 0.4)
         : getWaveZombieTotal(gameState.wave);
@@ -3704,6 +4608,7 @@ function renderUpgradeChoices() {
       lightningArcs = [];
       gameParticles = [];
       pendingSummons = [];
+      droppedCoins = [];
       isWaveIntermission = false;
       lastZombieSpawnTime = Date.now(); // breathing room before spawn
 
@@ -3772,7 +4677,10 @@ function spawnZombie() {
   // At wave 40+, guarantee one shielder as the very first spawn so the debut
   // is never buried by bad RNG (15% chance could take many spawns to hit).
   let zombieType;
-  if (gameState.wave >= 40 && !shielderDebutSpawned) {
+  if (gameState.wave >= 51 && !juggernautDebutSpawned) {
+    zombieType = 'juggernaut';
+    juggernautDebutSpawned = true;
+  } else if (gameState.wave >= 40 && !shielderDebutSpawned) {
     zombieType = 'shielder';
     shielderDebutSpawned = true;
   } else {
@@ -3870,6 +4778,22 @@ function spawnZombie() {
       attackCooldown: 1000,
       hasHitPlayer: false
     });
+  } else if (zombieType === 'juggernaut') {
+    // Spawn Juggernaut (Long-range armored tank that fires a fan of cannon blasts)
+    console.log(`[SPAWNER] Spawning Juggernaut at wave ${gameState.wave}`);
+    addScaledZombie({
+      type: 'juggernaut',
+      x: zx,
+      y: zy,
+      size: 66,
+      health: 420,
+      maxHealth: 420,
+      speed: 0.65,
+      damage: 18,
+      scoreValue: 80,
+      lastAttackTime: 0,
+      attackCooldown: 3200,
+    });
   } else if (zombieType === 'shielder') {
     // Spawn Shield Zombie (Heavy technology armored elite)
     console.log(`[SPAWNER] Spawning Shield Zombie (shielder) at wave ${gameState.wave}`);
@@ -3946,6 +4870,45 @@ function spawnPatientZero() {
   console.log(`[BOSS] Patient Zero spawned on wave ${gameState.wave}! HP: ${baseHP}`);
 }
 
+function spawnDreadnaught() {
+  let bx, by;
+  const side = Math.floor(Math.random() * 4);
+  const buf = 120;
+  if (side === 0) { bx = camera.x + Math.random() * canvas.width; by = camera.y - buf; }
+  else if (side === 1) { bx = camera.x + canvas.width + buf; by = camera.y + Math.random() * canvas.height; }
+  else if (side === 2) { bx = camera.x + Math.random() * canvas.width; by = camera.y + canvas.height + buf; }
+  else { bx = camera.x - buf; by = camera.y + Math.random() * canvas.height; }
+  bx = Math.max(30, Math.min(world.width - 30, bx));
+  by = Math.max(30, Math.min(world.height - 30, by));
+
+  const bossHealthScale = 1 + bossesDefeated * 0.15; // Scales harder than Patient Zero (+15% vs +10%)
+  const baseHP = Math.ceil((1600 + gameState.wave * 80) * bossHealthScale);
+
+  const boss = {
+    type: 'dreadnaught',
+    x: bx, y: by,
+    size: 162,
+    health: baseHP,
+    maxHealth: baseHP,
+    speed: 1.45,
+    damage: 20,
+    scoreValue: 600,
+    lastAttackTime: 0,
+    attackCooldown: 800,
+    lastBlinkTime: Date.now() + 4000, // 4s breathing room before first blink
+    lastFanTime: Date.now() + 3000,   // 3s breathing room before first fan
+    summonDone: false,
+    isWraith: false,
+    blinkFlash: 0 // visual flash timer after blink
+  };
+
+  zombies.push(boss);
+  activeBoss = boss;
+  audio.playSfx('bossSpawn');
+  startScreenShake(10, 15);
+  console.log(`[BOSS] Dreadnaught spawned on wave ${gameState.wave}! HP: ${baseHP}`);
+}
+
 /**
  * Fires a single pair of massive radioactive projectiles (one from the left claw, one from the right claw)
  * directly towards the player's position, representing a rapid-fire consecutive burst.
@@ -4003,6 +4966,7 @@ function fireSingleBossClawShot(boss, zDx, zDy) {
         size: Math.floor(Math.random() * 3) + 3,
         color: Math.random() > 0.4 ? '#39ff14' : '#ffff00', // glowing neon slime-green/yellow sparks
         life: 0.7,
+        decay: Math.random() * 0.08 + 0.06
       });
     }
   });
@@ -4155,15 +5119,29 @@ function chooseZombieType(wave) {
     return 'normal';
   }
 
-  // Wave 40+: Debut SHIELD zombies!
-  const shielderChance = wave === 40 ? 0.35 : 0.15; // 35% prominent debut on Wave 40, 15% on Wave 41+
-  if (roll < shielderChance) return 'shielder';      // debuts at wave 40!
-  if (roll < shielderChance + 0.12) return 'exploder';
-  if (roll < shielderChance + 0.22) return 'rusher';
-  if (roll < shielderChance + 0.32) return 'necromancer';
-  if (roll < shielderChance + 0.45) return 'spitter';
-  if (roll < shielderChance + 0.60) return 'tank';
-  if (roll < shielderChance + 0.76) return 'fast';
+  // Wave 40-50: Debut SHIELD zombies! (Wave 50 is Dreadnaught boss wave — no juggernauts in pool yet)
+  if (wave < 51) {
+    const shielderChance = wave === 40 ? 0.35 : 0.15;
+    if (roll < shielderChance) return 'shielder';
+    if (roll < shielderChance + 0.12) return 'exploder';
+    if (roll < shielderChance + 0.22) return 'rusher';
+    if (roll < shielderChance + 0.32) return 'necromancer';
+    if (roll < shielderChance + 0.45) return 'spitter';
+    if (roll < shielderChance + 0.60) return 'tank';
+    if (roll < shielderChance + 0.76) return 'fast';
+    return 'normal';
+  }
+
+  // Wave 51+: Debut JUGGERNAUT zombies! (Wave 50 is Dreadnaught boss — Juggernauts debut there via summon)
+  const jugChance = wave === 51 ? 0.30 : 0.12; // prominent debut on wave 51
+  if (roll < jugChance) return 'juggernaut';         // debuts at wave 50!
+  if (roll < jugChance + 0.12) return 'shielder';
+  if (roll < jugChance + 0.22) return 'exploder';
+  if (roll < jugChance + 0.31) return 'rusher';
+  if (roll < jugChance + 0.40) return 'necromancer';
+  if (roll < jugChance + 0.52) return 'spitter';
+  if (roll < jugChance + 0.65) return 'tank';
+  if (roll < jugChance + 0.80) return 'fast';
   return 'normal';
 }
 
@@ -4574,6 +5552,12 @@ function damagePlayer(rawAmount) {
   startScreenShake(7, 12);
   updateHUD();
 
+  // Interrupt charge rifle upon taking damage
+  if (isCharging) {
+    isCharging = false;
+    audio.stopChargeSound();
+  }
+
   // 4. Trigger Retaliate speed boost
   if (player.retaliateLevel > 0) {
     const duration = Math.min(6000, 2000 * player.retaliateLevel); // 2s per stack, cap 6s
@@ -4681,10 +5665,10 @@ function shootWeapon() {
     currentFireRate *= 0.75; // +25% fire rate reduction (faster firing)
   }
 
-  // Slow Start ramp: starts at 0.4x speed (-60%), scales linearly to maxMult speed (2.5x–3x) over 15 seconds (1800 ticks at 120Hz)
+  // Slow Start ramp: starts at 0.4x speed (-60%), scales linearly to maxMult speed (2.5x–2.8x) over 10 seconds (1200 ticks at 120Hz)
   if (player.slowStartLevel > 0) {
-    const maxMult = Math.min(3.0, 2.25 + player.slowStartLevel * 0.25); // L1=2.5x, L2=2.75x, L3=3.0x
-    const progress = Math.min(1, (gameTick - waveStartTick) / 1800); // 15 seconds at 120Hz = 1800 ticks
+    const maxMult = Math.min(2.8, 2.35 + player.slowStartLevel * 0.15); // L1=2.5x, L2=2.65x, L3=2.8x
+    const progress = Math.min(1, (gameTick - waveStartTick) / 1200); // 10 seconds at 120Hz = 1200 ticks
     const startCd = currentFireRate * 2.5; // 0.4x fire speed = 2.5× cooldown (-60%)
     const endCd = currentFireRate / maxMult;
     currentFireRate = Math.max(50, startCd + (endCd - startCd) * progress);
@@ -4692,13 +5676,32 @@ function shootWeapon() {
 
   // Bullet spawn rate cooldown check
   if (now - player.lastShotTime >= currentFireRate) {
-    audio.playSfx('shoot');
+    if (selectedGun === 'pulse_cannon') {
+      audio.playSfx('shoot_pulse');
+    } else if (selectedGun === 'shotgun') {
+      audio.playSfx('shoot_shotgun');
+    } else if (selectedGun === 'plasma_smg') {
+      audio.playSfx('shoot_smg');
+    } else if (selectedGun === 'boomerang_disc') {
+      audio.playSfx('shoot_disc');
+    } else {
+      audio.playSfx('shoot');
+    }
     // 1. Calculate angle from player's screen position to mouse cursor screen coordinates
     const playerScreenX = player.x - camera.x;
     const playerScreenY = player.y - camera.y;
     const aimDx = mouse.x - playerScreenX;
     const aimDy = mouse.y - playerScreenY;
     const angle = Math.atan2(aimDy, aimDx);
+
+    if (selectedGun === 'pulse_cannon') {
+      // Powerful physics recoil pushback
+      player.x -= Math.cos(angle) * 3.8;
+      player.y -= Math.sin(angle) * 3.8;
+      player.x = Math.max(20, Math.min(world.width - 20, player.x));
+      player.y = Math.max(20, Math.min(world.height - 20, player.y));
+      startScreenShake(4, 5);
+    }
 
     // Increment and check Overclocked Weapon count
     let isOverclocked = false;
@@ -4727,75 +5730,200 @@ function shootWeapon() {
     }
     // Burn Bullet damage boost is now applied on an individual bullet basis (under Chunk 6/7)
     let finalSize = 10 * (1 + player.bulletSizeModifier); // Giant Bullets modifier
+    const pulseOrbSize = 26 * (1 + player.bulletSizeModifier); // Pulse orb scales with Giant Bullets
 
     if (isOverclocked) {
       finalDamage = Math.round(finalDamage * 1.5); // +50% damage
       finalSize *= 1.5; // larger projectile visual
     }
 
-    if (totalBullets < 4) {
-      // Perfectly parallel side-by-side bullets for 1, 2, or 3 bullets
-      const parallelSpacing = 14; // side-by-side spacing in pixels
-      const perpX = -Math.sin(angle);
-      const perpY = Math.cos(angle);
+    if (selectedGun === 'shotgun') {
+      // Physical recoil kickback
+      player.x -= Math.cos(angle) * 3.5;
+      player.y -= Math.sin(angle) * 3.5;
+      player.x = Math.max(20, Math.min(world.width - 20, player.x));
+      player.y = Math.max(20, Math.min(world.height - 20, player.y));
+      startScreenShake(3, 4);
 
-      for (let p = 0; p < totalBullets; p++) {
-        const parallelOffset = p - (totalBullets - 1) / 2;
-        const ox = parallelOffset * parallelSpacing * perpX;
-        const oy = parallelOffset * parallelSpacing * perpY;
+      const pellets = 5 + player.spreadShotCount * 2;
+      const fanSpacing = 0.07;
+      for (let s = 0; s < pellets; s++) {
+        const offsetIndex = s - (pellets - 1) / 2;
+        const pelletAngle = angle + offsetIndex * fanSpacing;
         const element = rollBulletElement();
-
         bullets.push({
-          x: player.x + ox,
-          y: player.y + oy,
-          vx: Math.cos(angle) * player.bulletSpeed,
-          vy: Math.sin(angle) * player.bulletSpeed,
-          size: finalSize,
+          x: player.x,
+          y: player.y,
+          vx: Math.cos(pelletAngle) * player.bulletSpeed,
+          vy: Math.sin(pelletAngle) * player.bulletSpeed,
+          size: finalSize * 0.7, // shotgun pellets are smaller circular sparks
           damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
           age: 0,
           pierceLeft: player.bulletPierceLimit,
           maxBounces: player.bounceLimit,
-          bounceLeft: player.bounceLimit, // Bouncing Casings Limit
+          bounceLeft: player.bounceLimit,
           hitZombies: new Set(),
           isShrapnel: false,
-          life: 150, // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
+          life: 80, // short range!
           isFire: element.isFire,
           isCryo: element.isCryo,
-          isOverclocked: isOverclocked
+          isOverclocked: isOverclocked,
+          isPulseOrb: false,
+          isShotgunPellet: true
         });
-
-        // Spawn barrel flash at each starting muzzle point offset
-        spawnMuzzleFlash(player.x + ox, player.y + oy, angle);
+        spawnMuzzleFlash(player.x, player.y, pelletAngle);
       }
-    } else {
-      // Fan shape for 4 or more bullets, but not too wide so players can still aim
-      const fanAngleSpacing = 0.08; // Narrow fanning angle spacing (~4.5 degrees)
-
-      for (let i = 0; i < totalBullets; i++) {
-        const offsetIndex = i - (totalBullets - 1) / 2;
-        const currentAngle = angle + offsetIndex * fanAngleSpacing;
+    } else if (selectedGun === 'plasma_smg') {
+      // SMG fires 1 + spreadShotCount bolts per shot — each bolt gets independent spray
+      // This keeps the SMG as a focused rapid-fire hose, NOT a spread weapon like the shotgun
+      const smgBolts = 1 + player.spreadShotCount;
+      for (let s = 0; s < smgBolts; s++) {
+        // Each bolt gets its own independent random spray — all aimed at same target with natural recoil variance
+        const boltAngle = angle + (Math.random() - 0.5) * 0.14;
         const element = rollBulletElement();
-
         bullets.push({
           x: player.x,
           y: player.y,
-          vx: Math.cos(currentAngle) * player.bulletSpeed,
-          vy: Math.sin(currentAngle) * player.bulletSpeed,
-          size: finalSize,
+          vx: Math.cos(boltAngle) * player.bulletSpeed,
+          vy: Math.sin(boltAngle) * player.bulletSpeed,
+          size: finalSize * 0.85,
           damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
           age: 0,
+          pierceLeft: player.bulletPierceLimit,
           maxBounces: player.bounceLimit,
           bounceLeft: player.bounceLimit,
           hitZombies: new Set(),
           isShrapnel: false,
-          life: 150, // Bullet expires in 150 frames (~2.5 seconds) to balance bouncing bullets
+          life: 145,
           isFire: element.isFire,
           isCryo: element.isCryo,
-          isOverclocked: isOverclocked
+          isOverclocked: isOverclocked,
+          isPulseOrb: false,
+          isPlasmaSMG: true,
+          isPink: Math.random() < 0.5
         });
+        spawnMuzzleFlash(player.x, player.y, boltAngle);
+      }
+    } else if (selectedGun === 'boomerang_disc') {
+      // Boomerang Disc: fires spinning discs that fly outward, decelerate, then return to player
+      const discCount = 1 + player.spreadShotCount;
+      for (let d = 0; d < discCount; d++) {
+        let discAngle;
+        if (discCount === 1) {
+          discAngle = angle;
+        } else {
+          // Wide fan so multi-disc looks like deliberate spread throws, not a shotgun
+          const fanSpacing = 0.22;
+          const offsetIndex = d - (discCount - 1) / 2;
+          discAngle = angle + offsetIndex * fanSpacing;
+        }
+        const element = rollBulletElement();
+        
+        // Pierce Upgrade Synergy: Since the Boomerang Disc natively has infinite pierce (999),
+        // we scale its damage (+15% per level) and size (+10% per level) for each Pierce upgrade (above the base of 1).
+        const pierceLevel = Math.max(0, player.bulletPierceLimit - 1);
+        const pierceDamageMult = 1 + pierceLevel * 0.15;
+        const pierceSizeMult = 1 + pierceLevel * 0.10;
 
-        // Spawn barrel flash at each muzzle direction
-        spawnMuzzleFlash(player.x, player.y, currentAngle);
+        const baseDiscDamage = element.isFire ? Math.round(finalDamage * 1.10) : finalDamage;
+        const scaledDamage = Math.round(baseDiscDamage * pierceDamageMult);
+        const scaledSize = finalSize * 1.5 * pierceSizeMult;
+
+        bullets.push({
+          x: player.x,
+          y: player.y,
+          vx: Math.cos(discAngle) * player.bulletSpeed,
+          vy: Math.sin(discAngle) * player.bulletSpeed,
+          size: scaledSize, 
+          damage: scaledDamage,
+          age: 0,
+          pierceLeft: 999, // discs always pass through; hitZombies prevents double-hit per pass
+          maxBounces: 0,
+          bounceLeft: 0,
+          hitZombies: new Set(),
+          isShrapnel: false,
+          life: 400, // long life to complete the round trip
+          isFire: element.isFire,
+          isCryo: element.isCryo,
+          isOverclocked: isOverclocked,
+          isPulseOrb: false,
+          isBoomerangDisc: true,
+          boomerangPhase: 'outward', // 'outward' → 'returning'
+          boomerangOutwardTicks: 0,
+          boomerangMaxOutward: 58, // Increased range from 35 to 58 (~464px at speed 8 before returning)
+          spinAngle: 0,
+          trailHistory: [],
+          curveDir: (d % 2 === 0 ? 1 : -1) // alternate curving left vs right for majestic symmetric blooms!
+        });
+        spawnMuzzleFlash(player.x, player.y, discAngle);
+      }
+    } else {
+      if (totalBullets < 4) {
+        // Perfectly parallel side-by-side bullets for 1, 2, or 3 bullets
+        const parallelSpacing = 14; // side-by-side spacing in pixels
+        const perpX = -Math.sin(angle);
+        const perpY = Math.cos(angle);
+
+        for (let p = 0; p < totalBullets; p++) {
+          const parallelOffset = p - (totalBullets - 1) / 2;
+          const ox = parallelOffset * parallelSpacing * perpX;
+          const oy = parallelOffset * parallelSpacing * perpY;
+          const element = rollBulletElement();
+
+          bullets.push({
+            x: player.x + ox,
+            y: player.y + oy,
+            vx: Math.cos(angle) * player.bulletSpeed,
+            vy: Math.sin(angle) * player.bulletSpeed,
+            size: selectedGun === 'pulse_cannon' ? pulseOrbSize : finalSize,
+            damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
+            age: 0,
+            pierceLeft: player.bulletPierceLimit,
+            maxBounces: player.bounceLimit,
+            bounceLeft: player.bounceLimit,
+            hitZombies: new Set(),
+            isShrapnel: false,
+            life: 150,
+            isFire: element.isFire,
+            isCryo: element.isCryo,
+            isOverclocked: isOverclocked,
+            isPulseOrb: selectedGun === 'pulse_cannon'
+          });
+
+          // Spawn barrel flash at each starting muzzle point offset
+          spawnMuzzleFlash(player.x + ox, player.y + oy, angle);
+        }
+      } else {
+        // Fan shape for 4 or more bullets, but not too wide so players can still aim
+        const fanAngleSpacing = 0.08; // Narrow fanning angle spacing (~4.5 degrees)
+
+        for (let i = 0; i < totalBullets; i++) {
+          const offsetIndex = i - (totalBullets - 1) / 2;
+          const currentAngle = angle + offsetIndex * fanAngleSpacing;
+          const element = rollBulletElement();
+
+          bullets.push({
+            x: player.x,
+            y: player.y,
+            vx: Math.cos(currentAngle) * player.bulletSpeed,
+            vy: Math.sin(currentAngle) * player.bulletSpeed,
+            size: selectedGun === 'pulse_cannon' ? pulseOrbSize : finalSize,
+            damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
+            age: 0,
+            maxBounces: player.bounceLimit,
+            bounceLeft: player.bounceLimit,
+            hitZombies: new Set(),
+            isShrapnel: false,
+            life: 150,
+            isFire: element.isFire,
+            isCryo: element.isCryo,
+            isOverclocked: isOverclocked,
+            isPulseOrb: selectedGun === 'pulse_cannon'
+          });
+
+          // Spawn barrel flash at each muzzle direction
+          spawnMuzzleFlash(player.x, player.y, currentAngle);
+        }
       }
     }
 
@@ -4812,6 +5940,233 @@ function shootWeapon() {
     // 4. Update last shot timestamp
     player.lastShotTime = now;
   }
+}
+
+const MIN_CHARGE_MS = 350; // Must hold at least 350ms — prevents spam-click abuse
+
+function fireChargeRifle() {
+  if (!isCharging) return;
+  isCharging = false;
+
+  const chargeMs = Date.now() - chargeStartTime;
+  if (chargeMs < MIN_CHARGE_MS) return; // Too short — misfire, no bullet
+
+  const chargeFraction = Math.min(1.0, chargeMs / getDynamicMaxChargeMs());
+  const isFullCharge = chargeFraction >= 1.0;
+
+  const playerScreenX = player.x - camera.x;
+  const playerScreenY = player.y - camera.y;
+  const angle = Math.atan2(mouse.y - playerScreenY, mouse.x - playerScreenX);
+
+  // Increment and check Overclocked Weapon count
+  let isOverclocked = false;
+  if (player.overclockLevel > 0) {
+    player.overclockShotCounter += 1;
+    const threshold = Math.max(5, 10 - (player.overclockLevel - 1));
+    if (player.overclockShotCounter >= threshold) {
+      player.overclockShotCounter = 0;
+      isOverclocked = true;
+    }
+  }
+
+  const damageMult = 1.0 + chargeFraction * 3.0; // Buffed full charge to 4x damage! (1x–4x)
+  let finalDamage = Math.round(player.bulletDamage * damageMult);
+  let finalSize = 10 * (1 + player.bulletSizeModifier) * (0.7 + chargeFraction * 0.9); // oversized rail blast
+
+  if (isOverclocked) {
+    finalDamage = Math.round(finalDamage * 1.5); // +50% damage
+    finalSize *= 1.5; // larger projectile visual
+  }
+
+  const finalPierce = isFullCharge ? 999 : player.bulletPierceLimit;
+
+  const totalBeams = 1 + player.spreadShotCount;
+  // Double Shot penalty applies to spread beams the same as normal bullets
+  if (player.spreadShotCount > 0) {
+    finalDamage = Math.max(1, Math.round(finalDamage * 0.65));
+  }
+
+  if (totalBeams < 4) {
+    // Parallel side-by-side beams for 1–3
+    const perpX = -Math.sin(angle);
+    const perpY = Math.cos(angle);
+    const parallelSpacing = 16;
+
+    for (let p = 0; p < totalBeams; p++) {
+      const parallelOffset = p - (totalBeams - 1) / 2;
+      const ox = parallelOffset * parallelSpacing * perpX;
+      const oy = parallelOffset * parallelSpacing * perpY;
+      const element = rollBulletElement();
+
+      bullets.push({
+        x: player.x + ox, y: player.y + oy,
+        vx: Math.cos(angle) * player.bulletSpeed,
+        vy: Math.sin(angle) * player.bulletSpeed,
+        size: finalSize,
+        damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
+        age: 0,
+        pierceLeft: finalPierce,
+        maxBounces: player.bounceLimit,
+        bounceLeft: player.bounceLimit,
+        hitZombies: new Set(),
+        isShrapnel: false,
+        life: 220,
+        isFire: element.isFire,
+        isCryo: element.isCryo,
+        isOverclocked: isOverclocked,
+        isChargedShot: true,
+        chargeFraction
+      });
+
+      spawnMuzzleFlash(player.x + ox, player.y + oy, angle);
+    }
+  } else {
+    // Fan shape for 4+ beams
+    const fanAngleSpacing = 0.08;
+
+    for (let p = 0; p < totalBeams; p++) {
+      const offsetIndex = p - (totalBeams - 1) / 2;
+      const beamAngle = angle + offsetIndex * fanAngleSpacing;
+      const element = rollBulletElement();
+
+      bullets.push({
+        x: player.x, y: player.y,
+        vx: Math.cos(beamAngle) * player.bulletSpeed,
+        vy: Math.sin(beamAngle) * player.bulletSpeed,
+        size: finalSize,
+        damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
+        age: 0,
+        pierceLeft: finalPierce,
+        maxBounces: player.bounceLimit,
+        bounceLeft: player.bounceLimit,
+        hitZombies: new Set(),
+        isShrapnel: false,
+        life: 220,
+        isFire: element.isFire,
+        isCryo: element.isCryo,
+        isOverclocked: isOverclocked,
+        isChargedShot: true,
+        chargeFraction
+      });
+
+      spawnMuzzleFlash(player.x, player.y, beamAngle);
+    }
+  }
+  
+  if (isFullCharge) {
+    audio.playSfx('shoot_charge');
+  } else {
+    audio.playSfx('shoot');
+  }
+
+  // Dynamic physical recoil kickback (up to 8.0px pushback at full charge)
+  const recoilForce = 1.8 + chargeFraction * 6.2;
+  player.x -= Math.cos(angle) * recoilForce;
+  player.y -= Math.sin(angle) * recoilForce;
+  player.x = Math.max(20, Math.min(world.width - 20, player.x));
+  player.y = Math.max(20, Math.min(world.height - 20, player.y));
+
+  // Dynamic screen shake (up to 8 magnitude at full charge)
+  const shakeAmt = 2 + Math.floor(chargeFraction * 6);
+  startScreenShake(shakeAmt, shakeAmt + 2);
+
+  player.lastShotTime = Date.now();
+}
+
+function drawChargeIndicator() {
+  if (!isCharging || selectedGun !== 'charge_rifle' || !gameState.isRunning) return;
+  const chargeMs = Date.now() - chargeStartTime;
+  const fraction = Math.min(1.0, chargeMs / getDynamicMaxChargeMs());
+  const aboveMin = chargeMs >= MIN_CHARGE_MS;
+
+  // Real-time audio pitch sweep update!
+  audio.updateChargeSound(fraction);
+
+  const screenX = player.x - camera.x;
+  const screenY = player.y - camera.y;
+  const radius = 20 + fraction * 18;
+  const pulse = (Math.sin(gameTick * 0.45) + 1) / 2;
+
+  ctx.save();
+
+  // 1. Background ring — dim red while below minimum, normal color once past it
+  if (!aboveMin) {
+    ctx.strokeStyle = `rgba(180, 40, 40, 0.35)`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 2. Charge arc — only draws once minimum threshold is reached
+  if (aboveMin) {
+    const fillFraction = Math.min(1.0, (chargeMs - MIN_CHARGE_MS) / (getDynamicMaxChargeMs() - MIN_CHARGE_MS));
+    ctx.strokeStyle = fraction >= 1.0
+      ? `rgba(255, 220, 0, ${0.65 + pulse * 0.35})`
+      : `rgba(80, 200, 255, ${0.45 + fillFraction * 0.4})`;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * fillFraction);
+    ctx.stroke();
+  }
+
+  // 3. (NEW) Collapsing Concentric Energy Rings
+  if (aboveMin && fraction < 1.0) {
+    const ringsCount = 2;
+    for (let rIdx = 0; rIdx < ringsCount; rIdx++) {
+      const ringProgress = (fraction + rIdx * 0.4) % 1.0;
+      const ringRadius = radius * (1.6 - ringProgress * 0.8);
+      const ringAlpha = 0.28 * ringProgress;
+      ctx.strokeStyle = `rgba(80, 210, 255, ${ringAlpha})`;
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, ringRadius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // 4. (NEW) Inward Flying Energy Sparks (magnetically pulled into charging node)
+  if (aboveMin && fraction < 1.0) {
+    ctx.fillStyle = `rgba(80, 200, 255, 0.75)`;
+    for (let spark = 0; spark < 6; spark++) {
+      const sparkAngle = (spark * Math.PI * 2 / 6) - (gameTick * 0.08);
+      const sparkDist = radius * (1.4 - ((gameTick * 0.02 + spark * 0.15) % 1.0));
+      const sx = screenX + Math.cos(sparkAngle) * sparkDist;
+      const sy = screenY + Math.sin(sparkAngle) * sparkDist;
+      ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+    }
+  }
+
+  // 5. Blinding Super-Charged Outer Ring & Electric Lightning arcs
+  if (fraction >= 1.0) {
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 + pulse * 0.4})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, radius + 4, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Golden electrical static arcs crackling around player bounds
+    ctx.strokeStyle = `rgba(255, 220, 0, ${0.75 + pulse * 0.25})`;
+    ctx.lineWidth = 1.2;
+    for (let arc = 0; arc < 2; arc++) {
+      const aStart = Math.random() * Math.PI * 2;
+      const aEnd = aStart + (Math.random() - 0.5) * 0.6;
+      const rOuter = radius + Math.random() * 5;
+      
+      const sx = screenX + Math.cos(aStart) * radius;
+      const sy = screenY + Math.sin(aStart) * radius;
+      const ex = screenX + Math.cos(aEnd) * rOuter;
+      const ey = screenY + Math.sin(aEnd) * rOuter;
+      
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo((sx + ex) * 0.5 + (Math.random() - 0.5) * 3, (sy + ey) * 0.5 + (Math.random() - 0.5) * 3);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 /**
@@ -4936,6 +6291,8 @@ function damageZombie(z, amount, isDirect = true) {
     }
     return; // Block damage completely!
   }
+  // Wraith Phase: Dreadnaught takes 55% reduced damage below 40% HP
+  if (z.isWraith) amount = amount * 0.50; // 50% damage reduction at 50% HP
   z.health -= amount;
   z.flashTicks = 5;
 }
@@ -5221,6 +6578,114 @@ function triggerExplosion(ex, ey, maxDamage, skipPlayerDamage = false, skipZombi
     }
   }
 
+}
+
+/**
+ * Pulse Cannon void detonation — completely custom visual, no fire/smoke.
+ * Rotating magenta tendrils, void-sphere layers, void crystal debris.
+ */
+function triggerPulseExplosion(ex, ey, maxDamage, isFire = false, isCryo = false, isOverclocked = false) {
+  audio.playSfx('explode_pulse');
+  startExplosionShake(ex, ey, 14);
+  addFloorScorch(ex, ey, 75, 'necro');
+
+  // Let the explosion entity expand slightly wider
+  explosions.push({ type: 'pulse', x: ex, y: ey, radius: 150, life: 1.0, decay: 0.040 });
+
+  // Three concentric shockwave rings — white outer, magenta mid, violet inner (infused with element/overclock colors!)
+  let c1 = '#ffffff', c2 = '#cc00ff', c3 = '#ff88ff';
+  if (isFire) {
+    c1 = '#ff5a00'; c2 = '#ffae00'; c3 = '#ffee00';
+  } else if (isCryo) {
+    c1 = '#8ffcff'; c2 = '#00d9ff'; c3 = '#ffffff';
+  } else if (isOverclocked) {
+    c1 = '#ffffff'; c2 = '#ff0033'; c3 = '#ffa5b5';
+  }
+  gameParticles.push({ type: 'shockwave', x: ex, y: ey, maxRadius: 150, lineWidth: 3, color: c1,  life: 1.0, decay: 0.048 });
+  gameParticles.push({ type: 'shockwave', x: ex, y: ey, maxRadius: 105, lineWidth: 5, color: c2,  life: 1.0, decay: 0.038 });
+  gameParticles.push({ type: 'shockwave', x: ex, y: ey, maxRadius:  60, lineWidth: 2, color: c3,  life: 1.0, decay: 0.066 });
+
+  // Void/Element/Overclock crystal shards — angular, directional, infused colors
+  for (let i = 0; i < 24; i++) {
+    const angle = (i / 24) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+    const force = Math.random() * 5.5 + 2.5;
+    let colors = ['#cc44ff', '#ff66ff', '#ffffff', '#9900cc', '#ffaaff', '#8844cc'];
+    if (isFire) {
+      colors = ['#ff5a00', '#ffae00', '#ffffff', '#ffee00', '#ffa500', '#ff3c00'];
+    } else if (isCryo) {
+      colors = ['#8ffcff', '#00d9ff', '#ffffff', '#e9ffff', '#b3f7ff', '#d6ffff'];
+    } else if (isOverclocked) {
+      colors = ['#ff0033', '#ffffff', '#ff6688', '#b30022', '#ffccd5', '#ff3355'];
+    }
+    gameParticles.push({
+      x: ex, y: ey,
+      vx: Math.cos(angle) * force,
+      vy: Math.sin(angle) * force,
+      size: Math.floor(Math.random() * 4) + 2,
+      color: colors[i % colors.length],
+      life: 0.85,
+      decay: Math.random() * 0.035 + 0.022
+    });
+  }
+
+  // Slow-drifting void/smoke wisps — large, translucent, float slightly up
+  for (let i = 0; i < 8; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    let wispColor = i % 2 === 0 ? 'rgba(100, 0, 180, 0.65)' : 'rgba(190, 80, 255, 0.45)';
+    if (isFire) {
+      wispColor = i % 2 === 0 ? 'rgba(255, 69, 0, 0.58)' : 'rgba(255, 140, 0, 0.38)';
+    } else if (isCryo) {
+      wispColor = i % 2 === 0 ? 'rgba(80, 200, 255, 0.58)' : 'rgba(180, 240, 255, 0.38)';
+    } else if (isOverclocked) {
+      wispColor = i % 2 === 0 ? 'rgba(255, 0, 50, 0.58)' : 'rgba(255, 100, 120, 0.38)';
+    }
+    gameParticles.push({
+      x: ex, y: ey,
+      vx: Math.cos(angle) * (Math.random() * 1.0 + 0.2),
+      vy: Math.sin(angle) * (Math.random() * 1.0 + 0.2) - 0.55,
+      size: Math.floor(Math.random() * 8) + 6,
+      color: wispColor,
+      life: 0.6,
+      decay: Math.random() * 0.02 + 0.012
+    });
+  }
+
+  // AoE damage + Void gravitational implosion pull + EMP slow + Element/Overclock status effects to zombies within 150px
+  const blastR = 150;
+  for (let i = zombies.length - 1; i >= 0; i--) {
+    const z = zombies[i];
+    const zDx = z.x - ex;
+    const zDy = z.y - ey;
+    const dist = Math.hypot(zDx, zDy);
+    if (dist < blastR) {
+      // 1. Physically drag zombie inward towards the void center
+      if (z.type !== 'patient_zero' && dist > 2) {
+        const pullForce = (1 - dist / blastR) * 26; // strong pull near center
+        z.x -= (zDx / dist) * pullForce;
+        z.y -= (zDy / dist) * pullForce;
+
+        // Clamp inside world boundaries
+        const zHalf = z.size / 2;
+        z.x = Math.max(zHalf, Math.min(world.width - zHalf, z.x));
+        z.y = Math.max(zHalf, Math.min(world.height - zHalf, z.y));
+      }
+
+      // 2. Apply damage
+      const factor = (blastR - dist) / blastR;
+      damageZombie(z, Math.floor(maxDamage * factor), true);
+
+      // 3. Apply elemental/overclock statuses
+      if (isFire) {
+        z.burnTicks = Math.max(z.burnTicks || 0, 180);
+      }
+      if (isCryo) {
+        z.cryoSlowTicks = 180;
+      }
+      if (isOverclocked) {
+        z.stunTicks = Math.max(z.stunTicks || 0, 60); // 0.5s stun inside overclock blast
+      }
+    }
+  }
 }
 
 /**
@@ -5549,6 +7014,9 @@ function render() {
   // 3.7. Draw dropped Lab Mines
   drawMines();
 
+  // 3.72. Draw dropped coins
+  drawCoins();
+
   // 3.75. Draw stationary Rusty Turrets
   drawTurrets();
 
@@ -5608,6 +7076,9 @@ function render() {
 
   // 13. Low health warning — red border pulse below 25% HP
   if (gameState.isRunning && player.health > 0) drawLowHealthWarning();
+
+  // 14. Charge Rifle charge indicator (screen-space arc around player)
+  drawChargeIndicator();
 }
 
 function drawLightingOverlay() {
@@ -5667,10 +7138,12 @@ function drawBossHealthBar() {
   ctx.strokeRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
 
   // Boss name label
-  ctx.fillStyle = '#ff4444';
   ctx.font = 'bold 13px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('PATIENT ZERO', canvas.width / 2, barY - 6);
+  const bossLabel = activeBoss.type === 'dreadnaught' ? 'DREADNAUGHT' : 'PATIENT ZERO';
+  ctx.fillStyle = activeBoss.type === 'dreadnaught' ? '#cc00ff' : '#ff4444';
+  ctx.strokeStyle = activeBoss.type === 'dreadnaught' ? '#cc00ff' : '#ff4444';
+  ctx.fillText(bossLabel, canvas.width / 2, barY - 6);
 
   // Health percentage text
   ctx.fillStyle = '#ffffff';
@@ -6262,6 +7735,49 @@ function drawPlayer() {
   ctx.lineWidth = 3;
   ctx.strokeRect(-12, -12, 22, 24);
 
+  // 10.5 Draw Charge Rifle charging energy ball at the tip of the barrel!
+  if (isCharging && selectedGun === 'charge_rifle') {
+    const chargeMs = Date.now() - chargeStartTime;
+    const fraction = Math.min(1.0, chargeMs / getDynamicMaxChargeMs());
+    const tipRadius = 4 + fraction * 14;
+    
+    // Glowing cyan/gold aura on barrel tip
+    ctx.save();
+    ctx.translate(28, 4); // tip of barrel cap coordinate
+    
+    const grad = ctx.createRadialGradient(0, 0, 1, 0, 0, tipRadius);
+    if (fraction >= 1.0) {
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+      grad.addColorStop(0.3, 'rgba(255, 235, 100, 0.88)');
+      grad.addColorStop(1, 'rgba(255, 150, 0, 0.0)');
+    } else {
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.90)');
+      grad.addColorStop(0.35, 'rgba(0, 230, 255, 0.78)');
+      grad.addColorStop(1, 'rgba(0, 100, 255, 0.0)');
+    }
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, tipRadius * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // High-voltage tiny electrostatic sparks around barrel tip
+    if (fraction > 0.4) {
+      ctx.strokeStyle = fraction >= 1.0 ? '#ffff00' : '#00ffff';
+      ctx.lineWidth = 1.0;
+      for (let s = 0; s < 3; s++) {
+        const aStart = Math.random() * Math.PI * 2;
+        const sDist = tipRadius * (0.8 + Math.random() * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(aStart) * sDist * 0.5 + (Math.random() - 0.5) * 2, Math.sin(aStart) * sDist * 0.5 + (Math.random() - 0.5) * 2);
+        ctx.lineTo(Math.cos(aStart) * sDist, Math.sin(aStart) * sDist);
+        ctx.stroke();
+      }
+    }
+    
+    ctx.restore();
+  }
+
   ctx.restore();
 
   // Draw Bio-Shield aura if active
@@ -6337,7 +7853,7 @@ function drawBullets() {
         ctx.moveTo(coreTailX, coreTailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
-      } else if (b.isFire) {
+      } else if (b.isFire && !b.isPulseOrb && !b.isChargedShot) {
         // Glow sheath
         ctx.strokeStyle = 'rgba(255, 69, 0, 0.4)';
         ctx.lineWidth = b.size * 1.1;
@@ -6357,7 +7873,7 @@ function drawBullets() {
         ctx.moveTo(coreTailX, coreTailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
-      } else if (b.isCryo) {
+      } else if (b.isCryo && !b.isPulseOrb && !b.isChargedShot) {
         // Glow sheath
         ctx.strokeStyle = 'rgba(80, 220, 255, 0.38)';
         ctx.lineWidth = b.size * 1.1;
@@ -6417,6 +7933,128 @@ function drawBullets() {
         ctx.moveTo(coreTailX, coreTailY);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
+      } else if (b.isPulseOrb) {
+        // Void wake — 3 ghost orbs at past positions, shrinking + fading
+        for (let gi = 1; gi <= 3; gi++) {
+          const gx = b.x - b.vx * (gi * 3.5);
+          const gy = b.y - b.vy * (gi * 3.5);
+          const gr = (b.size / 2) * (1 - gi * 0.25);
+          ctx.fillStyle = `rgba(120, 0, 200, ${0.28 - gi * 0.07})`;
+          ctx.beginPath(); ctx.arc(gx, gy, gr, 0, Math.PI * 2); ctx.fill();
+        }
+      } else if (b.isChargedShot) {
+        // High-End Electrostatic Rail Trail
+        const tAngle = Math.atan2(b.vy, b.vx);
+        const perpX = -Math.sin(tAngle);
+        const perpY =  Math.cos(tAngle);
+        
+        // 1. Concentric, fading thruster exhaust diamonds behind velocity path
+        const vLen = Math.hypot(b.vx, b.vy);
+        if (vLen > 0) {
+          const dx = b.vx / vLen;
+          const dy = b.vy / vLen;
+          const _age = b.age || 0;
+          for (let diag = 1; diag <= 3; diag++) {
+            const diagDist = diag * 15 + (_age % 15);
+            const diagAge = diagDist / 70; // normalized decay
+            if (diagAge < 1.0) {
+              const rx = b.x - dx * diagDist;
+              const ry = b.y - dy * diagDist;
+              const wVal = b.size * (0.8 + diagAge * 1.2);
+              const lVal = b.size * (1.2 + diagAge * 1.5);
+              const alpha = Math.max(0, 0.45 * (1 - diagAge));
+              
+              ctx.save();
+              ctx.translate(rx, ry);
+              ctx.rotate(tAngle);
+              ctx.fillStyle = b.chargeFraction >= 1.0
+                ? `rgba(255, 200, 0, ${alpha * 0.85})`
+                : `rgba(0, 220, 255, ${alpha * 0.85})`;
+              ctx.beginPath();
+              ctx.moveTo(lVal * 0.5, 0);
+              ctx.lineTo(0, -wVal * 0.5);
+              ctx.lineTo(-lVal * 0.5, 0);
+              ctx.lineTo(0, wVal * 0.5);
+              ctx.closePath();
+              ctx.fill();
+              ctx.restore();
+            }
+          }
+        }
+
+        // 2. Ionized Electrostatic Wake grid (glistening purple/cyan static grids fading out)
+        if (b.chargeFraction > 0.4) {
+          const ageRatio = Math.min(1.0, (b.age || 0) / 10);
+          const fAlpha = (b.chargeFraction - 0.4) / 0.6 * (1 - ageRatio);
+          ctx.strokeStyle = b.chargeFraction >= 1.0
+            ? `rgba(255, 120, 255, ${fAlpha * 0.35})`
+            : `rgba(100, 240, 255, ${fAlpha * 0.35})`;
+          ctx.lineWidth = 1.0;
+          
+          // Draw cross-hatching static arcs jumping between main core and outer sheath
+          ctx.beginPath();
+          const gridCount = 5;
+          for (let gc = 0; gc < gridCount; gc++) {
+            const progress = gc / (gridCount - 1);
+            const gx = tailX + (b.x - tailX) * progress;
+            const gy = tailY + (b.y - tailY) * progress;
+            const jitterVal = Math.sin(gameTick * 0.8 + gc) * (b.size * 0.4);
+            ctx.moveTo(gx + perpX * (b.size * 0.6 + jitterVal), gy + perpY * (b.size * 0.6 + jitterVal));
+            ctx.lineTo(gx - perpX * (b.size * 0.6 - jitterVal), gy - perpY * (b.size * 0.6 - jitterVal));
+          }
+          ctx.stroke();
+        }
+
+        // 3. Main heavy laser core lance trails
+        const jitter = Math.sin(gameTick * 0.6 + b.age * 0.4) * (b.size * 0.3);
+        ctx.strokeStyle = b.chargeFraction >= 1.0
+          ? `rgba(255, 200, 0, ${0.28 + b.chargeFraction * 0.18})`
+          : `rgba(0, 200, 255, ${0.22 + b.chargeFraction * 0.22})`;
+        ctx.lineWidth = b.size * 1.4;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(tailX, tailY); ctx.lineTo(b.x, b.y); ctx.stroke();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = b.size * 0.22;
+        ctx.beginPath(); ctx.moveTo(coreTailX, coreTailY); ctx.lineTo(b.x, b.y); ctx.stroke();
+      } else if (b.isBoomerangDisc) {
+        // Spinning disc wake — a gorgeous, tapering neon ribbon trail connecting history points
+        if (b.trailHistory && b.trailHistory.length > 1) {
+          const discTrailColor = b.isFire ? '255,80,0' : (b.isCryo ? '0,210,255' : (b.isOverclocked ? '255,0,50' : '60,255,140'));
+          const len = b.trailHistory.length;
+          
+          // 1. Draw outer glowing energy ribbon (tapering width and opacity)
+          for (let ti = 0; ti < len - 1; ti++) {
+            const p1 = b.trailHistory[ti];
+            const p2 = b.trailHistory[ti + 1];
+            const progress = ti / (len - 1); // 0 (tail) to 1 (head)
+            
+            ctx.strokeStyle = `rgba(${discTrailColor}, ${progress * 0.38})`;
+            ctx.lineWidth = b.size * 1.4 * progress;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+          
+          // 2. Draw inner hot core ribbon
+          for (let ti = 0; ti < len - 1; ti++) {
+            const p1 = b.trailHistory[ti];
+            const p2 = b.trailHistory[ti + 1];
+            const progress = ti / (len - 1);
+            
+            ctx.strokeStyle = `rgba(255, 255, 255, ${progress * 0.7})`;
+            ctx.lineWidth = b.size * 0.35 * progress;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
       } else {
         // Glow sheath
         ctx.strokeStyle = 'rgba(255, 235, 0, 0.38)';
@@ -6443,17 +8081,86 @@ function drawBullets() {
     // 2. Render bullet main projectile head block (optimized to remove slow strokeRect borders)
     const half = b.size / 2;
 
-    if (b.isOverclocked) {
+    if (b.isBoomerangDisc) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.spinAngle || 0);
+
+      const discColor  = b.isFire ? '#ff4400' : (b.isCryo ? '#00ddff' : (b.isOverclocked ? '#ff0033' : '#44ff88'));
+      const discGlow   = b.isFire ? 'rgba(255,80,0,0.35)' : (b.isCryo ? 'rgba(0,180,255,0.35)' : (b.isOverclocked ? 'rgba(255,0,50,0.35)' : 'rgba(50,255,110,0.32)'));
+      // Returning disc pulses slightly brighter
+      const phase = b.boomerangPhase === 'returning' ? 1.15 : 1.0;
+
+      // 1. Outer glowing aura
+      ctx.fillStyle = discGlow;
+      ctx.beginPath(); ctx.arc(0, 0, half * 2.0 * phase, 0, Math.PI * 2); ctx.fill();
+
+      // 2. Draw 3 aerodynamically curved scythe-like wings (V-shape intersections)
+      ctx.fillStyle = discColor;
+      for (let bl = 0; bl < 3; bl++) {
+        const baseAngle = (bl / 3) * Math.PI * 2;
+        
+        ctx.beginPath();
+        // Inner hub base starting point
+        const startX = Math.cos(baseAngle) * half * 0.22;
+        const startY = Math.sin(baseAngle) * half * 0.22;
+        ctx.moveTo(startX, startY);
+        
+        // Outward swept-forward tip (tipAngle is slightly offset for aggressive sweep)
+        const tipAngle = baseAngle + 0.42;
+        const tipX = Math.cos(tipAngle) * half * 1.45 * phase;
+        const tipY = Math.sin(tipAngle) * half * 1.45 * phase;
+        
+        // Control point for the curved leading edge
+        const ctrlAngle1 = baseAngle + 0.15;
+        const cp1x = Math.cos(ctrlAngle1) * half * 0.95 * phase;
+        const cp1y = Math.sin(ctrlAngle1) * half * 0.95 * phase;
+        ctx.quadraticCurveTo(cp1x, cp1y, tipX, tipY);
+        
+        // Trailing edge back to base of the NEXT wing
+        const nextBaseAngle = ((bl + 1) / 3) * Math.PI * 2;
+        const endX = Math.cos(nextBaseAngle) * half * 0.22;
+        const endY = Math.sin(nextBaseAngle) * half * 0.22;
+        
+        // Control point for trailing edge (creates sleek V-curve hollow between blades)
+        const ctrlAngle2 = baseAngle + 0.65;
+        const cp2x = Math.cos(ctrlAngle2) * half * 0.68 * phase;
+        const cp2y = Math.sin(ctrlAngle2) * half * 0.68 * phase;
+        ctx.quadraticCurveTo(cp2x, cp2y, endX, endY);
+        
+        ctx.closePath();
+        ctx.fill();
+        
+        // 3. Razor-sharp white leading-edge highlight
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.quadraticCurveTo(cp1x, cp1y, tipX, tipY);
+        ctx.stroke();
+      }
+
+      // 4. Inner energetic dark hub
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.beginPath(); ctx.arc(0, 0, half * 0.38, 0, Math.PI * 2); ctx.fill();
+
+      // 5. White hot center power core
+      ctx.fillStyle = b.isFire ? '#ffb366' : (b.isCryo ? '#a3f3ff' : (b.isOverclocked ? '#ff8099' : '#a3ffc2'));
+      ctx.beginPath(); ctx.arc(0, 0, half * 0.20, 0, Math.PI * 2); ctx.fill();
+
+      ctx.restore();
+    } else if (b.isOverclocked) {
       ctx.fillStyle = '#ff0033';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
-    } else if (b.isFire) {
+    } else if (b.isFire && !b.isPulseOrb && !b.isChargedShot) {
       ctx.fillStyle = '#ff3c00';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
       ctx.fillStyle = '#ffee00';
       ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
-    } else if (b.isCryo) {
+    } else if (b.isCryo && !b.isPulseOrb && !b.isChargedShot) {
       ctx.fillStyle = '#00d9ff';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
       ctx.fillStyle = '#e9ffff';
@@ -6472,9 +8179,335 @@ function drawBullets() {
       ctx.fill();
     } else if (b.isTurretBullet) {
       ctx.fillStyle = '#b85823'; // copper/bronze body
-      ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
-      ctx.fillStyle = '#ffae73'; // bright orange/white core
-      ctx.fillRect(Math.floor(b.x - b.size / 4), Math.floor(b.y - b.size / 4), b.size / 2, b.size / 2);
+      ct    } else if (b.isPulseOrb) {
+      // 1. Heavy energetic void/plasma projectile rendering
+      const _age = b.age || 0;
+      const _pulse = (Math.sin(_age * 0.32) + 1) / 2; // high-frequency pulse
+      const _r = half * (1.10 + _pulse * 0.16); // wider core scaling
+
+      // Define element colors based on infusion
+      let outerColor = `rgba(60, 0, 130, 0.88)`; // default deep purple
+      let midColor = `rgba(0, 190, 255, 0.82)`; // default cyan
+      let innerColor = `rgba(230, 0, 255, 0.92)`; // default magenta
+      let coreColor = `rgba(255, 235, 255, ${0.90 + _pulse * 0.10})`; // default white
+      let arcColor = '#00ffff'; // default cyan
+      let orbitRingColor = `rgba(0, 255, 230, ${0.60 + _pulse * 0.35})`; // default cyan
+      let satelliteColor = 'rgba(0, 255, 255, 0.80)'; // default cyan
+
+      if (b.isFire) {
+        // Lava volcanic magma shell
+        outerColor = `rgba(140, 15, 0, 0.88)`; // deep charcoal lava
+        midColor = `rgba(255, 69, 0, 0.85)`; // burning orange
+        innerColor = `rgba(255, 140, 0, 0.92)`; // dark gold
+        coreColor = `rgba(255, 250, 200, ${0.90 + _pulse * 0.10})`; // yellow-white core
+        arcColor = '#ffea00'; // fiery sparks
+        orbitRingColor = `rgba(255, 90, 0, ${0.60 + _pulse * 0.35})`; // blazing ring
+        satelliteColor = 'rgba(255, 200, 0, 0.85)'; // hot sparks
+      } else if (b.isCryo) {
+        // Glacial arctic frost shell
+        outerColor = `rgba(20, 80, 120, 0.88)`; // deep glacial navy
+        midColor = `rgba(80, 210, 255, 0.82)`; // frost blue
+        innerColor = `rgba(180, 240, 255, 0.92)`; // icy cyan
+        coreColor = `rgba(235, 255, 255, ${0.90 + _pulse * 0.10})`; // super-cold white core
+        arcColor = '#ffffff'; // jagged white fractures
+        orbitRingColor = `rgba(130, 230, 255, ${0.60 + _pulse * 0.35})`; // ice halo ring
+        satelliteColor = 'rgba(200, 245, 255, 0.85)'; // snow crystals
+      }
+
+      // Trace trailing jet-exhaust rings in opposite direction of travel vector
+      const vLen = Math.hypot(b.vx, b.vy);
+      if (vLen > 0) {
+        const dx = b.vx / vLen;
+        const dy = b.vy / vLen;
+        
+        // Draw 3 expanding jet exhaust pulse-rings behind the bullet
+        for (let ring = 1; ring <= 3; ring++) {
+          const ringDist = ring * 12 + (_age % 12);
+          const ringAge = (ringDist) / 48; // normalized age
+          const rx = b.x - dx * ringDist;
+          const ry = b.y - dy * ringDist;
+          const ringRadius = _r * (0.55 + ringAge * 0.95);
+          const ringAlpha = Math.max(0, 0.48 * (1 - ringAge));
+          
+          if (b.isFire) {
+            ctx.strokeStyle = `rgba(255, 69, 0, ${ringAlpha})`;
+          } else if (b.isCryo) {
+            ctx.strokeStyle = `rgba(80, 220, 255, ${ringAlpha})`;
+          } else {
+            ctx.strokeStyle = `rgba(160, 40, 255, ${ringAlpha})`;
+          }
+          ctx.lineWidth = 1.6 * (1 - ringAge);
+          ctx.beginPath();
+          ctx.arc(rx, ry, ringRadius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // Deep outer plasma shell
+      ctx.fillStyle = outerColor;
+      ctx.beginPath(); 
+      ctx.arc(b.x, b.y, _r * 1.15, 0, Math.PI * 2); 
+      ctx.fill();
+
+      // Energetic mid shell
+      ctx.fillStyle = midColor;
+      ctx.beginPath(); 
+      ctx.arc(b.x, b.y, _r * 0.76, 0, Math.PI * 2); 
+      ctx.fill();
+
+      // Glowing inner shell
+      ctx.fillStyle = innerColor;
+      ctx.beginPath(); 
+      ctx.arc(b.x, b.y, _r * 0.48, 0, Math.PI * 2); 
+      ctx.fill();
+
+      // Super-hot fusing core
+      ctx.fillStyle = coreColor;
+      ctx.beginPath(); 
+      ctx.arc(b.x, b.y, _r * 0.22, 0, Math.PI * 2); 
+      ctx.fill();
+
+      // 3. High-voltage energetic outline border
+      ctx.strokeStyle = b.isFire ? `rgba(255, 140, 0, ${0.60 + _pulse * 0.40})` : (b.isCryo ? `rgba(130, 230, 255, ${0.60 + _pulse * 0.40})` : `rgba(0, 220, 255, ${0.60 + _pulse * 0.40})`);
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, _r * 1.15, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 4. Crackling Neon Electric Arcs jumping from core to outer corona
+      ctx.strokeStyle = arcColor;
+      ctx.lineWidth = 1.0;
+      for (let arc = 0; arc < 2; arc++) {
+        const arcSeed = Math.random() * Math.PI * 2;
+        const startR = _r * 0.22;
+        const endR = _r * (1.15 + Math.random() * 0.35);
+        const sx = b.x + Math.cos(arcSeed) * startR;
+        const sy = b.y + Math.sin(arcSeed) * startR;
+        
+        // Jagged line coordinates
+        const midA = arcSeed + (Math.random() - 0.5) * 0.8;
+        const mx = b.x + Math.cos(midA) * (startR + endR) * 0.5;
+        const my = b.y + Math.sin(midA) * (startR + endR) * 0.5;
+        
+        const ex = b.x + Math.cos(arcSeed) * endR;
+        const ey = b.y + Math.sin(arcSeed) * endR;
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(mx, my);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+      }
+
+      // Orbiting plasma ring — ellipse rotating around the sphere
+      const _ringAngle = _age * 0.12;
+      const _rW = _r * 1.55;
+      const _rH = _r * 0.42;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(_ringAngle);
+      ctx.strokeStyle = orbitRingColor;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, _rW, _rH, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // 3 orbiting satellite micro-plasma spheres
+      for (let sd = 0; sd < 3; sd++) {
+        const _sAngle = _age * 0.14 + (sd / 3) * Math.PI * 2;
+        const _sx = b.x + Math.cos(_sAngle) * _r * 1.6;
+        const _sy = b.y + Math.sin(_sAngle) * _r * 0.40;
+        
+        ctx.fillStyle = satelliteColor;
+        ctx.beginPath(); ctx.arc(_sx, _sy, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    } else if (b.isChargedShot) {
+      // Elongated directional lance — scales massively with charge level and bullet size
+      const _tAngle = Math.atan2(b.vy, b.vx);
+      const sizeScale = b.size / (10 * (0.7 + b.chargeFraction * 0.9)); // 1.0 at base, >1 with Giant Bullets
+      const _lanceW = (4 + b.chargeFraction * 9) * sizeScale;
+      const _lanceL = (12 + b.chargeFraction * 32) * sizeScale;
+
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(_tAngle);
+
+      // Define element colors based on infusion
+      let _glowColor = b.chargeFraction >= 1.0
+        ? `rgba(255, 180, 0, ${0.48 + Math.sin(gameTick * 0.45) * 0.15})`
+        : `rgba(0, 210, 255, ${0.28 + b.chargeFraction * 0.35})`;
+      
+      let coreColor = b.chargeFraction >= 1.0 ? '#ffea00' : '#00e4ff';
+      let tipColor = b.chargeFraction >= 1.0 ? '#ffffff' : '#e0ffff';
+      let arc1Color = b.chargeFraction >= 1.0 ? '#00ffff' : '#ffaa00';
+      let arc2Color = b.chargeFraction >= 1.0 ? '#ffea00' : '#00e4ff';
+      let satStroke = b.chargeFraction >= 1.0 ? 'rgba(255, 235, 100, 0.85)' : 'rgba(0, 240, 255, 0.85)';
+      let satFill = b.chargeFraction >= 1.0 ? '#ffea00' : '#00f0ff';
+
+      if (b.isFire) {
+        // Red-hot plasma lance
+        _glowColor = b.chargeFraction >= 1.0
+          ? `rgba(255, 60, 0, ${0.52 + Math.sin(gameTick * 0.45) * 0.15})`
+          : `rgba(255, 100, 0, ${0.32 + b.chargeFraction * 0.35})`;
+        coreColor = b.chargeFraction >= 1.0 ? '#ff3c00' : '#ffee00';
+        tipColor = '#ffffff';
+        arc1Color = '#ff3c00';
+        arc2Color = '#ffee00';
+        satStroke = 'rgba(255, 100, 0, 0.85)';
+        satFill = '#ffea00';
+      } else if (b.isCryo) {
+        // Frost ice rail lance
+        _glowColor = b.chargeFraction >= 1.0
+          ? `rgba(100, 220, 255, ${0.52 + Math.sin(gameTick * 0.45) * 0.15})`
+          : `rgba(180, 240, 255, ${0.32 + b.chargeFraction * 0.35})`;
+        coreColor = b.chargeFraction >= 1.0 ? '#00d9ff' : '#e9ffff';
+        tipColor = '#ffffff';
+        arc1Color = '#e9ffff';
+        arc2Color = '#00d9ff';
+        satStroke = 'rgba(100, 220, 255, 0.85)';
+        satFill = '#e9ffff';
+      } else if (b.isOverclocked) {
+        // Neon-red Overclocked plasma rail lance
+        _glowColor = b.chargeFraction >= 1.0
+          ? `rgba(255, 0, 50, ${0.52 + Math.sin(gameTick * 0.45) * 0.15})`
+          : `rgba(255, 50, 80, ${0.32 + b.chargeFraction * 0.35})`;
+        coreColor = b.chargeFraction >= 1.0 ? '#ff0033' : '#ff6688';
+        tipColor = '#ffffff';
+        arc1Color = '#ff0033';
+        arc2Color = '#ffffff';
+        satStroke = 'rgba(255, 0, 50, 0.85)';
+        satFill = '#ff6688';
+      }
+
+      // 1. Double-layered intense glowing plasma capsule sheath
+      ctx.fillStyle = _glowColor;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, _lanceL * 0.72, _lanceW * 2.0, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Outer golden-white aura at full charge
+      if (b.chargeFraction >= 1.0) {
+        ctx.fillStyle = b.isFire ? 'rgba(255, 180, 100, 0.28)' : (b.isCryo ? 'rgba(180, 240, 255, 0.28)' : (b.isOverclocked ? 'rgba(255, 50, 80, 0.28)' : 'rgba(255, 235, 150, 0.28)'));
+        ctx.beginPath();
+        ctx.ellipse(0, 0, _lanceL * 0.95, _lanceW * 2.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 2. Main solid spear lance core
+      ctx.fillStyle = coreColor;
+      ctx.fillRect(-_lanceL / 2, -_lanceW / 2, _lanceL, _lanceW);
+
+      // 3. Super-hot central fusion chamber streak
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-_lanceL * 0.45, -_lanceW * 0.25, _lanceL * 0.70, _lanceW * 0.50);
+
+      // 4. Pointy spear tip flare (diamond block)
+      ctx.fillStyle = tipColor;
+      ctx.beginPath();
+      ctx.moveTo(_lanceL * 0.52, 0);
+      ctx.lineTo(_lanceL * 0.35, -_lanceW * 0.75);
+      ctx.lineTo(_lanceL * 0.82, 0);
+      ctx.lineTo(_lanceL * 0.35,  _lanceW * 0.75);
+      ctx.closePath();
+      ctx.fill();
+
+      // 5. Blinding High-Voltage side crackle lightning arcs (dynamic, high-frequency jitter)
+      if (b.chargeFraction >= 0.5) {
+        const isFull = b.chargeFraction >= 1.0;
+        const _cr = (Math.sin(gameTick * 0.8) + (Math.random() - 0.5) * 0.4) * _lanceW * 0.6;
+        ctx.strokeStyle = arc1Color;
+        ctx.lineWidth = isFull ? 1.5 : 1.0;
+        
+        // Top electric arc
+        ctx.beginPath();
+        ctx.moveTo(-_lanceL * 0.48, -_lanceW * 0.95 + _cr);
+        ctx.lineTo(-_lanceL * 0.18, -_lanceW * 1.35 - _cr);
+        ctx.lineTo( _lanceL * 0.18, -_lanceW * 0.95 + _cr * 0.5);
+        ctx.lineTo( _lanceL * 0.48, -_lanceW * 0.95);
+        ctx.stroke();
+        
+        // Bottom electric arc
+        ctx.strokeStyle = arc2Color;
+        ctx.beginPath();
+        ctx.moveTo(-_lanceL * 0.48,  _lanceW * 0.95 - _cr);
+        ctx.lineTo(-_lanceL * 0.18,  _lanceW * 1.35 + _cr);
+        ctx.lineTo( _lanceL * 0.18,  _lanceW * 0.95 - _cr * 0.5);
+        ctx.lineTo( _lanceL * 0.48,  _lanceW * 0.95);
+        ctx.stroke();
+      }
+
+      // 6. Rotating diamond matrix energy prism satellites (similar to orbiting pustules on pulse cannon, but diamond prism matrices!)
+      if (b.chargeFraction > 0.4) {
+        const _age = b.age || 0;
+        const orbitAngle = (_age * 0.16);
+        ctx.strokeStyle = satStroke;
+        ctx.lineWidth = 1.0;
+        for (let sat = 0; sat < 3; sat++) {
+          const angle = orbitAngle + sat * (Math.PI * 2 / 3);
+          const ox = Math.cos(angle) * _lanceL * 0.45;
+          const oy = Math.sin(angle) * _lanceW * 1.5;
+          
+          ctx.save();
+          ctx.translate(ox, oy);
+          ctx.rotate(angle * 1.5);
+          ctx.fillStyle = satFill;
+          
+          // Draw small shiny energy diamond
+          ctx.beginPath();
+          ctx.moveTo(0, -3.5);
+          ctx.lineTo(2, 0);
+          ctx.lineTo(0, 3.5);
+          ctx.lineTo(-2, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      ctx.restore();
+    } else if (b.isPlasmaSMG) {
+      const _angle = Math.atan2(b.vy, b.vx);
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(_angle);
+      
+      let smgColor = b.isPink ? '#ff00aa' : '#00ffff';
+      if (b.isFire) smgColor = '#ff3c00';
+      else if (b.isCryo) smgColor = '#00d9ff';
+      else if (b.isOverclocked) smgColor = '#ff0033';
+      
+      // Draw elongated cyber laser bolt
+      ctx.strokeStyle = smgColor;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(-b.size * 1.5, 0);
+      ctx.lineTo(b.size * 1.5, 0);
+      ctx.stroke();
+      
+      // Center solid core
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.moveTo(-b.size * 0.8, 0);
+      ctx.lineTo(b.size * 0.8, 0);
+      ctx.stroke();
+      
+      ctx.restore();
+    } else if (b.isShotgunPellet) {
+      const pelletColor = b.isFire ? '#ff3c00' : (b.isCryo ? '#00d9ff' : (b.isOverclocked ? '#ff0033' : '#ff7700'));
+      ctx.fillStyle = pelletColor;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.size * 0.22, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       ctx.fillStyle = '#ffee00';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
@@ -6544,6 +8577,96 @@ function drawEnemyProjectiles() {
       return;
     }
 
+    if (ep.isJuggernaut) {
+      // Juggernaut — custom rotating spiked iron-artillery shell with glowing molten core
+      ctx.save();
+      ctx.translate(ep.x, ep.y);
+      const angle = Math.atan2(ep.vy, ep.vx);
+      ctx.rotate(angle);
+
+      // 1. Outer burning orange aura shadow
+      ctx.fillStyle = 'rgba(255, 100, 0, 0.28)';
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 1.5, 0, Math.PI * 2); ctx.fill();
+
+      // 2. Draw 6 rotating dark iron spikes protruding along perimeter
+      ctx.fillStyle = '#222228';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1.8;
+      for (let s = 0; s < 6; s++) {
+        ctx.save();
+        ctx.rotate((s / 6) * Math.PI * 2 + (gameTick * 0.05));
+        ctx.beginPath();
+        ctx.moveTo(ep.size * 0.45, -ep.size * 0.15);
+        ctx.lineTo(ep.size * 0.85, 0);
+        ctx.lineTo(ep.size * 0.45, ep.size * 0.15);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 3. Thick armored circular shell casing
+      ctx.fillStyle = '#3a3a42';
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 0.55, 0, Math.PI * 2); ctx.stroke();
+
+      // 4. Glowing molten radioactive core (hot orange/yellow)
+      ctx.fillStyle = '#ff5500';
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 0.32, 0, Math.PI * 2); ctx.fill();
+
+      ctx.fillStyle = '#ffea00';
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 0.15, 0, Math.PI * 2); ctx.fill();
+
+      ctx.restore();
+      return;
+    }
+
+    if (ep.isDreadnaught) {
+      // Dreadnaught — heavy blood-crimson artillery shell, darker/meaner than Juggernaut
+      ctx.save();
+      ctx.translate(ep.x, ep.y);
+
+      // 1. Orange heat aura
+      const _aura = 0.22 + Math.sin(gameTick * 0.15) * 0.08;
+      ctx.fillStyle = `rgba(255, 100, 0, ${_aura})`;
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 1.8, 0, Math.PI * 2); ctx.fill();
+
+      // 2. Eight rotating serrated iron spikes
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1.6;
+      for (let s = 0; s < 8; s++) {
+        ctx.save();
+        ctx.rotate((s / 8) * Math.PI * 2 + (gameTick * 0.06));
+        ctx.fillStyle = s % 2 === 0 ? '#1a0800' : '#2e1200';
+        ctx.beginPath();
+        ctx.moveTo(ep.size * 0.42, -ep.size * 0.14);
+        ctx.lineTo(ep.size * 0.92, 0);
+        ctx.lineTo(ep.size * 0.42,  ep.size * 0.14);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+
+      // 3. Dark armored shell casing
+      ctx.fillStyle = '#1a0a00';
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 0.58, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ff5500';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 0.58, 0, Math.PI * 2); ctx.stroke();
+
+      // 4. Molten orange core
+      const _pulse = (Math.sin(gameTick * 0.20) + 1) / 2;
+      ctx.fillStyle = `rgb(255, ${Math.floor(80 + _pulse * 60)}, 0)`;
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 0.36, 0, Math.PI * 2); ctx.fill();
+
+      // 5. Superheated white center
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(0, 0, ep.size * 0.15, 0, Math.PI * 2); ctx.fill();
+
+      ctx.restore();
+      return;
+    }
+
     const half = ep.size / 2;
     const isShadow = ep.color === '#ff00ff';
 
@@ -6584,6 +8707,130 @@ function drawToxicTrails() {
     ctx.fillStyle = '#228b22'; // Forest chemical green
     ctx.beginPath();
     ctx.arc(trail.x, trail.y, trail.size * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+/**
+ * Spawns a physical gold coin entity at a defeated zombie's death point with initial scattering velocity.
+ */
+function spawnPhysicalCoin(x, y, value = 1) {
+  droppedCoins.push({
+    x: x,
+    y: y,
+    vx: (Math.random() - 0.5) * 2.2, // scatter physics
+    vy: (Math.random() - 0.5) * 2.2,
+    value: value,
+    size: 9, // gold coin diameter
+    age: 0,
+    life: 720 // stays on ground for 6 seconds (720 ticks at 120Hz)
+  });
+}
+
+/**
+ * Updates dropped coin mechanics: decodes initial drift velocities, attractions in the collection radius, and collections.
+ */
+function updateDroppedCoins() {
+  const pullRadius = 100; // base magnet/magnify collection radius
+  const collectRadius = 18; // player collision overlap radius
+
+  for (let i = droppedCoins.length - 1; i >= 0; i--) {
+    const c = droppedCoins[i];
+    c.age += 1;
+
+    // Decaying initial scatter drift velocities
+    c.vx *= 0.92;
+    c.vy *= 0.92;
+    c.x += c.vx;
+    c.y += c.vy;
+
+    // Keep bounds inside arena
+    const cHalf = c.size / 2;
+    c.x = Math.max(cHalf, Math.min(world.width - cHalf, c.x));
+    c.y = Math.max(cHalf, Math.min(world.height - cHalf, c.y));
+
+    const dx = player.x - c.x;
+    const dy = player.y - c.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < pullRadius) {
+      // Magnetic "magnify" vacuum pull towards player
+      const pullForce = (1 - dist / pullRadius) * 6.5 + 1.8;
+      c.x += (dx / dist) * pullForce;
+      c.y += (dy / dist) * pullForce;
+    }
+
+    // Direct collection overlap detection
+    if (dist < (collectRadius + c.size / 2)) {
+      coinsEarnedThisRun += c.value;
+      updateHUD(); // Sync live gameplay HUD coin display instantly
+      audio.playSfx('coin'); // sweet synth ping arpeggio chime
+
+      // Emit shiny golden sparkles upon collection
+      for (let sp = 0; sp < 4; sp++) {
+        const angle = Math.random() * Math.PI * 2;
+        const force = Math.random() * 2.4 + 1.2;
+        gameParticles.push({
+          x: c.x,
+          y: c.y,
+          vx: Math.cos(angle) * force,
+          vy: Math.sin(angle) * force,
+          size: Math.floor(Math.random() * 2) + 2,
+          color: '#ffee00',
+          life: 0.55,
+          decay: Math.random() * 0.08 + 0.06
+        });
+      }
+
+      droppedCoins.splice(i, 1);
+      continue;
+    }
+
+    if (c.age >= c.life) {
+      droppedCoins.splice(i, 1);
+    }
+  }
+}
+
+/**
+ * Renders dropped gold coins with a sweet stenciled outline and rotating/pulsing shine sweep.
+ */
+function drawCoins() {
+  ctx.save();
+  droppedCoins.forEach(c => {
+    if (!isInView(c.x, c.y, c.size + 10)) return;
+
+    const age = c.age || 0;
+    const isExpiring = c.life - age <= 240;
+    if (isExpiring && (gameTick % 16 < 8)) return; // Fading blink
+
+    // Outer shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+    ctx.beginPath();
+    ctx.arc(c.x + 2, c.y + 2, c.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sinusoidal shimmer shimmer
+    const shimmer = Math.sin(gameTick * 0.15 + c.x) * 0.35 + 0.65;
+
+    // Glowing golden face
+    ctx.fillStyle = '#ffee00';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Raised stenciled copper-orange rim highlight
+    ctx.strokeStyle = '#e69d00';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.size / 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Central sparkling core highlight
+    ctx.fillStyle = `rgba(255, 255, 255, ${shimmer})`;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.size * 0.22, 0, Math.PI * 2);
     ctx.fill();
   });
   ctx.restore();
@@ -7406,7 +9653,9 @@ function drawZombies() {
       necromancer: 36,
       rusher: 36,
       shielder: 34,
-      patient_zero: 112
+      patient_zero: 112,
+      juggernaut: 60,
+      dreadnaught: 56
     };
     const spriteScale = size / (baseSpriteSizes[z.type] || baseSpriteSizes.normal);
 
@@ -7693,6 +9942,237 @@ function drawZombies() {
       ctx.fillRect(18, -4, 6, 8);
       ctx.fillStyle = '#ffffff'; // gleaming steel point
       ctx.fillRect(22, -2, 2, 4);
+
+    } else if (z.type === 'juggernaut') {
+      // Juggernaut — heavily armored long-range tank, orange/dark-steel palette
+
+      // 1. Drop shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(-26, -22, 52, 44);
+
+      // 2. Thick back armor slab
+      ctx.fillStyle = '#1a1a22';
+      ctx.fillRect(-30, -20, 8, 40);
+      ctx.fillStyle = '#2e2e3a';
+      ctx.fillRect(-28, -16, 5, 32);
+
+      // 3. Main armored torso — dark steel plates
+      ctx.fillStyle = '#2c2c38';
+      ctx.fillRect(-22, -20, 44, 40);
+
+      // 4. Chest plate layering
+      ctx.fillStyle = '#3a3a4a';
+      ctx.fillRect(-18, -16, 36, 32);
+      ctx.fillStyle = '#4a4a5c';
+      ctx.fillRect(-14, -12, 28, 24);
+
+      // 5. Central glowing cannon core (orange energy chamber)
+      ctx.fillStyle = '#ff6600';
+      ctx.fillRect(-6, -8, 14, 16);
+      ctx.fillStyle = '#ffaa00';
+      ctx.fillRect(-3, -5, 8, 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-1, -3, 4, 6);
+
+      // 6. Cannon barrel protruding to the right
+      ctx.fillStyle = '#1a1a22';
+      ctx.fillRect(14, -5, 16, 10);
+      ctx.fillStyle = '#2e2e3a';
+      ctx.fillRect(16, -3, 12, 6);
+      ctx.fillStyle = '#ff6600'; // glowing muzzle ring
+      ctx.fillRect(28, -4, 4, 8);
+
+      // 7. Heavy shoulder pauldrons
+      ctx.fillStyle = '#222230';
+      ctx.fillRect(-24, -24, 20, 10); // left shoulder
+      ctx.fillRect(4, -24, 20, 10);   // right shoulder
+      ctx.fillStyle = '#ff6600';
+      ctx.fillRect(-18, -24, 6, 4);   // left accent bolt
+      ctx.fillRect(12, -24, 6, 4);    // right accent bolt
+
+      // 8. Leg/base plating
+      ctx.fillStyle = '#222230';
+      ctx.fillRect(-18, 16, 14, 8);
+      ctx.fillRect(4, 16, 14, 8);
+      ctx.fillStyle = '#ff6600';
+      ctx.fillRect(-14, 20, 6, 4);
+      ctx.fillRect(8, 20, 6, 4);
+
+      // 9. Glowing red visor eyes
+      ctx.fillStyle = '#ff2200';
+      ctx.fillRect(-10, -6, 6, 4);
+      ctx.fillRect(4, -6, 6, 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-8, -5, 2, 2);
+      ctx.fillRect(6, -5, 2, 2);
+
+      // 10. Armor bolts/rivets
+      ctx.fillStyle = '#ff8800';
+      ctx.fillRect(-16, -18, 3, 3);
+      ctx.fillRect(13, -18, 3, 3);
+      ctx.fillRect(-16, 15, 3, 3);
+      ctx.fillRect(13, 15, 3, 3);
+
+      // 11. Outer black border
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3.5;
+      ctx.strokeRect(-22, -20, 44, 40);
+
+    } else if (z.type === 'dreadnaught') {
+      // ==========================================
+      // PASS 1: SOLID BLACK OUTLINE PASS (Thick pixel-art outlines)
+      // ==========================================
+      ctx.fillStyle = '#000000';
+
+      // 1. Sleek Reactor Exhausts & Dual Jet Vents (U-shaped recessed back, no fat block!)
+      // Top spiky jet thruster nozzle
+      ctx.fillRect(-44, -25, 18, 16);
+      // Bottom spiky jet thruster nozzle
+      ctx.fillRect(-44, 9, 18, 16);
+      
+      // Center recessed backplate void
+      ctx.fillRect(-32, -10, 8, 20);
+
+      // 2. Colossal Heavy Torso Carapace (Compact blocky silhouette)
+      ctx.fillRect(-26, -32, 38, 64);
+      ctx.fillRect(-12, -36, 30, 72);
+      ctx.fillRect(8, -24, 12, 48);
+
+      // 3. Symmetrical Armored Side-Mounted Cannon Pods Outline (Mounted flush on sides!)
+      ctx.fillRect(-20, -46, 36, 20); // Top side cannon pod
+      ctx.fillRect(-20, 26, 36, 20);  // Bottom side cannon pod
+
+      // 4. Retracted Forward-Pointing Heavy Barrels Outline (Slight forward extension)
+      ctx.fillRect(16, -43, 8, 14); // Top barrel tip
+      ctx.fillRect(16, 29, 8, 14);  // Bottom barrel tip
+
+      // 5. Armored Tactical Helmet & Visor Shroud (Centered front)
+      ctx.fillRect(8, -18, 20, 36);
+      ctx.fillRect(4, -24, 18, 8); // Top crest spike
+
+      // ==========================================
+      // PASS 2: COLOR LAYER PASS (Segmented pixel textures)
+      // ==========================================
+      const _pulse = (Math.sin(gameTick * 0.08) + 1) / 2;
+      const _wraith = z.isWraith || false;
+
+      // 1. Dual Jet Vents & Reactor Exhausts (Hazard steel & molten fire)
+      ctx.fillStyle = '#0f0f14'; // Shadow voids
+      ctx.fillRect(-42, -23, 14, 12);
+      ctx.fillRect(-42, 11, 14, 12);
+      ctx.fillRect(-30, -8, 6, 16); // Center recessed void
+
+      // Thruster metal nozzles (charcoal steel, X: -42 to -30)
+      ctx.fillStyle = '#2c2c36';
+      ctx.fillRect(-40, -21, 10, 8);
+      ctx.fillRect(-40, 13, 10, 8);
+      
+      // Neon orange rocket exhaust jet fire! (streams backward dynamically based on pulse)
+      ctx.fillStyle = _wraith ? '#ffccff' : '#ff5500';
+      ctx.fillRect(-46, -20, 6, 6);
+      ctx.fillRect(-46, 14, 6, 6);
+      ctx.fillStyle = _wraith ? '#ffffff' : '#ffee00'; // Hot flame core
+      ctx.fillRect(-44, -19, 3, 4);
+      ctx.fillRect(-44, 15, 3, 4);
+
+      // 2. Colossal Hazard-Steel Chest Carapace & Torso
+      ctx.fillStyle = '#1e1e24'; // Base dark steel panels
+      ctx.fillRect(-22, -28, 34, 56);
+      ctx.fillRect(-10, -32, 24, 64);
+      ctx.fillRect(6, -20, 12, 40);
+
+      // Yellow-and-Black Hazard warning stripes along the shoulders!
+      ctx.fillStyle = '#ffbb00'; // Bright hazard yellow stripes
+      ctx.fillRect(-18, -26, 6, 8);
+      ctx.fillRect(-12, -26, 6, 8);
+      ctx.fillRect(-18, 18, 6, 8);
+      ctx.fillRect(-12, 18, 6, 8);
+      ctx.fillStyle = '#0c0c10'; // Black warning gaps
+      ctx.fillRect(-15, -26, 3, 8);
+      ctx.fillRect(-11, -26, 3, 8);
+      ctx.fillRect(-15, 18, 3, 8);
+      ctx.fillRect(-11, 18, 3, 8);
+
+      // 3. Side-Mounted Cannon Casings (Hazard orange plating, sitting flush!)
+      ctx.fillStyle = '#ff6600'; // Top side cannon casing
+      ctx.fillRect(-18, -44, 32, 16);
+      ctx.fillStyle = '#2c2c36'; // Top side armor highlight
+      ctx.fillRect(-12, -44, 18, 4);
+
+      ctx.fillStyle = '#ff6600'; // Bottom side cannon casing
+      ctx.fillRect(-18, 28, 32, 16);
+      ctx.fillStyle = '#2c2c36'; // Bottom side armor highlight
+      ctx.fillRect(-12, 40, 18, 4);
+
+      // Flashing Alert beacon lights on top of side pods
+      const flashRed = (gameTick % 30 < 15);
+      ctx.fillStyle = flashRed ? '#ff1100' : '#4a0000';
+      ctx.fillRect(-8, -41, 4, 4);
+      ctx.fillRect(-8, 37, 4, 4);
+      if (flashRed) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-7, -40, 2, 2);
+        ctx.fillRect(-7, 38, 2, 2);
+      }
+
+      // 4. Retracted Heavy Artillery Barrels & Laser Charge (Forward extension)
+      // Top Barrel (dark steel tube pipe)
+      ctx.fillStyle = '#1a1a20';
+      ctx.fillRect(14, -41, 8, 10);
+      ctx.fillStyle = '#3a3a46'; // inner barrel shade
+      ctx.fillRect(16, -39, 6, 6);
+      ctx.fillStyle = '#ff5500'; // glowing charge point inside barrel!
+      ctx.fillRect(20, -38, 2, 4);
+
+      // Bottom Barrel (dark steel tube pipe)
+      ctx.fillStyle = '#1a1a20';
+      ctx.fillRect(14, 31, 8, 10);
+      ctx.fillStyle = '#3a3a46'; // inner barrel shade
+      ctx.fillRect(16, 33, 6, 6);
+      ctx.fillStyle = '#ff5500'; // glowing charge point inside barrel!
+      ctx.fillRect(20, 34, 2, 4);
+
+      // 5. Glowing Unstable Void Soul Core (Pulsing Chest Chamber)
+      ctx.fillStyle = _wraith ? 'rgba(235, 120, 255, 0.8)' : 'rgba(255, 102, 0, 0.8)'; // pulsing orange core!
+      ctx.fillRect(-6, -12, 12, 24);
+      ctx.fillStyle = '#ffeecc'; // White hot center
+      ctx.fillRect(-3, -9, 6, 18);
+      ctx.fillStyle = '#ffffff'; 
+      ctx.fillRect(-1, -4, 2, 8);
+
+      // Core protection rib bars
+      ctx.fillStyle = '#08000c';
+      ctx.fillRect(-8, -8, 16, 2);
+      ctx.fillRect(-8, -3, 16, 2);
+      ctx.fillRect(-8, 2, 16, 2);
+      ctx.fillRect(-8, 7, 16, 2);
+
+      // 6. Armored Tactical Helmet & Visor (Sleek sci-fi scanner visor!)
+      ctx.fillStyle = '#0f0f14'; // Dark visor slot background
+      ctx.fillRect(8, -16, 18, 32);
+
+      // Armored blast mask plates (dark steel & hazard orange)
+      ctx.fillStyle = '#ff6600';
+      ctx.fillRect(10, -12, 8, 24);
+      ctx.fillStyle = '#3a3a46';
+      ctx.fillRect(12, -8, 6, 16);
+
+      // Sleek pulsing Horizontal Neon Visor Line (No skull, pure tracking scanner!)
+      const visorColor = _wraith ? '#ffffff' : `rgba(0, 243, 255, ${0.85 + _pulse * 0.15})`; // pulsing neon cyan visor!
+      ctx.fillStyle = visorColor;
+      ctx.fillRect(14, -10, 3, 20); // vertical bar rotated makes it a horizontal scanner line!
+      ctx.fillStyle = '#ffffff'; // Visor reflection glint
+      ctx.fillRect(15, -4, 1, 8);
+
+      // Helmet crest spike
+      ctx.fillStyle = '#2c2c36';
+      ctx.fillRect(6, -22, 14, 4);
+
+      // 7. Wraith shimmer overlay (orange-tinted for Dreadnought)
+      if (_wraith) {
+        ctx.fillStyle = `rgba(255, 120, 0, ${0.15 + _pulse * 0.20})`;
+        ctx.fillRect(-28, -28, 56, 56);
+      }
 
     } else if (z.type === 'patient_zero') {
       // Patient Zero Redesigned: The Bio-Hazard Toxic Abomination (112px base, scaled up)
@@ -8178,9 +10658,11 @@ function drawZombies() {
     // This replaces ctx.filter which was software-rendered and caused GPU pipeline flushes.
     if (isFlashed) {
       const spBase = baseSpriteSizes[z.type] || baseSpriteSizes.normal;
-      // Orange flash for burning zombies, icy blue for frozen, white for normal hits
+      // Orange flash for burning zombies, purple for pulse EMP slow, icy blue for frozen, white for normal hits
       if (z.burnTicks > 0) {
         ctx.fillStyle = 'rgba(255, 100, 0, 0.80)';
+      } else if (z.pulseSlowTicks > 0) {
+        ctx.fillStyle = 'rgba(200, 0, 255, 0.80)'; // neon purple for pulse EMP
       } else if (z.cryoSlowTicks > 0) {
         ctx.fillStyle = 'rgba(100, 220, 255, 0.80)';
       } else {
@@ -8313,6 +10795,51 @@ function drawZombies() {
         ctx.closePath();
         ctx.fill();
       });
+    } else if (z.pulseSlowTicks > 0) {
+      const spBase = baseSpriteSizes[z.type] || baseSpriteSizes.normal;
+      const radius = spBase * 0.60;
+      
+      // 1. Draw glowing purple/magenta electrostatic containment field aura
+      ctx.fillStyle = 'rgba(180, 0, 255, 0.12)';
+      ctx.strokeStyle = 'rgba(220, 60, 255, 0.70)';
+      ctx.lineWidth = 1.8;
+      
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // 2. Draw 4 dynamic jittering static electricity discharge arcs
+      ctx.strokeStyle = '#df80ff';
+      ctx.lineWidth = 1.2;
+      for (let arc = 0; arc < 4; arc++) {
+        const arcAngle = (arc * Math.PI * 2 / 4) + (gameTick * 0.04);
+        
+        // Jagged path lines from core outward
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        
+        // We'll draw a jagged line with 3 segments
+        const segments = 3;
+        for (let seg = 1; seg <= segments; seg++) {
+          const segR = radius * (seg / segments);
+          // Add quick high-frequency jitter coordinates
+          const jitterAngle = arcAngle + (Math.sin(gameTick * 0.62 + seg + arc) * 0.32);
+          const jx = Math.cos(jitterAngle) * segR;
+          const jy = Math.sin(jitterAngle) * segR;
+          ctx.lineTo(jx, jy);
+        }
+        ctx.stroke();
+      }
+
+      // 3. Draw 4 floating neon purple mini-sparks around the zombie perimeter
+      ctx.fillStyle = '#ff80ff';
+      for (let s = 0; s < 4; s++) {
+        const sparkAngle = (s * Math.PI * 2 / 4) - (gameTick * 0.03);
+        const sx = Math.cos(sparkAngle) * (radius * 1.08 + Math.sin(gameTick * 0.25 + s) * 2);
+        const sy = Math.sin(sparkAngle) * (radius * 1.08 + Math.sin(gameTick * 0.25 + s) * 2);
+        ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+      }
     }
 
     ctx.restore();
@@ -8494,6 +11021,57 @@ function drawExplosions() {
       ctx.lineWidth = Math.max(1, 5 * exp.life);
       ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.stroke();
 
+    } else if (exp.type === 'pulse') {
+      // Layer C — magenta plasma mid-ring
+      ctx.fillStyle = `rgba(160, 0, 240, ${0.72 * exp.life})`;
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.60, 0, Math.PI * 2); ctx.fill();
+
+      // Layer D — white-violet flash core (only bright at burst start)
+      const flashAlpha = Math.max(0, exp.life * 4.5 - 3.5);
+      ctx.fillStyle = `rgba(240, 200, 255, ${flashAlpha})`;
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.22, 0, Math.PI * 2); ctx.fill();
+
+      // Rotating void tendrils — 6 jagged arms spiraling outward
+      ctx.save();
+      ctx.translate(exp.x, exp.y);
+      const rotBase = (1 - exp.life) * Math.PI * 1.6;
+      const tendrilLen = currentRadius * 1.18;
+      if (tendrilLen > 6) {
+        for (let ti = 0; ti < 6; ti++) {
+          ctx.save();
+          ctx.rotate(rotBase + (ti / 6) * Math.PI * 2);
+          const jag = Math.sin(ti * 1.7 + (1 - exp.life) * 10) * tendrilLen * 0.10;
+          // Thick glow arm
+          ctx.strokeStyle = `rgba(180, 0, 255, ${exp.life * 0.50})`;
+          ctx.lineWidth = Math.max(1, 3.5 * exp.life);
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(tendrilLen * 0.38 + jag, jag * 0.6);
+          ctx.lineTo(tendrilLen * 0.72 - jag * 0.4, jag);
+          ctx.lineTo(tendrilLen, 0);
+          ctx.stroke();
+          // Thin bright core line
+          ctx.strokeStyle = `rgba(255, 180, 255, ${exp.life * 0.80})`;
+          ctx.lineWidth = Math.max(1, 1.2 * exp.life);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(tendrilLen * 0.65, 0);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+
+      // Outer rim — thin white ring
+      ctx.strokeStyle = `rgba(255, 255, 255, ${exp.life * 0.75})`;
+      ctx.lineWidth = Math.max(1, 2.5 * exp.life);
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.stroke();
+      // Second rim — magenta slightly inside
+      ctx.strokeStyle = `rgba(200, 0, 255, ${exp.life * 0.55})`;
+      ctx.lineWidth = Math.max(1, 4 * exp.life);
+      ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.78, 0, Math.PI * 2); ctx.stroke();
+
     } else {
       ctx.fillStyle = 'rgba(176,0,0,0.4)';
       ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius, 0, Math.PI * 2); ctx.fill();
@@ -8505,8 +11083,8 @@ function drawExplosions() {
       ctx.beginPath(); ctx.arc(exp.x, exp.y, currentRadius * 0.12, 0, Math.PI * 2); ctx.fill();
     }
 
-    // Shockwave ring (skip for revive — it draws its own)
-    if (exp.type !== 'revive') {
+    // Shockwave ring (skip for revive and pulse — they draw their own)
+    if (exp.type !== 'revive' && exp.type !== 'pulse') {
       ctx.strokeStyle = exp.type === 'necro' ? '#39ff14' : '#ff4500';
       ctx.lineWidth = Math.max(1, 4 * exp.life);
       ctx.beginPath();
@@ -8565,6 +11143,11 @@ function _flushHUD() {
   healthValue.textContent = Math.round(player.health);
   scoreValue.textContent  = gameState.score;
   waveValue.textContent   = gameState.wave;
+
+  const coinsValue = document.getElementById('coins-value');
+  if (coinsValue) {
+    coinsValue.textContent = coinsEarnedThisRun;
+  }
 
   // Update retro segmented health bar width
   if (healthFill) {
@@ -8870,14 +11453,20 @@ function gameOver() {
   finalScore.textContent = gameState.score;
   finalWave.textContent  = gameState.wave;
 
-  // Save the run to Supabase (runs in background, won't block the UI)
-  saveScore(
-    gameState.playerName,
-    gameState.score,
-    gameState.wave,
-    gameState.kills,
-    upgradesChosen
-  );
+  if (currentUser && currentProfile) {
+    // Save score and coins for logged-in players
+    saveScore(gameState.playerName, gameState.score, gameState.wave, gameState.kills, upgradesChosen);
+    if (coinsEarnedThisRun > 0) {
+      currentProfile.coins += coinsEarnedThisRun;
+      addCoins(coinsEarnedThisRun);
+      const coinsEl = document.getElementById('display-coins');
+      if (coinsEl) coinsEl.textContent = currentProfile.coins;
+    }
+  }
+
+  // Always show coins earned this run on the game-over screen for tactile feedback
+  document.getElementById('coins-earned-row').style.display = 'flex';
+  document.getElementById('final-coins').textContent = '+' + coinsEarnedThisRun;
 
   // Switch to the game-over screen
   showScreen(gameoverScreen);
@@ -8970,27 +11559,195 @@ window.addEventListener('mousedown', function(event) {
   // Capture left-clicks when active in gameplay
   if (event.button === 0 && gameState.isRunning) {
     mouse.isDown = true;
+    if (selectedGun === 'charge_rifle' && !player.stunTicks) {
+      isCharging = true;
+      chargeStartTime = Date.now();
+      audio.startChargeSound();
+    }
   }
 });
 
 window.addEventListener('mouseup', function(event) {
   if (event.button === 0) {
     mouse.isDown = false;
+    if (selectedGun === 'charge_rifle' && isCharging && gameState.isRunning) {
+      fireChargeRifle();
+    }
+    isCharging = false;
+    audio.stopChargeSound();
   }
 });
 
+
+// ── Arsenal Panel (left panel on main menu) ───────────────────────────────────
+
+function renderArsenalPanel() {
+  const list = document.getElementById('arsenal-gun-list');
+  if (!list) return;
+
+  const unlockedGuns = currentProfile?.unlocked_guns || ['pistol'];
+  const coins = currentProfile?.coins ?? 0;
+
+  list.innerHTML = '';
+
+  Object.values(GUNS).forEach(gun => {
+    const isUnlocked = unlockedGuns.includes(gun.id);
+    const canAfford  = coins >= gun.price;
+    const isSelected = selectedGun === gun.id;
+
+    const card = document.createElement('div');
+    card.className = [
+      'arsenal-gun-card',
+      `rarity-${gun.rarity}`,
+      isSelected    ? 'arsenal-selected'   : '',
+      !isUnlocked   ? 'arsenal-gun-locked' : ''
+    ].filter(Boolean).join(' ');
+
+    card.innerHTML = `
+      <div class="arsenal-gun-header">
+        <span class="arsenal-gun-icon">${gun.icon}</span>
+        <span class="arsenal-gun-name">${gun.name}</span>
+        ${isSelected ? '<span class="arsenal-equipped-badge">EQUIPPED</span>' : ''}
+      </div>
+      <div class="arsenal-gun-stats">DMG ${gun.stats.bulletDamage} · SPD ${gun.stats.bulletSpeed} · RATE ${gun.stats.fireRate}ms</div>
+      <div class="arsenal-gun-desc">${gun.description}</div>
+      ${!isUnlocked && gun.price > 0
+        ? `<button class="arsenal-buy-btn${canAfford ? '' : ' arsenal-buy-locked'}" data-id="${gun.id}" data-price="${gun.price}">
+             ${canAfford ? `Buy for ${gun.price} ◈` : `Need ${gun.price} ◈`}
+           </button>`
+        : ''}
+    `;
+
+    if (isUnlocked) {
+      card.addEventListener('click', () => {
+        selectedGun = gun.id;
+        renderArsenalPanel();
+      });
+    }
+
+    list.appendChild(card);
+  });
+
+  // Wire buy buttons
+  list.querySelectorAll('.arsenal-buy-btn:not(.arsenal-buy-locked)').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const gunId = btn.dataset.id;
+      const price = parseInt(btn.dataset.price);
+      const result = await buyGun(gunId, price);
+      if (result?.success) {
+        if (currentProfile && result.newCoins !== undefined) {
+          currentProfile.coins  = result.newCoins;
+          currentProfile.unlocked_guns = result.newGuns;
+        }
+        const coinEl = document.getElementById('display-coins');
+        if (coinEl) coinEl.textContent = currentProfile?.coins ?? 0;
+        selectedGun = gunId;
+        renderArsenalPanel();
+      }
+    });
+  });
+}
+
+// ── Gun Selection Screen ──────────────────────────────────────────────────────
+
+function showGunSelectionScreen() {
+  const overlay = document.getElementById('gun-select-overlay');
+  if (!overlay) { startGame(); return; }
+
+  const unlockedGuns = currentProfile?.unlocked_guns || ['pistol'];
+  const coins = currentProfile?.coins ?? 0;
+
+  const container = document.getElementById('gun-cards-container');
+  container.innerHTML = '';
+
+  Object.values(GUNS).forEach(gun => {
+    const isUnlocked = unlockedGuns.includes(gun.id);
+    const canAfford = coins >= gun.price;
+    const isSelected = selectedGun === gun.id;
+
+    const card = document.createElement('div');
+    card.className = `gun-card rarity-${gun.rarity}${isSelected ? ' gun-card-selected' : ''}${!isUnlocked ? ' gun-card-locked' : ''}`;
+
+    card.innerHTML = `
+      <div class="gun-card-icon">${gun.icon}</div>
+      <div class="gun-card-name">${gun.name}</div>
+      <div class="gun-card-desc">${gun.description}</div>
+      <div class="gun-card-stats">
+        DMG ${gun.stats.bulletDamage} &nbsp;|&nbsp;
+        SPD ${gun.stats.bulletSpeed} &nbsp;|&nbsp;
+        RATE ${gun.stats.fireRate}ms
+      </div>
+      ${!isUnlocked && gun.price > 0
+        ? `<button class="gun-buy-btn${canAfford ? '' : ' gun-buy-disabled'}" data-id="${gun.id}" data-price="${gun.price}">
+             ${canAfford ? `Buy (${gun.price}◈)` : `Locked (${gun.price}◈)`}
+           </button>`
+        : ''}
+    `;
+
+    if (isUnlocked) {
+      card.addEventListener('click', () => {
+        selectedGun = gun.id;
+        showGunSelectionScreen(); // re-render to update selection
+      });
+    }
+
+    container.appendChild(card);
+  });
+
+  // Buy button handlers
+  container.querySelectorAll('.gun-buy-btn:not(.gun-buy-disabled)').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const gunId = btn.dataset.id;
+      const price = parseInt(btn.dataset.price);
+      const result = await buyGun(gunId, price);
+      if (result?.success) {
+        if (currentProfile && result.newCoins !== undefined) {
+          currentProfile.coins = result.newCoins;
+          currentProfile.unlocked_guns = result.newGuns;
+        }
+        // Refresh coin display on main menu
+        document.getElementById('display-coins').textContent = currentProfile?.coins ?? 0;
+        selectedGun = gunId;
+        showGunSelectionScreen();
+      } else if (result?.error) {
+        console.warn('Buy gun failed:', result.error);
+      }
+    });
+  });
+
+  const confirmBtn = document.getElementById('gun-confirm-btn');
+  confirmBtn.textContent = `DEPLOY WITH ${GUNS[selectedGun].name.toUpperCase()}`;
+
+  overlay.style.display = 'flex';
+}
+
+function hideGunSelectionScreen() {
+  const overlay = document.getElementById('gun-select-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+document.getElementById('gun-confirm-btn').addEventListener('click', () => {
+  hideGunSelectionScreen();
+  startGame();
+});
+
+document.getElementById('gun-back-btn').addEventListener('click', () => {
+  hideGunSelectionScreen();
+});
 
 // Button Event Listeners
 
-// Start Game button
+// Start Game button (logged-in users)
 startBtn.addEventListener('click', startGame);
 
-// Allow pressing Enter in the name field to start the game
-playerNameInput.addEventListener('keydown', function(event) {
-  if (event.key === 'Enter') {
-    startGame();
-  }
-});
+// Allow pressing Enter in the guest name field to start
+if (playerNameInput) {
+  playerNameInput.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') startGame();
+  });
+}
 
 // Automatically load and render the menu leaderboard in the right panel
 async function refreshMenuLeaderboard() {
@@ -9161,3 +11918,161 @@ window.addEventListener('keydown', function(event) {
 
 // Initial load of the menu leaderboard on startup
 refreshMenuLeaderboard();
+
+// ── Auth UI helpers ───────────────────────────────────────────────────────────
+
+function hideAuthOverlay() {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function showAuthOverlay() {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'flex';
+}
+
+function showLoggedInState() {
+  document.getElementById('logged-in-panel').style.display = 'block';
+  document.getElementById('guest-panel').style.display = 'none';
+  document.getElementById('display-username').textContent = currentProfile.username;
+  document.getElementById('display-coins').textContent = currentProfile.coins;
+  renderArsenalPanel();
+}
+
+function showGuestState() {
+  document.getElementById('logged-in-panel').style.display = 'none';
+  document.getElementById('guest-panel').style.display = 'block';
+  renderArsenalPanel();
+}
+
+// ── Auth overlay button wiring ────────────────────────────────────────────────
+
+// Tab switching
+document.getElementById('tab-login').addEventListener('click', () => {
+  document.getElementById('tab-login').classList.add('active');
+  document.getElementById('tab-signup').classList.remove('active');
+  document.getElementById('auth-login-form').style.display = 'flex';
+  document.getElementById('auth-signup-form').style.display = 'none';
+  document.getElementById('login-error').textContent = '';
+});
+
+document.getElementById('tab-signup').addEventListener('click', () => {
+  document.getElementById('tab-signup').classList.add('active');
+  document.getElementById('tab-login').classList.remove('active');
+  document.getElementById('auth-signup-form').style.display = 'flex';
+  document.getElementById('auth-login-form').style.display = 'none';
+  document.getElementById('signup-error').textContent = '';
+});
+
+// Login
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errorEl = document.getElementById('login-error');
+  errorEl.textContent = '';
+
+  if (!username || !password) { errorEl.textContent = 'Fill in all fields.'; return; }
+
+  const btn = document.getElementById('login-btn');
+  btn.textContent = 'Logging in...';
+  btn.disabled = true;
+
+  const result = await authSignIn(username, password);
+
+  btn.textContent = 'Login';
+  btn.disabled = false;
+
+  if (result.error) { errorEl.textContent = result.error; return; }
+
+  currentUser = result.user;
+  currentProfile = await loadProfile();
+  if (!currentProfile) { errorEl.textContent = 'Failed to load profile. Try again.'; return; }
+
+  hideAuthOverlay();
+  showLoggedInState();
+  refreshMenuLeaderboard();
+});
+
+// Signup
+document.getElementById('signup-btn').addEventListener('click', async () => {
+  const username = document.getElementById('signup-username').value.trim();
+  const password = document.getElementById('signup-password').value;
+  const confirm  = document.getElementById('signup-confirm').value;
+  const errorEl  = document.getElementById('signup-error');
+  errorEl.textContent = '';
+
+  if (!username || !password || !confirm) { errorEl.textContent = 'Fill in all fields.'; return; }
+  if (username.length < 3) { errorEl.textContent = 'Username must be at least 3 characters.'; return; }
+  if (password.length < 6) { errorEl.textContent = 'Password must be at least 6 characters.'; return; }
+  if (password !== confirm) { errorEl.textContent = 'Passwords do not match.'; return; }
+
+  const btn = document.getElementById('signup-btn');
+  btn.textContent = 'Creating account...';
+  btn.disabled = true;
+
+  const result = await authSignUp(username, password);
+
+  btn.textContent = 'Create Account';
+  btn.disabled = false;
+
+  if (result.error) { errorEl.textContent = result.error; return; }
+
+  currentUser = result.user;
+  currentProfile = await loadProfile();
+  if (!currentProfile) { errorEl.textContent = 'Account created but failed to load profile. Please refresh.'; return; }
+
+  hideAuthOverlay();
+  showLoggedInState();
+  refreshMenuLeaderboard();
+});
+
+// Guest play
+document.getElementById('guest-play-btn').addEventListener('click', () => {
+  currentUser = null;
+  currentProfile = null;
+  hideAuthOverlay();
+  showGuestState();
+});
+
+// Show auth overlay from "Login / Create Account" link on start screen
+document.getElementById('show-auth-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  showAuthOverlay();
+});
+
+// Sign out
+document.getElementById('signout-btn').addEventListener('click', async () => {
+  await authSignOut();
+  currentUser = null;
+  currentProfile = null;
+  showGuestState();
+  showAuthOverlay();
+});
+
+// Guest start button
+document.getElementById('guest-start-btn').addEventListener('click', startGame);
+
+// Allow Enter key in auth inputs
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('login-btn').click();
+});
+document.getElementById('signup-confirm').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('signup-btn').click();
+});
+
+// ── Init: check for existing session on page load ─────────────────────────────
+
+(async function initAuth() {
+  const session = await authGetSession();
+  if (session) {
+    currentUser = session.user;
+    currentProfile = await loadProfile();
+    if (currentProfile) {
+      showLoggedInState();
+      hideAuthOverlay();
+      return;
+    }
+  }
+  // No valid session — show auth overlay
+  showAuthOverlay();
+})();

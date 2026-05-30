@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,11 +10,13 @@
   <!-- Google Fonts: Black Ops One for stencil titles, Share Tech Mono for tactical UI -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap"
+    rel="stylesheet">
 
   <!-- Main stylesheet -->
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
   <!-- Retro CRT Scanline Screen Overlay -->
@@ -79,49 +82,24 @@
 
     <!-- Main Game Menu Layout Wrapper (Redesigned Tactical Dashboard) -->
     <div class="main-menu-wrapper">
-      
-      <!-- Left Panel: Tactical Survival Protocols (Controls & Keybinds) -->
-      <div class="side-panel left-panel">
+
+      <!-- Left Panel: Arsenal (Weapon Select / Buy) -->
+      <div class="side-panel left-panel" id="arsenal-panel">
         <div class="rivet top-left" aria-hidden="true"></div>
         <div class="rivet top-right" aria-hidden="true"></div>
         <div class="rivet bottom-left" aria-hidden="true"></div>
         <div class="rivet bottom-right" aria-hidden="true"></div>
         <div class="hazard-bar" aria-hidden="true"></div>
-        
-        <h3 class="side-panel-title">SURVIVAL PROTOCOLS</h3>
-        <ul class="side-panel-list">
-          <li>
-            <span class="key-caps">
-              <span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span>
-            </span>
-            <span class="action-desc">Tactical Movement Control</span>
-          </li>
-          <li>
-            <span class="key-caps">
-              <span class="key-cap">MOUSE</span>
-            </span>
-            <span class="action-desc">Aim / Face Direction</span>
-          </li>
-          <li>
-            <span class="key-caps">
-              <span class="key-cap">HOLD CLICK</span>
-            </span>
-            <span class="action-desc">Primary Weapon Fire</span>
-          </li>
-          <li>
-            <span class="key-caps">
-              <span class="key-cap">SPACE</span> / <span class="key-cap">SHIFT</span>
-            </span>
-            <span class="action-desc">Reflex Dash (Active Upgrade)</span>
-          </li>
-          <li>
-            <span class="key-caps">
-              <span class="key-cap">ESC</span>
-            </span>
-            <span class="action-desc">Pause Mission / Sound Menu</span>
-          </li>
-        </ul>
-        
+
+        <h3 class="side-panel-title">ARSENAL</h3>
+        <p class="tagline"
+          style="font-size:0.65rem; text-align:center; margin:0 0 0.4rem 0; color:var(--text-secondary);">Equip a weapon
+          before deploying.</p>
+
+        <div id="arsenal-gun-list" class="arsenal-gun-list">
+          <!-- Populated by JS -->
+        </div>
+
         <div class="hazard-bar" aria-hidden="true"></div>
       </div>
 
@@ -144,24 +122,38 @@
         </h1>
         <p class="tagline">Survive the horde. How long can you last?</p>
 
-        <!-- Player name input -->
-        <div class="input-group">
-          <label for="player-name" class="input-label">Enter Your Name, Survivor</label>
-          <input
-            type="text"
-            id="player-name"
-            class="name-input"
-            placeholder="Anonymous Survivor"
-            maxlength="20"
-            autocomplete="off"
-          >
+        <!-- Logged-in state (shown after successful login) -->
+        <div id="logged-in-panel" style="display:none; width:100%; text-align:center;">
+          <div class="auth-welcome">
+            <span class="auth-welcome-label">SURVIVOR</span>
+            <span id="display-username" class="auth-welcome-name">—</span>
+            <div class="coins-badge">
+              <span class="coins-icon">◈</span>
+              <span id="display-coins">0</span>
+              <span class="coins-label">COINS</span>
+            </div>
+          </div>
+          <div class="menu-buttons" style="flex-direction:column; gap:0.75rem; align-items:stretch; width:100%;">
+            <button id="start-btn" class="btn btn-primary" style="width:100%;">Deploy</button>
+            <button id="signout-btn" class="btn btn-secondary" style="width:100%;">Sign Out</button>
+          </div>
         </div>
 
-        <!-- Menu buttons -->
-        <div class="menu-buttons" style="align-items: center; justify-content: center; width: 100%;">
-          <button id="start-btn" class="btn btn-primary" style="width: 100%; max-width: 280px;">
-            Start Game
-          </button>
+        <!-- Guest state (shown before login or for guests) -->
+        <div id="guest-panel">
+          <div class="input-group">
+            <label for="player-name" class="input-label">Enter Your Name, Survivor</label>
+            <input type="text" id="player-name" class="name-input" placeholder="Anonymous Survivor" maxlength="20"
+              autocomplete="off">
+          </div>
+          <div class="menu-buttons" style="align-items:stretch; justify-content:center; width:100%;">
+            <button id="guest-start-btn" class="btn btn-primary" style="width:100%;">
+              Play as Guest
+            </button>
+          </div>
+          <p class="guest-mode-note">Progress won't be saved —
+            <a id="show-auth-link" href="#" class="auth-link">Login / Create Account</a>
+          </p>
         </div>
 
         <div class="hazard-bar" aria-hidden="true"></div>
@@ -177,12 +169,15 @@
         <div class="rivet bottom-left" aria-hidden="true"></div>
         <div class="rivet bottom-right" aria-hidden="true"></div>
         <div class="hazard-bar" aria-hidden="true"></div>
-        
+
         <h3 class="side-panel-title">LEADERBOARD</h3>
-        <p class="tagline" style="font-size: 0.7rem; text-align: center; margin: 0 0 0.5rem 0;">Top survivors of the dead zone.</p>
-        
-        <div class="leaderboard-table-wrap" style="width: 100%; overflow-x: auto; background: rgba(0,0,0,0.35); border: 2px solid var(--panel-border); margin: 0.5rem 0;">
-          <table class="leaderboard-table" style="width: 100%; font-size: 0.75rem; border-collapse: collapse; text-align: left;">
+        <p class="tagline" style="font-size: 0.7rem; text-align: center; margin: 0 0 0.5rem 0;">Top survivors of the
+          dead zone.</p>
+
+        <div class="leaderboard-table-wrap"
+          style="width: 100%; overflow-x: auto; background: rgba(0,0,0,0.35); border: 2px solid var(--panel-border); margin: 0.5rem 0;">
+          <table class="leaderboard-table"
+            style="width: 100%; font-size: 0.75rem; border-collapse: collapse; text-align: left;">
             <thead>
               <tr style="border-bottom: 2px solid var(--panel-border); background: rgba(0,0,0,0.5);">
                 <th style="padding: 0.5rem 0.4rem;">Rank</th>
@@ -194,12 +189,13 @@
             </thead>
             <tbody id="leaderboard-body">
               <tr>
-                <td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 1.5rem 1rem;">Loading scores...</td>
+                <td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 1.5rem 1rem;">Loading
+                  scores...</td>
               </tr>
             </tbody>
           </table>
         </div>
-        
+
         <div class="hazard-bar" aria-hidden="true"></div>
       </div>
 
@@ -233,6 +229,10 @@
         <span class="hud-label">Enemies</span>
         <span class="hud-value" id="hud-enemies-value">—</span>
       </div>
+      <div class="hud-item" id="hud-coins">
+        <span class="hud-label">Coins</span>
+        <span class="hud-value" id="coins-value" style="color:#ffcc00;">0</span>
+      </div>
     </div>
 
     <!-- The game canvas where everything is drawn -->
@@ -243,7 +243,7 @@
   <!-- Hidden by default. Shown when the player dies -->
   <div id="gameover-screen" class="screen">
     <div class="menu-container death-container">
-      <!-- Retro panel corner rivet details -->
+      <!-- Retro panel corner rivet details -->1
       <div class="rivet top-left" aria-hidden="true"></div>
       <div class="rivet top-right" aria-hidden="true"></div>
       <div class="rivet bottom-left" aria-hidden="true"></div>
@@ -270,6 +270,10 @@
         <div class="stat-row">
           <span class="stat-label">Wave Reached</span>
           <span class="stat-value" id="final-wave">1</span>
+        </div>
+        <div class="stat-row" id="coins-earned-row" style="display:none;">
+          <span class="stat-label">Coins Earned</span>
+          <span class="stat-value" id="final-coins" style="color:#ffcc00;">+0</span>
         </div>
       </div>
 
@@ -336,7 +340,8 @@
   </div>
 
   <!-- Pause Screen / Overlay -->
-  <div id="pause-screen" class="screen" style="background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 950;">
+  <div id="pause-screen" class="screen"
+    style="background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 950;">
     <div class="menu-container pause-container">
       <!-- Retro panel corner rivet details -->
       <div class="rivet top-left" aria-hidden="true"></div>
@@ -346,7 +351,8 @@
 
       <div class="hazard-bar" aria-hidden="true"></div>
 
-      <h1 class="title pause-title" style="color: #ffaa00; text-shadow: 0 0 10px rgba(255,170,0,0.5);">SYSTEM PAUSED</h1>
+      <h1 class="title pause-title" style="color: #ffaa00; text-shadow: 0 0 10px rgba(255,170,0,0.5);">SYSTEM PAUSED
+      </h1>
       <p class="tagline">Tactical retreat or short breather?</p>
 
       <!-- Two-column body: upgrades left, buttons right -->
@@ -394,7 +400,8 @@
         <button id="cheat-close-btn" class="cheat-close-btn" aria-label="Close Cheat Panel">&times;</button>
       </div>
 
-      <p class="cheat-desc">Select any upgrade below to apply it instantly for testing. Press <strong>O + P</strong> again to close.</p>
+      <p class="cheat-desc">Select any upgrade below to apply it instantly for testing. Press <strong>O + P</strong>
+        again to close.</p>
 
       <!-- Quick Command Bar -->
       <div class="cheat-quick-bar">
@@ -404,7 +411,7 @@
           <button id="cheat-next-wave-btn" class="cheat-action-btn epic-text">+1 WAVE</button>
           <button id="cheat-skip-5-btn" class="cheat-action-btn legendary-text">+5 WAVES</button>
         </div>
-        
+
         <div class="cheat-quick-group">
           <span class="cheat-quick-label">SUMMON ZOMBIES:</span>
           <button class="cheat-summon-btn" data-type="normal">NORMAL</button>
@@ -415,7 +422,11 @@
           <button class="cheat-summon-btn" data-type="exploder">EXPLODER</button>
           <button class="cheat-summon-btn" data-type="rusher">RUSHER</button>
           <button class="cheat-summon-btn" data-type="shielder">SHIELD</button>
-          <button id="cheat-summon-boss-btn" class="cheat-action-btn" style="background:#8a0000;color:#ff4444;border:1px solid #ff4444;">BOSS</button>
+          <button class="cheat-summon-btn" data-type="juggernaut">JUGGERNAUT</button>
+          <button id="cheat-summon-boss-btn" class="cheat-action-btn"
+            style="background:#8a0000;color:#ff4444;border:1px solid #ff4444;">BOSS</button>
+          <button id="cheat-summon-dreadnaught-btn" class="cheat-action-btn"
+            style="background:#1a0028;color:#cc00ff;border:1px solid #cc00ff;">DREADNAUGHT</button>
         </div>
 
         <div class="cheat-quick-group">
@@ -446,6 +457,81 @@
     </div>
   </div>
 
+  <!-- Gun Selection Overlay -->
+  <div id="gun-select-overlay"
+    style="display:none; position:fixed; inset:0; z-index:2500; background:rgba(0,0,0,0.88); align-items:center; justify-content:center;">
+    <div class="menu-container gun-select-container">
+      <div class="rivet top-left" aria-hidden="true"></div>
+      <div class="rivet top-right" aria-hidden="true"></div>
+      <div class="rivet bottom-left" aria-hidden="true"></div>
+      <div class="rivet bottom-right" aria-hidden="true"></div>
+      <div class="hazard-bar" aria-hidden="true"></div>
+
+      <h1 class="title"
+        style="color:#ffaa00; text-shadow:0 0 10px rgba(255,170,0,0.5); font-size:1.5rem; margin-bottom:0.25rem;">SELECT
+        WEAPON</h1>
+      <p class="tagline" style="margin-bottom:1rem;">Choose your loadout before deploying.</p>
+
+      <div id="gun-cards-container" class="gun-cards-container"></div>
+
+      <div class="gun-select-actions">
+        <button id="gun-back-btn" class="btn btn-secondary">Back</button>
+        <button id="gun-confirm-btn" class="btn btn-primary">DEPLOY</button>
+      </div>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <!-- Auth Overlay — must be in DOM before scripts run -->
+  <div id="auth-overlay">
+    <div class="menu-container auth-container">
+      <div class="rivet top-left" aria-hidden="true"></div>
+      <div class="rivet top-right" aria-hidden="true"></div>
+      <div class="rivet bottom-left" aria-hidden="true"></div>
+      <div class="rivet bottom-right" aria-hidden="true"></div>
+      <div class="hazard-bar" aria-hidden="true"></div>
+
+      <h1 class="title" style="color:#ffaa00; text-shadow:0 0 10px rgba(255,170,0,0.5); font-size:1.6rem;">DEAD ZONE RUN
+      </h1>
+
+      <!-- Tab switcher -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login">Login</button>
+        <button class="auth-tab" id="tab-signup">Create Account</button>
+      </div>
+
+      <!-- Login form -->
+      <div id="auth-login-form" class="auth-form">
+        <input type="text" id="login-username" class="name-input" placeholder="Username" maxlength="20"
+          autocomplete="off" spellcheck="false">
+        <input type="password" id="login-password" class="name-input" placeholder="Password" maxlength="72"
+          autocomplete="off">
+        <p id="login-error" class="auth-error"></p>
+        <button id="login-btn" class="btn btn-primary" style="width:100%;">Login</button>
+      </div>
+
+      <!-- Signup form -->
+      <div id="auth-signup-form" class="auth-form" style="display:none;">
+        <input type="text" id="signup-username" class="name-input" placeholder="Choose a username" maxlength="20"
+          autocomplete="off" spellcheck="false">
+        <input type="password" id="signup-password" class="name-input" placeholder="Password (min 6 characters)"
+          maxlength="72" autocomplete="off">
+        <input type="password" id="signup-confirm" class="name-input" placeholder="Confirm password" maxlength="72"
+          autocomplete="off">
+        <p id="signup-error" class="auth-error"></p>
+        <button id="signup-btn" class="btn btn-primary" style="width:100%;">Create Account</button>
+      </div>
+
+      <div class="auth-divider"><span>or</span></div>
+
+      <button id="guest-play-btn" class="btn btn-secondary" style="width:100%;">Play as Guest</button>
+      <p class="auth-guest-note">Scores and coins won't be saved</p>
+
+      <div class="hazard-bar" aria-hidden="true"></div>
+    </div>
+  </div>
+
   <!-- Supabase CDN (provides the global "supabase" object) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -455,4 +541,5 @@
   <!-- Main game script -->
   <script src="script.js"></script>
 </body>
+
 </html>

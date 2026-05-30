@@ -1045,27 +1045,26 @@ html, body {
 #wavecleared-screen .menu-container {
   max-width: min(1180px, calc(100vw - 32px));
   width: 96vw;
-  max-height: calc(100vh - 24px);
   max-height: calc(100dvh - 24px);
-  overflow: hidden;
-  gap: clamp(0.45rem, 1.1vh, 0.75rem);
-  padding: clamp(0.8rem, 1.8vh, 1.25rem) clamp(0.9rem, 2vw, 1.4rem);
+  overflow-y: auto;
+  gap: 0.9rem;
+  padding: 1.4rem clamp(0.9rem, 2vw, 1.6rem);
 }
 
 #wavecleared-screen .hazard-bar {
-  height: clamp(6px, 1.1vh, 10px);
+  height: 10px;
   border-width: 2px;
   flex: 0 0 auto;
 }
 
 #wavecleared-screen .wave-cleared-title {
-  font-size: clamp(1.55rem, 3vw, 2.15rem);
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
   line-height: 1;
 }
 
 #wavecleared-screen .tagline {
-  font-size: clamp(0.85rem, 1.5vw, 1.05rem);
-  margin: -0.15rem 0 0;
+  font-size: clamp(0.88rem, 1.5vw, 1.05rem);
+  margin: -0.1rem 0 0;
 }
 
 #wavecleared-screen .gameover-stats {
@@ -1109,28 +1108,27 @@ html, body {
 .upgrade-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(0.6rem, 1.4vw, 1rem);
+  gap: clamp(0.7rem, 1.4vw, 1.1rem);
   justify-content: center;
   width: 100%;
-  margin: 0.25rem 0 0.35rem;
-  min-height: 0;
+  margin: 0.2rem 0 0.4rem;
 }
 
 .upgrade-card {
   min-width: 0;
   background: var(--bg-dark);
   border: 4px solid var(--panel-border);
-  padding: clamp(0.65rem, 1.4vh, 1rem) clamp(0.6rem, 1.2vw, 0.9rem);
+  padding: 1.4rem 1rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: clamp(0.35rem, 0.9vh, 0.55rem);
+  gap: 0.7rem;
   cursor: pointer;
   transition: transform 0.1s steps(2), border-color 0.1s steps(2), box-shadow 0.1s steps(2);
   position: relative;
   box-shadow: 6px 6px 0px #000;
-  min-height: 0;
+  min-height: 200px;
   overflow: hidden;
 }
 
@@ -1148,8 +1146,8 @@ html, body {
 }
 
 .upgrade-card-icon {
-  font-size: clamp(1.45rem, 2.5vw, 2rem);
-  margin-bottom: 0;
+  font-size: clamp(1.6rem, 2.6vw, 2.2rem);
+  margin-bottom: 0.1rem;
   text-shadow: 3px 3px 0px #000;
   filter: drop-shadow(2px 2px 0px #000);
   line-height: 1;
@@ -1157,7 +1155,7 @@ html, body {
 
 .upgrade-card-title {
   font-family: var(--font-pixel);
-  font-size: clamp(0.58rem, 0.85vw, 0.68rem);
+  font-size: clamp(0.68rem, 1vw, 0.82rem);
   color: var(--pixel-orange);
   text-transform: uppercase;
   line-height: 1.2;
@@ -1172,15 +1170,46 @@ html, body {
 
 .upgrade-card-desc {
   font-family: var(--font-terminal);
-  font-size: clamp(0.78rem, 1.1vw, 0.95rem);
+  font-size: clamp(0.82rem, 1.15vw, 1rem);
   color: var(--text-secondary);
-  line-height: 1.18;
+  line-height: 1.4;
   flex-grow: 1;
   overflow-wrap: anywhere;
 }
 
 .upgrade-card:hover .upgrade-card-desc {
   color: var(--text-primary);
+}
+
+/* Locked upgrade card — incompatible with active gun */
+.upgrade-card.card-gun-locked {
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: grayscale(0.55);
+  border-color: #2a2a35 !important;
+  pointer-events: none;
+}
+
+.upgrade-card.card-gun-locked:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.card-lock-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(20, 8, 30, 0.88);
+  color: #ff4466;
+  font-family: var(--font-terminal);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: 0.22rem 0.4rem;
+  border-bottom: 1px solid #ff446644;
+  z-index: 2;
 }
 
 /* Responsive adjust for Upgrade Cards on Tablet/Mobile */
@@ -1791,6 +1820,185 @@ html, body {
   }
 }
 
+/* ── Auth Overlay ──────────────────────────────────────────────────────────── */
+
+#auth-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.auth-container {
+  max-width: 360px;
+  width: 92vw;
+  gap: 0.85rem;
+}
+
+.auth-tabs {
+  display: flex;
+  width: 100%;
+  border: 2px solid var(--panel-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 0.55rem 0.5rem;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-terminal);
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background 0.15s, color 0.15s;
+}
+
+.auth-tab.active {
+  background: rgba(255, 170, 0, 0.18);
+  color: #ffaa00;
+}
+
+.auth-tab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.auth-error {
+  color: #ff4444;
+  font-family: var(--font-terminal);
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+  min-height: 1em;
+  text-align: center;
+  margin: 0;
+}
+
+.auth-divider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-secondary);
+  font-family: var(--font-terminal);
+  font-size: 0.65rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.auth-form .name-input {
+  font-size: 0.85rem;
+  padding: 0.55rem 0.75rem;
+  box-sizing: border-box;
+}
+
+.auth-guest-note {
+  font-family: var(--font-terminal);
+  font-size: 0.6rem;
+  color: #555;
+  text-align: center;
+  margin: 0;
+  letter-spacing: 1px;
+}
+
+/* ── Logged-in panel (start screen) ───────────────────────────────────────── */
+
+.auth-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 1rem;
+  padding: 0.8rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 170, 0, 0.2);
+  border-radius: 4px;
+}
+
+.auth-welcome-label {
+  font-family: var(--font-terminal);
+  font-size: 0.55rem;
+  color: #888;
+  letter-spacing: 3px;
+}
+
+.auth-welcome-name {
+  font-family: var(--font-pixel);
+  font-size: 1.4rem;
+  color: #ffaa00;
+  text-shadow: 0 0 8px rgba(255, 170, 0, 0.4);
+}
+
+.coins-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  padding: 3px 10px;
+  background: rgba(255, 204, 0, 0.1);
+  border: 1px solid rgba(255, 204, 0, 0.25);
+  border-radius: 20px;
+}
+
+.coins-icon {
+  color: #ffcc00;
+  font-size: 0.85rem;
+}
+
+#display-coins {
+  font-family: var(--font-pixel);
+  font-size: 0.9rem;
+  color: #ffcc00;
+}
+
+.coins-label {
+  font-family: var(--font-terminal);
+  font-size: 0.55rem;
+  color: #aa8800;
+  letter-spacing: 2px;
+}
+
+/* ── Guest mode note on start screen ─────────────────────────────────────── */
+
+.guest-mode-note {
+  font-family: var(--font-terminal);
+  font-size: 0.6rem;
+  color: #555;
+  text-align: center;
+  margin-top: 0.5rem;
+  letter-spacing: 1px;
+}
+
+.auth-link {
+  color: #ffaa00;
+  text-decoration: none;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
 /* Custom Retro Scrollbars */
 .menu-container::-webkit-scrollbar,
 .cheat-panel-content::-webkit-scrollbar,
@@ -2125,9 +2333,9 @@ html, body {
   flex: 1.4 !important; /* Grant more flex weight to the leaderboard */
 }
 
-/* Left panel can be slightly more compact and elegant */
+/* Left panel — Arsenal */
 .left-panel {
-  max-width: 380px !important;
+  max-width: 420px !important;
 }
 
 .side-panel::-webkit-scrollbar {
@@ -2322,4 +2530,238 @@ html, body {
 .side-panel .leaderboard-table th:nth-child(5),
 .side-panel .leaderboard-table td:nth-child(5) {
   width: 12% !important; /* Kills column */
+}
+
+/* ── Arsenal Side Panel ────────────────────────────────────────────────────── */
+
+.arsenal-gun-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+}
+
+.arsenal-gun-card {
+  position: relative;
+  background: rgba(0, 0, 0, 0.45);
+  border: 2px solid var(--panel-border);
+  border-left: 4px solid var(--panel-border-light);
+  padding: 0.65rem 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.arsenal-gun-card:hover:not(.arsenal-gun-locked) {
+  border-color: rgba(255, 180, 0, 0.5);
+}
+
+.arsenal-gun-card.arsenal-selected {
+  border-color: #ffaa00 !important;
+  border-left-color: #ffaa00 !important;
+  box-shadow: 0 0 10px rgba(255, 170, 0, 0.3);
+  background: rgba(255, 140, 0, 0.08);
+}
+
+.arsenal-gun-card.arsenal-gun-locked {
+  opacity: 0.52;
+  cursor: default;
+}
+
+.arsenal-gun-card.rarity-common  { border-left-color: #888; }
+.arsenal-gun-card.rarity-rare    { border-left-color: #4fc3f7; }
+.arsenal-gun-card.rarity-epic    { border-left-color: #ce93d8; }
+.arsenal-gun-card.rarity-legendary { border-left-color: #ffb300; }
+.arsenal-gun-card.arsenal-selected { border-left-color: #ffaa00 !important; }
+
+.arsenal-gun-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.arsenal-gun-icon {
+  font-family: var(--font-terminal);
+  font-size: 0.85rem;
+  color: #ffaa00;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.arsenal-gun-name {
+  font-family: var(--font-pixel);
+  font-size: 0.8rem;
+  color: #f0e6c8;
+  letter-spacing: 0.04em;
+  flex: 1;
+}
+
+.arsenal-equipped-badge {
+  font-family: var(--font-terminal);
+  font-size: 0.6rem;
+  background: rgba(255, 170, 0, 0.2);
+  color: #ffaa00;
+  border: 1px solid rgba(255, 170, 0, 0.5);
+  padding: 0.1rem 0.35rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.arsenal-gun-stats {
+  font-family: var(--font-terminal);
+  font-size: 0.6rem;
+  color: #6699cc;
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.02em;
+}
+
+.arsenal-gun-desc {
+  font-family: var(--font-terminal);
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  margin-bottom: 0.3rem;
+}
+
+.arsenal-buy-btn {
+  font-family: var(--font-terminal);
+  font-size: 0.65rem;
+  background: rgba(0, 160, 70, 0.2);
+  color: #66ee99;
+  border: 1px solid rgba(0, 180, 70, 0.45);
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.12s;
+  letter-spacing: 0.04em;
+}
+
+.arsenal-buy-btn:hover {
+  background: rgba(0, 200, 80, 0.35);
+}
+
+.arsenal-buy-locked {
+  background: rgba(60, 60, 60, 0.3) !important;
+  color: #555 !important;
+  border-color: #333 !important;
+  cursor: not-allowed !important;
+}
+
+/* ── Gun Selection Overlay ─────────────────────────────────────────────────── */
+
+.gun-select-container {
+  max-width: min(860px, 94vw);
+  padding: 1.5rem 1.75rem;
+}
+
+.gun-cards-container {
+  display: flex;
+  flex-direction: row;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.gun-card {
+  flex: 1 1 200px;
+  max-width: 240px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid var(--panel-border);
+  padding: 1rem 0.9rem;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: center;
+}
+
+.gun-card:hover:not(.gun-card-locked) {
+  border-color: rgba(255, 200, 0, 0.6);
+  box-shadow: 0 0 10px rgba(255, 200, 0, 0.25);
+}
+
+.gun-card-selected {
+  border-color: #ffaa00 !important;
+  box-shadow: 0 0 14px rgba(255, 170, 0, 0.45) !important;
+}
+
+.gun-card-locked {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gun-card.rarity-common  { border-left: 4px solid #aaaaaa; }
+.gun-card.rarity-rare    { border-left: 4px solid #4fc3f7; }
+.gun-card.rarity-epic    { border-left: 4px solid #ce93d8; }
+.gun-card.rarity-legendary { border-left: 4px solid #ffb300; }
+
+.gun-card-icon {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 1.4rem;
+  color: #ffaa00;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.05em;
+}
+
+.gun-card-name {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 0.95rem;
+  color: #f0e6c8;
+  margin-bottom: 0.3rem;
+  letter-spacing: 0.05em;
+}
+
+.gun-card-desc {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+.gun-card-stats {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.65rem;
+  color: #88ccff;
+  background: rgba(0, 100, 200, 0.15);
+  padding: 0.2rem 0.4rem;
+  border: 1px solid rgba(100, 180, 255, 0.2);
+  margin-bottom: 0.5rem;
+}
+
+.gun-buy-btn {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.7rem;
+  background: rgba(0, 180, 80, 0.25);
+  color: #88ffaa;
+  border: 1px solid rgba(0, 200, 80, 0.5);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.15s;
+}
+
+.gun-buy-btn:hover {
+  background: rgba(0, 200, 80, 0.4);
+}
+
+.gun-buy-disabled {
+  background: rgba(100, 100, 100, 0.2);
+  color: #666;
+  border-color: #444;
+  cursor: not-allowed;
+}
+
+.gun-select-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+
+.gun-select-actions .btn {
+  min-width: 140px;
 }
