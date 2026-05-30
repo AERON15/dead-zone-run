@@ -1448,14 +1448,15 @@ function getZombieStatScales(wave) {
 }
 
 function isBossWave(wave) {
-  // Wave 20 is the first boss fight.
-  // Wave 40 is reserved for the Shielder debut — boss is moved to wave 45 so
-  // the shielder introduction isn't buried under the Patient Zero fight.
-  // After wave 45 the boss recurs every 25 waves (45, 70, 95, …).
+  // Wave 20 is the first boss fight (Patient Zero).
+  // Wave 40 is the second boss fight (Patient Zero).
+  // Wave 50 is the Dreadnaught boss fight.
+  // After wave 40, a boss recurs every 20 waves (60, 80, 100, etc.).
   if (wave === 20) return true;
+  if (wave === 40) return true;
   if (wave === 50) return true; // Dreadnaught
-  if (wave < 45) return false;
-  return (wave - 45) % 25 === 0;
+  if (wave < 40) return false;
+  return (wave - 40) % 20 === 0;
 }
 
 // Procedural ground features array
@@ -8698,7 +8699,7 @@ function spawnPhysicalCoin(x, y, value = 1) {
     value: value,
     size: 9, // gold coin diameter
     age: 0,
-    life: 720 // stays on ground for 6 seconds (720 ticks at 120Hz)
+    life: 2400 // stays on ground much longer (~20-40 seconds depending on FPS)
   });
 }
 
@@ -8706,8 +8707,8 @@ function spawnPhysicalCoin(x, y, value = 1) {
  * Updates dropped coin mechanics: decodes initial drift velocities, attractions in the collection radius, and collections.
  */
 function updateDroppedCoins() {
-  const pullRadius = 100; // base magnet/magnify collection radius
-  const collectRadius = 18; // player collision overlap radius
+  const pullRadius = 220; // base magnet/magnify collection radius (increased from 100)
+  const collectRadius = 24; // player collision overlap radius (increased from 18)
 
   for (let i = droppedCoins.length - 1; i >= 0; i--) {
     const c = droppedCoins[i];
