@@ -1320,6 +1320,16 @@ const GUNS = {
     stats: { bulletDamage: 5, fireRate: 150, bulletSpeed: 14 },
     conflictIds: []
   },
+  boomerang_disc: {
+    id: 'boomerang_disc',
+    name: 'Boomerang Disc',
+    icon: '[DISC]',
+    price: 15000,
+    rarity: 'epic',
+    description: 'Throws a spinning energy disc that flies out ~280px then curves back to you, shredding zombies on BOTH passes. Resets hit list on return!',
+    stats: { bulletDamage: 16, fireRate: 700, bulletSpeed: 8 },
+    conflictIds: []
+  },
   charge_rifle: {
     id: 'charge_rifle',
     name: 'Charge Rifle',
@@ -1339,16 +1349,6 @@ const GUNS = {
     description: 'Legendary heavy singularity weapon. Fires slow, massive gravity orbs that implode and detonate in a massive 150px void pull.',
     stats: { bulletDamage: 22, fireRate: 850, bulletSpeed: 4.8 },
     conflictIds: ['pierce']
-  },
-  boomerang_disc: {
-    id: 'boomerang_disc',
-    name: 'Boomerang Disc',
-    icon: '[DISC]',
-    price: 15000,
-    rarity: 'epic',
-    description: 'Throws a spinning energy disc that flies out ~280px then curves back to you, shredding zombies on BOTH passes. Resets hit list on return!',
-    stats: { bulletDamage: 16, fireRate: 700, bulletSpeed: 8 },
-    conflictIds: []
   }
 };
 
