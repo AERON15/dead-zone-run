@@ -1265,6 +1265,7 @@ const UPGRADE_CAPS = {
   retaliate:         () => player.retaliateLevel >= 4,     // 4 × 0.40 = 1.60 → clamped to 1.5 (speed cap)
   firerate:          () => player.fireRate <= 200,
   lifesteal:         () => player.lifestealAmount >= 5.0,
+  pierce:            () => selectedGun === 'pulse_cannon', // orbs always explode on first hit — pierce does nothing
   knockbackrounds:   () => player.knockbackModifier >= 1.5,
   bouncingcasings:   () => player.bounceLimit >= 5,
   splintershot:      () => player.splinterShotLevel >= 9,
@@ -4217,7 +4218,11 @@ function update() {
 
         // Pulse orb — custom void detonation
         if (b.isPulseOrb) {
-          triggerPulseExplosion(b.x, b.y, Math.round(damageDealt * 1.5), b.isFire, b.isCryo);
+          triggerPulseExplosion(b.x, b.y, Math.round(damageDealt * 1.5), b.isFire, b.isCryo, b.isOverclocked);
+          // Splinter Shot: shrapnel erupts outward from the detonation point
+          if (player.splinterShotLevel > 0) {
+            spawnSplinterShrapnel(b.x, b.y, b.vx, b.vy, b.damage, null, b.isFire, b.isCryo);
+          }
           bullets.splice(bIdx, 1);
           break;
         }
@@ -6750,6 +6755,7 @@ function triggerPulseExplosion(ex, ey, maxDamage, isFire = false, isCryo = false
       if (isOverclocked) {
         z.stunTicks = Math.max(z.stunTicks || 0, 60); // 0.5s stun inside overclock blast
       }
+
     }
   }
 }
