@@ -7502,6 +7502,24 @@ function drawObstacleGroundMarks() {
     ctx.save();
     ctx.translate(cx, cy);
 
+    // Draw industrial hazard yellow/black warning frame border
+    const borderWidth = 10;
+    const ox = -obstacle.width / 2 - borderWidth;
+    const oy = -obstacle.height / 2 - borderWidth;
+    const ow = obstacle.width + borderWidth * 2;
+    const oh = obstacle.height + borderWidth * 2;
+
+    ctx.save();
+    ctx.strokeStyle = '#c48a1a'; // industrial hazard yellow-gold
+    ctx.lineWidth = 3.5;
+    ctx.strokeRect(ox, oy, ow, oh);
+
+    ctx.strokeStyle = '#0c0f12'; // black stripes
+    ctx.lineWidth = 3.5;
+    ctx.setLineDash([8, 8]);
+    ctx.strokeRect(ox, oy, ow, oh);
+    ctx.restore();
+
     if (obstacle.type === 'containment') {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
       ctx.beginPath();
@@ -11153,7 +11171,7 @@ function updateHUD() {
 
 function generateGroundDetails() {
   groundDetails = [];
-  const numDetails = 140; // slightly reduced count since they don't stack up anymore
+  const numDetails = 240; // increased count to reduce empty floor space
 
   let attempts = 0;
   while (groundDetails.length < numDetails && attempts < 1500) {
@@ -11276,7 +11294,7 @@ function findTurretSpawnPos(px, py) {
 
 // Minimum clear corridor width guaranteed between any two obstacle surfaces.
 // Must exceed the largest entity diameter (Patient Zero = 112px) with margin.
-const OBSTACLE_MIN_GAP = 180;
+const OBSTACLE_MIN_GAP = 150;
 
 function generateMapObstacles() {
   obstacles = [];
@@ -11299,7 +11317,7 @@ function generateMapObstacles() {
 
   // Use more attempts to compensate for the stricter gap requirement.
   let attempts = 0;
-  while (obstacles.length < 16 && attempts < 700) {
+  while (obstacles.length < 28 && attempts < 900) {
     attempts += 1;
     const preset = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
     const width  = Math.floor(randomBetween(preset.minW, preset.maxW));
@@ -11309,6 +11327,24 @@ function generateMapObstacles() {
 
     if (canPlaceObstacle(x, y, width, height)) {
       addObstacle(preset.type, x, y, width, height);
+
+      // 35% chance to place a clustered adjacent obstacle of the same type (like stacking crates/consoles)
+      if (Math.random() < 0.35) {
+        const direction = Math.random() < 0.5 ? 'x' : 'y';
+        let cx = x;
+        let cy = y;
+        if (direction === 'x') {
+          cx = x + width + 4; // 4px visual spacing gap
+        } else {
+          cy = y + height + 4;
+        }
+
+        if (cx > 90 && cx + width < world.width - 90 && cy > 130 && cy + height < world.height - 90) {
+          if (canPlaceObstacle(cx, cy, width, height)) {
+            addObstacle(preset.type, cx, cy, width, height);
+          }
+        }
+      }
     }
   }
 
