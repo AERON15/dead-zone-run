@@ -2286,7 +2286,7 @@ function update() {
           color: '#e58e38', // glowing orange rusty round
           bounceLimit: 0,
           bounceLeft: 0,
-          bulletPierceLimit: 1,
+          pierceLeft: 1,
           isTurretBullet: true, // Tag to identify turret bullets
           isFire: false,
           isCryo: false
@@ -2411,7 +2411,7 @@ function update() {
           color: '#121212', 
           bounceLimit: 0,
           bounceLeft: 0,
-          bulletPierceLimit: 1,
+          pierceLeft: 1,
           isTurretBullet: true, // Bypass generic player multipliers
           isMortarShell: true,  // Trigger AoE explosion on contact
           isFire: false,
@@ -5885,6 +5885,7 @@ function shootWeapon() {
             size: selectedGun === 'pulse_cannon' ? pulseOrbSize : finalSize,
             damage: element.isFire ? Math.round(finalDamage * 1.10) : finalDamage,
             age: 0,
+            pierceLeft: player.bulletPierceLimit,
             maxBounces: player.bounceLimit,
             bounceLeft: player.bounceLimit,
             hitZombies: new Set(),
