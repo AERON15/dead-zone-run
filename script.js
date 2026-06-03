@@ -1029,7 +1029,7 @@ const UPGRADES_REGISTRY = [
     name: 'Double Shot',
     icon: '[TWIN]',
     description: 'Adds +1 bullet! But all bullets deal -35% damage. Shoots parallel side-by-side; switches to narrow fan at 4+ bullets. (Capped at 8 bullets)',
-    rarity: 'epic',
+    rarity: 'rare',
     apply: () => {
       const maxCount = selectedGun === 'pulse_cannon' ? 4 : (selectedGun === 'plasma_smg' ? 4 : 7);
       player.spreadShotCount = Math.min(maxCount, player.spreadShotCount + 1);
@@ -1304,7 +1304,7 @@ const GUNS = {
     id: 'shotgun',
     name: 'Vector Shotgun',
     icon: '[SGN]',
-    price: 3000,
+    price: 6000,
     rarity: 'rare',
     description: 'Close-range crowd-clearing beast. Fires a fanned spread of 5 buckshot pellets that pack a heavy punch.',
     stats: { bulletDamage: 8, fireRate: 750, bulletSpeed: 9 },
@@ -1314,7 +1314,7 @@ const GUNS = {
     id: 'plasma_smg',
     name: 'Plasma SMG',
     icon: '[SMG]',
-    price: 10000,
+    price: 18000,
     rarity: 'rare',
     description: 'Rapid-fire tactical plasma hose. Alternates cyan and magenta laser bolts with slight automatic spread recoil.',
     stats: { bulletDamage: 5, fireRate: 150, bulletSpeed: 14 },
@@ -1324,7 +1324,7 @@ const GUNS = {
     id: 'boomerang_disc',
     name: 'Boomerang Disc',
     icon: '[DISC]',
-    price: 15000,
+    price: 25000,
     rarity: 'epic',
     description: 'Throws a spinning energy disc that flies out ~280px then curves back to you, shredding zombies on BOTH passes. Resets hit list on return!',
     stats: { bulletDamage: 16, fireRate: 700, bulletSpeed: 8 },
@@ -1334,7 +1334,7 @@ const GUNS = {
     id: 'charge_rifle',
     name: 'Charge Rifle',
     icon: '[CHG]',
-    price: 35000,
+    price: 60000,
     rarity: 'epic',
     description: 'Advanced high-voltage cyber rifle. Hold to charge, release to fire. Full charge inflicts 4x damage and auto-pierces all targets.',
     stats: { bulletDamage: 14, fireRate: 600, bulletSpeed: 6.5 },
@@ -1344,7 +1344,7 @@ const GUNS = {
     id: 'pulse_cannon',
     name: 'Pulse Cannon',
     icon: '[ORB]',
-    price: 50000,
+    price: 85000,
     rarity: 'legendary',
     description: 'Legendary heavy singularity weapon. Fires slow, massive gravity orbs that implode and detonate in a massive 150px void pull.',
     stats: { bulletDamage: 22, fireRate: 850, bulletSpeed: 4.8 },
@@ -1369,6 +1369,7 @@ let pendingSummons = []; // Necromancer warning circles before summoned enemies 
 // Patient Zero Boss Tracking
 let bossesDefeated = 0;
 let activeBoss = null; // Reference to the current boss zombie in the zombies array
+let bossSpawnedThisWave = false; // Prevents re-spawning the boss if it dies before regular zombies appear
 const totalActiveZombiesCap = 45; // Performance cap for total active zombies (standard + summoned) to maintain 60fps
 const bossSummonCooldown = 8000;  // Boss summons every 8 seconds
 const bossSummonCastTime = 1200;  // Red flash warning before summon
@@ -1633,6 +1634,7 @@ function bindCheatPanelQuickControls() {
     waveZombiesSpawned = 0;
     waveKillCount = 0;
     activeBoss = null;
+    bossSpawnedThisWave = false;
     shielderDebutSpawned = false; // Reset so wave 40+ will guarantee the debut shielder
     juggernautDebutSpawned = false;
 
@@ -1725,7 +1727,8 @@ function bindCheatPanelQuickControls() {
       enemyProjectiles = [];
       pendingSummons = [];
       activeBoss = null;
-      
+      bossSpawnedThisWave = false;
+
       startScreenShake(12, 16);
       updateHUD();
       console.log(`[CHEAT PANEL] All enemies cleared.`);
@@ -2049,6 +2052,7 @@ function startGame() {
   lastZombieSpawnTime = 0;
   bossesDefeated = 0;
   activeBoss = null;
+  bossSpawnedThisWave = false;
 
   // Make sure the canvas is the right size and configured
   resizeCanvas();
@@ -2138,6 +2142,24 @@ function gameLoop(timestamp) {
 
 function update() {
   gameTick += 1;
+
+  // Spawn environmental ambient steam from floor vents (only when vents are in camera view)
+  if (gameTick % 2 === 0 && gameParticles.length < 280) {
+    const vents = groundDetails.filter(d => d.type === 0 && isInView(d.x + 20, d.y + 10, 100));
+    if (vents.length > 0 && Math.random() < 0.08) {
+      const vent = vents[Math.floor(Math.random() * vents.length)];
+      gameParticles.push({
+        type: 'steam',
+        x: vent.x + (17 + vent.size * 5) + (Math.random() - 0.5) * 12,
+        y: vent.y + (9 + vent.size * 2.5) + (Math.random() - 0.5) * 4,
+        vx: (Math.random() - 0.5) * 0.25,
+        vy: -Math.random() * 0.5 - 0.4,
+        size: Math.random() * 10 + 10,
+        life: 1.0,
+        decay: Math.random() * 0.018 + 0.012
+      });
+    }
+  }
 
   // Update physical coin physics & pickup magnetic attraction
   updateDroppedCoins();
@@ -3014,8 +3036,9 @@ function update() {
   // 4. Spawn zombies. Later waves spawn faster and in small batches.
   const now = Date.now();
 
-  // Boss wave: spawn the appropriate boss at the start of the wave
-  if (isBossWave(gameState.wave) && !activeBoss && waveZombiesSpawned === 0) {
+  // Boss wave: spawn the boss exactly once per wave
+  if (isBossWave(gameState.wave) && !bossSpawnedThisWave) {
+    bossSpawnedThisWave = true;
     if (gameState.wave === 50) spawnDreadnaught();
     else spawnPatientZero();
   }
@@ -3133,17 +3156,19 @@ function update() {
         // Toxic Trail slow effect (20% slow per level, capped at 70% slow)
         let slowFactor = (z.isOnToxicTrail && z.type !== 'rusher') ? (1 - Math.min(0.70, 0.20 * player.toxicTrailLevel)) : 1.0;
 
-        // Cryo Capsule slow effect (80% slow for fast types, 70% for all others — no immunity)
+        // Cryo Capsule slow effect — Dreadnaught fully immune; Patient Zero gets half the slow
         z.cryoSlowTicks = z.cryoSlowTicks || 0;
-        if (z.cryoSlowTicks > 0) {
+        if (z.cryoSlowTicks > 0 && z.type !== 'dreadnaught') {
           z.cryoSlowTicks -= 1;
           const isFastType = z.type === 'rusher' || z.type === 'fast' || z.type === 'exploder';
-          slowFactor *= isFastType ? 0.20 : 0.30;
+          let cryoMult = isFastType ? 0.20 : 0.30;
+          if (z.type === 'patient_zero') cryoMult = 1 - (1 - cryoMult) * 0.5; // halve the slow for boss
+          slowFactor *= cryoMult;
         }
 
-        // Pulse Cannon EMP slow effect (60% slow)
+        // Pulse Cannon EMP slow effect (60% slow) — Dreadnaught fully immune
         z.pulseSlowTicks = z.pulseSlowTicks || 0;
-        if (z.pulseSlowTicks > 0) {
+        if (z.pulseSlowTicks > 0 && z.type !== 'dreadnaught') {
           z.pulseSlowTicks -= 1;
           if (z.type !== 'rusher') {
             slowFactor *= 0.40; // Heavy EMP slowdown
@@ -3945,44 +3970,43 @@ function update() {
         gameState.kills += 1;
         waveKillCount += 1;
         if (currentUser) {
-          // Coin drop economy — scaled by zombie type and wave progression
-          // Wave bonus: every 5 waves, coin values increase by +1 (incentivizes longer runs)
-          const waveBonus = Math.floor(gameState.wave / 5);
+          // Coin drop economy — flat rates, no wave bonus (keeps earning linear across all waves)
+          const waveBonus = 0;
           let dropChance = 0;
           let coinMin = 1;
           let coinMax = 1;
 
           switch (z.type) {
             case 'normal':
-              dropChance = 0.35;
-              coinMin = 1; coinMax = 2;
+              dropChance = 0.20;
+              coinMin = 1; coinMax = 1;
               break;
             case 'fast':
-              dropChance = 0.30;
+              dropChance = 0.15;
               coinMin = 1; coinMax = 1;
               break;
             case 'tank':
             case 'necromancer':
-              dropChance = 0.60;
-              coinMin = 2; coinMax = 4;
+              dropChance = 0.48;
+              coinMin = 2; coinMax = 2;
               break;
             case 'spitter':
             case 'rusher':
-              dropChance = 0.50;
-              coinMin = 1; coinMax = 3;
+              dropChance = 0.28;
+              coinMin = 1; coinMax = 1;
               break;
             case 'exploder':
             case 'shielder':
-              dropChance = 0.45;
-              coinMin = 2; coinMax = 3;
+              dropChance = 0.25;
+              coinMin = 2; coinMax = 2;
               break;
             case 'patient_zero':
               dropChance = 1.0;
-              coinMin = 25; coinMax = 35;
+              coinMin = 15; coinMax = 22;
               break;
             default:
-              dropChance = 0.35;
-              coinMin = 1; coinMax = 2;
+              dropChance = 0.20;
+              coinMin = 1; coinMax = 1;
               break;
           }
 
@@ -4200,8 +4224,8 @@ function update() {
 
         damageZombie(z, damageDealt, true);
 
-        // Cryo rounds slow zombies only when this specific bullet rolled cryo.
-        if (b.isCryo) {
+        // Cryo rounds slow zombies — Dreadnaught is fully immune
+        if (b.isCryo && z.type !== 'dreadnaught') {
           z.cryoSlowTicks = 180; // 1.5 seconds at 120 Hz
 
           for (let cs = 0; cs < 6; cs++) {
@@ -4474,6 +4498,63 @@ function rollUpgradeRarity(wave) {
 }
 
 /**
+ * Formats description text to wrap stats in highlights and caps in small blocks.
+ */
+function formatUpgradeDescription(text) {
+  if (!text) return '';
+  let escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  
+  let capIndex = escaped.indexOf('(');
+  let mainText = escaped;
+  let capText = '';
+  if (capIndex !== -1) {
+    mainText = escaped.substring(0, capIndex);
+    capText = escaped.substring(capIndex);
+  }
+  
+  // Highlight stats: numbers, percentages, plus/minus values, and specific unit keywords
+  mainText = mainText.replace(/([+-]?\b\d+(?:\.\d+)?%?(?:\s?(?:spd|HP|px|sec|stacks|max|bullet|bullets|bolt|bolts|pellet|pellets))?\b)/gi, '<span class="desc-highlight">$1</span>');
+  
+  if (capText) {
+    capText = `<span class="desc-cap">${capText}</span>`;
+  }
+  
+  return mainText + capText;
+}
+
+/**
+ * Formats description text for guns to wrap stats in highlights.
+ */
+function formatGunDescription(text) {
+  if (!text) return '';
+  let escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  
+  let capIndex = escaped.indexOf('(');
+  let mainText = escaped;
+  let capText = '';
+  if (capIndex !== -1) {
+    mainText = escaped.substring(0, capIndex);
+    capText = escaped.substring(capIndex);
+  }
+  
+  mainText = mainText.replace(/([+-]?\b\d+(?:\.\d+)?%?(?:\s?(?:spd|HP|px|sec|stacks|max|bullet|bullets|bolt|bolts|pellet|pellets|void|pull))?\b)/gi, '<span class="desc-highlight">$1</span>');
+  mainText = mainText.replace(/(\b\d+x\b)/gi, '<span class="desc-highlight">$1</span>');
+  mainText = mainText.replace(/(~\d+\s?px)/gi, '<span class="desc-highlight">$1</span>');
+
+  if (capText) {
+    capText = `<span class="desc-cap">${capText}</span>`;
+  }
+  
+  return mainText + capText;
+}
+
+/**
  * Selects 3 random upgrades from UPGRADES_REGISTRY matching the rolled rarity and renders them as clickable cards.
  */
 function renderUpgradeChoices() {
@@ -4518,7 +4599,13 @@ function renderUpgradeChoices() {
     const rivetBL = document.createElement('div'); rivetBL.className = 'rivet bottom-left'; card.appendChild(rivetBL);
     const rivetBR = document.createElement('div'); rivetBR.className = 'rivet bottom-right'; card.appendChild(rivetBR);
 
-    // Card Icon (Bracketed Text)
+    // Absolute rarity capsule badge
+    const badge = document.createElement('div');
+    badge.className = 'upgrade-card-badge';
+    badge.textContent = rolledRarity.toUpperCase();
+    card.appendChild(badge);
+
+    // Card Icon (Tactical Badge)
     const icon = document.createElement('div');
     icon.className = 'upgrade-card-icon';
     icon.textContent = upgrade.icon;
@@ -4543,7 +4630,7 @@ function renderUpgradeChoices() {
     } else if (upgrade.id === 'doubleshot' && selectedGun === 'plasma_smg') {
       displayedDescription = 'Adds +1 extra bolt per burst! But all bolts deal -35% damage. Extra bolts spray at the same target — more focused firepower, not spread. (Capped at 5 bolts for Plasma SMG)';
     }
-    desc.textContent = displayedDescription;
+    desc.innerHTML = formatUpgradeDescription(displayedDescription);
     card.appendChild(desc);
 
     // Bind click trigger
@@ -4569,6 +4656,7 @@ function renderUpgradeChoices() {
       waveKillCount = 0;
       waveStartTick = gameTick;
       activeBoss = null;
+      bossSpawnedThisWave = false;
       shielderDebutSpawned = false; // Reset each wave so wave 40+ can force the debut shielder
       juggernautDebutSpawned = false;
       waveZombiesTotal = isBossWave(gameState.wave)
@@ -6421,8 +6509,10 @@ function triggerReviveShockwave(px, py) {
       z.x = Math.max(z.size, Math.min(world.width  - z.size, z.x + nx * push));
       z.y = Math.max(z.size, Math.min(world.height - z.size, z.y + ny * push));
 
-      // Freeze survivors for 2.5 s so they can't immediately rush back
-      z.cryoSlowTicks = 300;
+      // Freeze survivors for 2.5 s — Dreadnaught is immune, Patient Zero gets half duration
+      if (z.type !== 'dreadnaught') {
+        z.cryoSlowTicks = z.type === 'patient_zero' ? 150 : 300;
+      }
     }
   }
 }
@@ -6891,6 +6981,9 @@ function buildStaticFloor() {
   for (let y = 0; y <= world.height; y += slabSize) {
     floorCtx.beginPath(); floorCtx.moveTo(0, y); floorCtx.lineTo(world.width, y); floorCtx.stroke();
   }
+
+  // Pre-render the biohazard warnings, stripes, and emblem on the offscreen canvas
+  drawLabFloorMarkings(floorCtx);
 }
 
 function drawFloatingTexts() {
@@ -6970,6 +7063,25 @@ function render() {
       ctx.drawImage(floorCanvas, sx, sy, sw, sh, sx, sy, sw, sh);
     }
   }
+
+  // 1.5. Draw glowing, pulsing main power conduits crossing the laboratory center
+  ctx.save();
+  const pulseAlpha = 0.06 + Math.sin(gameTick * 0.045) * 0.04;
+  ctx.strokeStyle = `rgba(0, 190, 255, ${pulseAlpha})`; // Neon cyan power conduit
+  ctx.lineWidth = 6;
+  
+  // Vertical main conduit
+  ctx.beginPath();
+  ctx.moveTo(world.width / 2, 0);
+  ctx.lineTo(world.width / 2, world.height);
+  ctx.stroke();
+
+  // Horizontal main conduit
+  ctx.beginPath();
+  ctx.moveTo(0, world.height / 2);
+  ctx.lineTo(world.width, world.height / 2);
+  ctx.stroke();
+  ctx.restore();
 
   // 3. Draw non-collidable lab clutter and floor damage (viewport-culled).
   groundDetails.forEach(d => { if (isInView(d.x, d.y, 80)) drawLabGroundDetail(d); });
@@ -7176,135 +7288,139 @@ function drawArenaFloor() {
   drawLabFloorMarkings();
 }
 
-function drawLabFloorMarkings() {
+function drawLabFloorMarkings(targetCtx) {
+  const c = targetCtx || ctx;
   // Border biohazard warning lanes
-  ctx.strokeStyle = 'rgba(196, 138, 26, 0.45)';
-  ctx.lineWidth = 10;
-  ctx.strokeRect(42, 42, world.width - 84, world.height - 84);
+  c.strokeStyle = 'rgba(196, 138, 26, 0.45)';
+  c.lineWidth = 10;
+  c.strokeRect(42, 42, world.width - 84, world.height - 84);
 
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(56, 56, world.width - 112, world.height - 112);
+  c.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+  c.lineWidth = 3;
+  c.strokeRect(56, 56, world.width - 112, world.height - 112);
 
   // Hazard stripe bands across center of arena
-  drawHazardStripeBand(world.width / 2 - 260, world.height / 2 - 260, 520, 24);
-  drawHazardStripeBand(world.width / 2 - 260, world.height / 2 + 236, 520, 24);
+  drawHazardStripeBand(world.width / 2 - 260, world.height / 2 - 260, 520, 24, c);
+  drawHazardStripeBand(world.width / 2 - 260, world.height / 2 + 236, 520, 24, c);
 
   // Corner anchor bolt plates instead of text
-  drawCornerBoltPlate(80, 80);
-  drawCornerBoltPlate(world.width - 130, 80);
-  drawCornerBoltPlate(80, world.height - 130);
-  drawCornerBoltPlate(world.width - 130, world.height - 130);
+  drawCornerBoltPlate(80, 80, c);
+  drawCornerBoltPlate(world.width - 130, 80, c);
+  drawCornerBoltPlate(80, world.height - 130, c);
+  drawCornerBoltPlate(world.width - 130, world.height - 130, c);
 
   // Subtle biohazard symbol at center — visual only, no text
-  drawCenterFloorEmblem();
+  drawCenterFloorEmblem(c);
 }
 
-function drawHazardStripeBand(x, y, width, height) {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.54)';
-  ctx.fillRect(x, y, width, height);
+function drawHazardStripeBand(x, y, width, height, targetCtx) {
+  const c = targetCtx || ctx;
+  c.fillStyle = 'rgba(0, 0, 0, 0.54)';
+  c.fillRect(x, y, width, height);
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y, width, height);
-  ctx.clip();
+  c.save();
+  c.beginPath();
+  c.rect(x, y, width, height);
+  c.clip();
 
   for (let stripe = -height; stripe < width; stripe += 32) {
-    ctx.fillStyle = 'rgba(196, 138, 26, 0.64)';
-    ctx.beginPath();
-    ctx.moveTo(x + stripe, y + height);
-    ctx.lineTo(x + stripe + 16, y + height);
-    ctx.lineTo(x + stripe + height + 16, y);
-    ctx.lineTo(x + stripe + height, y);
-    ctx.closePath();
-    ctx.fill();
+    c.fillStyle = 'rgba(196, 138, 26, 0.64)';
+    c.beginPath();
+    c.moveTo(x + stripe, y + height);
+    c.lineTo(x + stripe + 16, y + height);
+    c.lineTo(x + stripe + height + 16, y);
+    c.lineTo(x + stripe + height, y);
+    c.closePath();
+    c.fill();
   }
 
-  ctx.restore();
+  c.restore();
 }
 
-function drawCornerBoltPlate(px, py) {
+function drawCornerBoltPlate(px, py, targetCtx) {
+  const c = targetCtx || ctx;
   const w = 50;
   const h = 50;
 
   // Dark recessed plate
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-  ctx.fillRect(px, py, w, h);
-  ctx.fillStyle = 'rgba(40, 52, 56, 0.35)';
-  ctx.fillRect(px + 4, py + 4, w - 8, h - 8);
+  c.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  c.fillRect(px, py, w, h);
+  c.fillStyle = 'rgba(40, 52, 56, 0.35)';
+  c.fillRect(px + 4, py + 4, w - 8, h - 8);
 
   // Edge bevel
-  ctx.strokeStyle = 'rgba(92, 110, 114, 0.22)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(px + 2, py + 2, w - 4, h - 4);
+  c.strokeStyle = 'rgba(92, 110, 114, 0.22)';
+  c.lineWidth = 2;
+  c.strokeRect(px + 2, py + 2, w - 4, h - 4);
 
   // Four corner bolts
   const boltColor = 'rgba(150, 170, 174, 0.4)';
-  ctx.fillStyle = boltColor;
-  ctx.fillRect(px + 8, py + 8, 6, 6);
-  ctx.fillRect(px + w - 14, py + 8, 6, 6);
-  ctx.fillRect(px + 8, py + h - 14, 6, 6);
-  ctx.fillRect(px + w - 14, py + h - 14, 6, 6);
+  c.fillStyle = boltColor;
+  c.fillRect(px + 8, py + 8, 6, 6);
+  c.fillRect(px + w - 14, py + 8, 6, 6);
+  c.fillRect(px + 8, py + h - 14, 6, 6);
+  c.fillRect(px + w - 14, py + h - 14, 6, 6);
 
   // Center crosshair indent
-  ctx.strokeStyle = 'rgba(118, 145, 148, 0.18)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(px + w / 2, py + 14);
-  ctx.lineTo(px + w / 2, py + h - 14);
-  ctx.moveTo(px + 14, py + h / 2);
-  ctx.lineTo(px + w - 14, py + h / 2);
-  ctx.stroke();
+  c.strokeStyle = 'rgba(118, 145, 148, 0.18)';
+  c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(px + w / 2, py + 14);
+  c.lineTo(px + w / 2, py + h - 14);
+  c.moveTo(px + 14, py + h / 2);
+  c.lineTo(px + w - 14, py + h / 2);
+  c.stroke();
 }
 
-function drawCenterFloorEmblem() {
+function drawCenterFloorEmblem(targetCtx) {
+  const c = targetCtx || ctx;
   const cx = world.width / 2;
   const cy = world.height / 2;
 
-  ctx.save();
-  ctx.translate(cx, cy);
+  c.save();
+  c.translate(cx, cy);
 
   // Outer ring
-  ctx.strokeStyle = 'rgba(196, 138, 26, 0.16)';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(0, 0, 80, 0, Math.PI * 2);
-  ctx.stroke();
+  c.strokeStyle = 'rgba(196, 138, 26, 0.16)';
+  c.lineWidth = 4;
+  c.beginPath();
+  c.arc(0, 0, 80, 0, Math.PI * 2);
+  c.stroke();
 
   // Inner ring
-  ctx.strokeStyle = 'rgba(196, 138, 26, 0.12)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, 0, 52, 0, Math.PI * 2);
-  ctx.stroke();
+  c.strokeStyle = 'rgba(196, 138, 26, 0.12)';
+  c.lineWidth = 2;
+  c.beginPath();
+  c.arc(0, 0, 52, 0, Math.PI * 2);
+  c.stroke();
 
   // Center dot
-  ctx.fillStyle = 'rgba(196, 138, 26, 0.14)';
-  ctx.beginPath();
-  ctx.arc(0, 0, 10, 0, Math.PI * 2);
-  ctx.fill();
+  c.fillStyle = 'rgba(196, 138, 26, 0.14)';
+  c.beginPath();
+  c.arc(0, 0, 10, 0, Math.PI * 2);
+  c.fill();
 
   // Three radial biohazard arcs (the classic 3-arc symbol shape)
-  ctx.strokeStyle = 'rgba(196, 138, 26, 0.12)';
-  ctx.lineWidth = 6;
+  c.strokeStyle = 'rgba(196, 138, 26, 0.12)';
+  c.lineWidth = 6;
   for (let i = 0; i < 3; i++) {
     const angle = (i * Math.PI * 2) / 3 - Math.PI / 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, 36, angle - 0.35, angle + 0.35);
-    ctx.stroke();
+    c.beginPath();
+    c.arc(0, 0, 36, angle - 0.35, angle + 0.35);
+    c.stroke();
 
     // Radial spoke from inner to outer ring
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(angle) * 16, Math.sin(angle) * 16);
-    ctx.lineTo(Math.cos(angle) * 72, Math.sin(angle) * 72);
-    ctx.strokeStyle = 'rgba(196, 138, 26, 0.08)';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(196, 138, 26, 0.12)';
-    ctx.lineWidth = 6;
+    c.beginPath();
+    c.moveTo(Math.cos(angle) * 16, Math.sin(angle) * 16);
+    c.lineTo(Math.cos(angle) * 72, Math.sin(angle) * 72);
+    c.strokeStyle = 'rgba(196, 138, 26, 0.08)';
+    c.lineWidth = 3;
+    c.stroke();
+    c.strokeStyle = 'rgba(196, 138, 26, 0.12)';
+    c.lineWidth = 6;
   }
 
-  ctx.restore();
+  c.restore();
 }
 
 function drawLabGroundDetail(detail) {
@@ -7502,24 +7618,6 @@ function drawObstacleGroundMarks() {
     ctx.save();
     ctx.translate(cx, cy);
 
-    // Draw industrial hazard yellow/black warning frame border
-    const borderWidth = 10;
-    const ox = -obstacle.width / 2 - borderWidth;
-    const oy = -obstacle.height / 2 - borderWidth;
-    const ow = obstacle.width + borderWidth * 2;
-    const oh = obstacle.height + borderWidth * 2;
-
-    ctx.save();
-    ctx.strokeStyle = '#c48a1a'; // industrial hazard yellow-gold
-    ctx.lineWidth = 3.5;
-    ctx.strokeRect(ox, oy, ow, oh);
-
-    ctx.strokeStyle = '#0c0f12'; // black stripes
-    ctx.lineWidth = 3.5;
-    ctx.setLineDash([8, 8]);
-    ctx.strokeRect(ox, oy, ow, oh);
-    ctx.restore();
-
     if (obstacle.type === 'containment') {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
       ctx.beginPath();
@@ -7558,89 +7656,287 @@ function drawObstacles() {
     drawObjectShadow(x, y, w, h, 0.48);
 
     if (obstacle.type === 'crate') {
-      // Wooden supply crate
+      // 📦 Wooden supply crate
+      // 1. Base wood fill
       ctx.fillStyle = '#3a2414';
       ctx.fillRect(x, y, w, h);
       ctx.fillStyle = '#7a4a22';
       ctx.fillRect(x + 5, y + 5, w - 10, h - 10);
-      ctx.fillStyle = '#b06b2d';
-      ctx.fillRect(x + 10, y + 10, w - 20, 8);
-      ctx.fillRect(x + 10, y + h - 18, w - 20, 8);
-      ctx.fillStyle = '#2a160b';
-      ctx.fillRect(x + Math.floor(w / 2) - 4, y + 8, 8, h - 16);
+      
+      // 2. Horizontal wood panels
+      ctx.fillStyle = '#593416';
+      ctx.fillRect(x + 5, y + Math.floor(h / 3) - 2, w - 10, 3);
+      ctx.fillRect(x + 5, y + Math.floor((2 * h) / 3) - 2, w - 10, 3);
+      
+      // 3. Diagonal wooden cross braces
+      ctx.strokeStyle = '#2a160b';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(x + 8, y + 8); ctx.lineTo(x + w - 8, y + h - 8);
+      ctx.moveTo(x + w - 8, y + 8); ctx.lineTo(x + 8, y + h - 8);
+      ctx.stroke();
+
+      // 4. Center warning diamond badge
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      ctx.fillStyle = '#ffee00';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 10);
+      ctx.lineTo(cx + 10, cy);
+      ctx.lineTo(cx, cy + 10);
+      ctx.lineTo(cx - 10, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(cx - 1, cy - 5, 2, 6);
+      ctx.fillRect(cx - 1, cy + 3, 2, 2);
+
+      // 5. Heavy iron reinforcement brackets at corners
+      ctx.fillStyle = '#3f444f';
+      // TL corner
+      ctx.fillRect(x, y, 12, 5); ctx.fillRect(x, y, 5, 12);
+      // TR corner
+      ctx.fillRect(x + w - 12, y, 12, 5); ctx.fillRect(x + w - 5, y, 5, 12);
+      // BL corner
+      ctx.fillRect(x, y + h - 5, 12, 5); ctx.fillRect(x, y + h - 12, 5, 12);
+      // BR corner
+      ctx.fillRect(x + w - 12, y + h - 5, 12, 5); ctx.fillRect(x + w - 5, y + h - 12, 5, 12);
+
+      // 6. Corner rivets
+      ctx.fillStyle = '#818691';
+      ctx.fillRect(x + 2, y + 2, 2, 2);
+      ctx.fillRect(x + w - 4, y + 2, 2, 2);
+      ctx.fillRect(x + 2, y + h - 4, 2, 2);
+      ctx.fillRect(x + w - 4, y + h - 4, 2, 2);
+
+      // Outer outline
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 4;
       ctx.strokeRect(x, y, w, h);
-      ctx.beginPath();
-      ctx.moveTo(x + 8, y + 8);
-      ctx.lineTo(x + w - 8, y + h - 8);
-      ctx.moveTo(x + w - 8, y + 8);
-      ctx.lineTo(x + 8, y + h - 8);
-      ctx.stroke();
+
     } else if (obstacle.type === 'chemical') {
-      // Chemical containment tank with a bright core
-      ctx.fillStyle = '#10130a';
+      // 🧪 Chemical containment tank with animated bubbling fluid
+      // 1. Tank main frame
+      ctx.fillStyle = '#1e242a';
       ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = '#2e451d';
-      ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
-      ctx.fillStyle = '#83d12f';
-      ctx.fillRect(x + 13, y + 12, w - 26, h - 24);
-      ctx.fillStyle = '#151812';
-      ctx.fillRect(x + 18, y + 18, w - 36, h - 36);
-      ctx.fillStyle = '#39ff14';
-      ctx.fillRect(x + Math.floor(w / 2) - 5, y + 12, 10, h - 24);
+      
+      // 2. Translucent glass vat viewport
+      ctx.fillStyle = '#060a0a';
+      ctx.fillRect(x + 6, y + 10, w - 12, h - 20);
+
+      // 3. Glowing linear gradient bio-liquid fill
+      const liquidGrad = ctx.createLinearGradient(x + 8, 0, x + w - 8, 0);
+      liquidGrad.addColorStop(0, '#17540d');
+      liquidGrad.addColorStop(0.5, '#3cff14');
+      liquidGrad.addColorStop(1, '#17540d');
+      ctx.fillStyle = liquidGrad;
+      ctx.fillRect(x + 8, y + 12, w - 16, h - 24);
+
+      // 4. Animated rising bubbles inside liquid
+      const bubbleOffset = (gameTick * 0.45) % (h - 28);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+      ctx.fillRect(x + 14, y + h - 14 - ((bubbleOffset + 8) % (h - 26)), 2, 2);
+      ctx.fillRect(x + w - 16, y + h - 14 - ((bubbleOffset + 20) % (h - 26)), 3, 3);
+      ctx.fillStyle = '#3cff14';
+      ctx.fillRect(x + Math.floor(w / 2) + 2, y + h - 14 - (bubbleOffset % (h - 26)), 2, 2);
+
+      // 5. Vertical glass tube reflection glint
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+      ctx.fillRect(x + w - 14, y + 12, 3, h - 24);
+      
+      // 6. Solid metal top and bottom caps with warning stripe decals
+      ctx.fillStyle = '#3a424f';
+      ctx.fillRect(x, y, w, 10);
+      ctx.fillRect(x, y + h - 10, w, 10);
+
+      // Top cap bolts
+      ctx.fillStyle = '#a1a5b0';
+      ctx.fillRect(x + 10, y + 4, 3, 3);
+      ctx.fillRect(x + w - 13, y + 4, 3, 3);
+      ctx.fillRect(x + Math.floor(w / 2) - 1, y + 4, 3, 3);
+
+      // Outer outline
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 5;
       ctx.strokeRect(x, y, w, h);
+
+      // Glowing outer field stroke
       ctx.strokeStyle = 'rgba(57, 255, 20, 0.38)';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(x - 5, y - 5, w + 10, h + 10);
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x - 4, y - 4, w + 8, h + 8);
+
     } else if (obstacle.type === 'containment') {
-      // Sealed specimen containment unit
-      ctx.fillStyle = '#0b1114';
+      // ☣️ Sealed specimen containment unit with a pulsing specimen shadow
+      // 1. Metal base chassis
+      ctx.fillStyle = '#0f1418';
       ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = '#28363a';
+      ctx.fillStyle = '#2c353d';
       ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
-      ctx.fillStyle = '#0e1818';
+
+      // 2. Viewport glass
+      ctx.fillStyle = '#051118';
       ctx.fillRect(x + 18, y + 14, w - 36, h - 28);
-      ctx.fillStyle = 'rgba(57, 255, 20, 0.34)';
-      ctx.fillRect(x + 24, y + 20, w - 48, h - 40);
+
+      // 3. Glowing core backdrop
+      ctx.fillStyle = 'rgba(57, 255, 20, 0.28)';
+      ctx.fillRect(x + 22, y + 18, w - 44, h - 36);
+
+      // 4. Pulsing organic silhouette (the specimen inside)
+      const pulseScale = 1.0 + Math.sin(gameTick * 0.05) * 0.16;
+      const specR = Math.min(w, h) * 0.18 * pulseScale;
+      ctx.fillStyle = 'rgba(70, 10, 95, 0.9)'; // Dark alien purple
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y + h / 2, specR, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Secondary inner core
+      ctx.fillStyle = 'rgba(120, 20, 150, 0.65)';
+      ctx.beginPath();
+      ctx.arc(x + w / 2 - 3, y + h / 2 - 2, specR * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 5. Blinking indicator LEDs
+      const greenOn = (gameTick % 46) < 23;
+      const redOn = (gameTick % 30) < 15;
+      ctx.fillStyle = greenOn ? '#39ff14' : '#104d06'; // Green LED
+      ctx.fillRect(x + 12, y + 12, 4, 4);
+      ctx.fillStyle = redOn ? '#ff2200' : '#5c0c00'; // Red LED
+      ctx.fillRect(x + 12, y + 20, 4, 4);
+
+      // 6. Hazard labels
       ctx.fillStyle = '#c48a1a';
-      ctx.fillRect(x + 10, y + 10, 14, 8);
-      ctx.fillRect(x + w - 24, y + h - 18, 14, 8);
+      ctx.fillRect(x + w - 14, y + 12, 4, 10);
+      ctx.fillRect(x + w - 14, y + h - 22, 4, 10);
+
+      // Outer outline
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 5;
       ctx.strokeRect(x, y, w, h);
+
     } else if (obstacle.type === 'barrier') {
-      // Quarantine barrier: industrial slab with a hazard face
-      ctx.fillStyle = '#08080b';
+      // 🚧 Quarantine barrier: industrial slab with flashing emergency warning beacons
+      // 1. Heavy metal base
+      ctx.fillStyle = '#0a0a0f';
       ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = '#3b3b43';
+      ctx.fillStyle = '#393d47';
       ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
-      ctx.fillStyle = '#1a1a20';
+      ctx.fillStyle = '#17181c';
       ctx.fillRect(x + 12, y + 12, w - 24, h - 24);
-      ctx.fillStyle = '#ff7700';
-      ctx.fillRect(x + 18, y + Math.floor(h / 2) - 6, w - 36, 12);
+
+      // 2. Yellow hazard stripe face
+      ctx.fillStyle = '#d49511';
+      ctx.fillRect(x + 16, y + Math.floor(h / 2) - 8, w - 32, 16);
       ctx.fillStyle = '#000000';
-      for (let stripe = x + 28; stripe < x + w - 28; stripe += 34) {
-        ctx.fillRect(stripe, y + Math.floor(h / 2) - 6, 12, 12);
+      for (let stripe = x + 24; stripe < x + w - 20; stripe += 28) {
+        ctx.beginPath();
+        ctx.moveTo(stripe, y + Math.floor(h / 2) + 8);
+        ctx.lineTo(stripe + 10, y + Math.floor(h / 2) + 8);
+        ctx.lineTo(stripe + 18, y + Math.floor(h / 2) - 8);
+        ctx.lineTo(stripe + 8, y + Math.floor(h / 2) - 8);
+        ctx.closePath();
+        ctx.fill();
       }
+
+      // 3. Flashing emergency beacon (red warning siren light on top)
+      const bx = x + w / 2;
+      const by = y;
+      // Beacon cap base
+      ctx.fillStyle = '#202229';
+      ctx.fillRect(bx - 9, by - 4, 18, 4);
+      // Beacon lamp bulb
+      const beaconActive = (gameTick % 28) < 14;
+      ctx.fillStyle = beaconActive ? '#ff1e00' : '#6e0c00';
+      ctx.fillRect(bx - 6, by - 10, 12, 6);
+      // Glowing aura
+      if (beaconActive) {
+        ctx.fillStyle = 'rgba(255, 30, 0, 0.12)';
+        ctx.beginPath();
+        ctx.arc(bx, by - 7, 24, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 4. Panel rivets
+      ctx.fillStyle = '#7d8291';
+      ctx.fillRect(x + 12, y + 12, 3, 3);
+      ctx.fillRect(x + w - 15, y + 12, 3, 3);
+
+      // Outer outline
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 5;
       ctx.strokeRect(x, y, w, h);
+
     } else {
-      // Lab console or server plinth
-      ctx.fillStyle = '#0a0e11';
+      // 🖥️ Lab Console / Server Plinth with scrolling oscilloscope screen
+      // 1. Base chassis
+      ctx.fillStyle = '#080c10';
       ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = '#3b4a50';
+      ctx.fillStyle = '#324047';
       ctx.fillRect(x + 5, y + 5, w - 10, h - 10);
-      ctx.fillStyle = '#11191c';
-      ctx.fillRect(x + 12, y + 12, w - 24, h - 24);
-      ctx.fillStyle = '#39ff14';
-      ctx.fillRect(x + 18, y + 18, 12, 8);
-      ctx.fillRect(x + 38, y + 18, 12, 8);
-      ctx.fillStyle = '#c48a1a';
-      ctx.fillRect(x + w - 48, y + h - 22, 30, 6);
+
+      // 2. Oscilloscope Screen viewport
+      const screenX = x + 14;
+      const screenY = y + 10;
+      const screenW = w - 28;
+      const screenH = h - 26;
+      ctx.fillStyle = '#04080a';
+      ctx.fillRect(screenX, screenY, screenW, screenH);
+      
+      // Screen grid divisions
+      ctx.strokeStyle = 'rgba(57, 255, 20, 0.16)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      // Center vertical grid
+      ctx.moveTo(screenX + Math.floor(screenW / 2), screenY);
+      ctx.lineTo(screenX + Math.floor(screenW / 2), screenY + screenH);
+      // Center horizontal grid
+      ctx.moveTo(screenX, screenY + Math.floor(screenH / 2));
+      ctx.lineTo(screenX + screenW, screenY + Math.floor(screenH / 2));
+      ctx.stroke();
+
+      // 3. Scrolling green oscilloscope waveform signal
+      ctx.strokeStyle = '#39ff14';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      for (let lx = 0; lx < screenW; lx += 2) {
+        // Calculate animated wave offsets based on gameTick
+        const waveY = Math.sin((lx + gameTick * 1.6) * 0.18) * (screenH * 0.28) * Math.sin(gameTick * 0.04);
+        if (lx === 0) {
+          ctx.moveTo(screenX + lx, screenY + Math.floor(screenH / 2) + waveY);
+        } else {
+          ctx.lineTo(screenX + lx, screenY + Math.floor(screenH / 2) + waveY);
+        }
+      }
+      ctx.stroke();
+
+      // Screen glass glare overlay
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.beginPath();
+      ctx.moveTo(screenX, screenY);
+      ctx.lineTo(screenX + Math.floor(screenW * 0.5), screenY);
+      ctx.lineTo(screenX, screenY + screenH);
+      ctx.closePath();
+      ctx.fill();
+
+      // 4. Blinking status console LEDs
+      const ledTick1 = (gameTick % 22) < 11;
+      const ledTick2 = ((gameTick + 7) % 22) < 11;
+      const ledTick3 = ((gameTick + 15) % 22) < 11;
+      
+      // LED 1: Green
+      ctx.fillStyle = ledTick1 ? '#39ff14' : '#144d08';
+      ctx.fillRect(x + 14, y + h - 12, 5, 4);
+      // LED 2: Yellow/Orange
+      ctx.fillStyle = ledTick2 ? '#ffaa00' : '#4d3300';
+      ctx.fillRect(x + 23, y + h - 12, 5, 4);
+      // LED 3: Red
+      ctx.fillStyle = ledTick3 ? '#ff2200' : '#4d0b00';
+      ctx.fillRect(x + 32, y + h - 12, 5, 4);
+
+      // 5. Heavy cable connection plate
+      ctx.fillStyle = '#12181c';
+      ctx.fillRect(x + w - 24, y + h - 12, 12, 5);
+
+      // Outer outline
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 5;
       ctx.strokeRect(x, y, w, h);
@@ -10876,6 +11172,16 @@ function drawGameParticles() {
       return;
     }
 
+    // Steam particles grow as they decay and use fading transparency
+    if (p.type === 'steam') {
+      const activeSize = Math.max(1, Math.floor(p.size * (1.5 - p.life)));
+      ctx.fillStyle = `rgba(180, 200, 210, ${p.life * 0.16})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, activeSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
     // All other particles shrink via activeSize — no per-particle globalAlpha needed.
     // Removing ctx.globalAlpha saves ~200 canvas pipeline flushes per frame.
     const activeSize = Math.max(1, Math.floor(p.size * p.life));
@@ -11171,7 +11477,7 @@ function updateHUD() {
 
 function generateGroundDetails() {
   groundDetails = [];
-  const numDetails = 240; // increased count to reduce empty floor space
+  const numDetails = 140; // slightly reduced count since they don't stack up anymore
 
   let attempts = 0;
   while (groundDetails.length < numDetails && attempts < 1500) {
@@ -11294,7 +11600,7 @@ function findTurretSpawnPos(px, py) {
 
 // Minimum clear corridor width guaranteed between any two obstacle surfaces.
 // Must exceed the largest entity diameter (Patient Zero = 112px) with margin.
-const OBSTACLE_MIN_GAP = 150;
+const OBSTACLE_MIN_GAP = 180;
 
 function generateMapObstacles() {
   obstacles = [];
@@ -11317,7 +11623,7 @@ function generateMapObstacles() {
 
   // Use more attempts to compensate for the stricter gap requirement.
   let attempts = 0;
-  while (obstacles.length < 28 && attempts < 900) {
+  while (obstacles.length < 16 && attempts < 700) {
     attempts += 1;
     const preset = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
     const width  = Math.floor(randomBetween(preset.minW, preset.maxW));
@@ -11327,24 +11633,6 @@ function generateMapObstacles() {
 
     if (canPlaceObstacle(x, y, width, height)) {
       addObstacle(preset.type, x, y, width, height);
-
-      // 35% chance to place a clustered adjacent obstacle of the same type (like stacking crates/consoles)
-      if (Math.random() < 0.35) {
-        const direction = Math.random() < 0.5 ? 'x' : 'y';
-        let cx = x;
-        let cy = y;
-        if (direction === 'x') {
-          cx = x + width + 4; // 4px visual spacing gap
-        } else {
-          cy = y + height + 4;
-        }
-
-        if (cx > 90 && cx + width < world.width - 90 && cy > 130 && cy + height < world.height - 90) {
-          if (canPlaceObstacle(cx, cy, width, height)) {
-            addObstacle(preset.type, cx, cy, width, height);
-          }
-        }
-      }
     }
   }
 
@@ -11615,14 +11903,17 @@ function renderArsenalPanel() {
       !isUnlocked   ? 'arsenal-gun-locked' : ''
     ].filter(Boolean).join(' ');
 
+    const formattedStats = `DMG <span class="desc-highlight">${gun.stats.bulletDamage}</span> · SPD <span class="desc-highlight">${gun.stats.bulletSpeed}</span> · RATE <span class="desc-highlight">${gun.stats.fireRate}</span>ms`;
+    const formattedDesc = formatGunDescription(gun.description);
+
     card.innerHTML = `
       <div class="arsenal-gun-header">
         <span class="arsenal-gun-icon">${gun.icon}</span>
         <span class="arsenal-gun-name">${gun.name}</span>
         ${isSelected ? '<span class="arsenal-equipped-badge">EQUIPPED</span>' : ''}
       </div>
-      <div class="arsenal-gun-stats">DMG ${gun.stats.bulletDamage} · SPD ${gun.stats.bulletSpeed} · RATE ${gun.stats.fireRate}ms</div>
-      <div class="arsenal-gun-desc">${gun.description}</div>
+      <div class="arsenal-gun-stats">${formattedStats}</div>
+      <div class="arsenal-gun-desc">${formattedDesc}</div>
       ${!isUnlocked && gun.price > 0
         ? `<button class="arsenal-buy-btn${canAfford ? '' : ' arsenal-buy-locked'}" data-id="${gun.id}" data-price="${gun.price}">
              ${canAfford ? `Buy for ${gun.price} ◈` : `Need ${gun.price} ◈`}
@@ -11681,15 +11972,16 @@ function showGunSelectionScreen() {
     const card = document.createElement('div');
     card.className = `gun-card rarity-${gun.rarity}${isSelected ? ' gun-card-selected' : ''}${!isUnlocked ? ' gun-card-locked' : ''}`;
 
+    const rarityBadgeHTML = `<div class="gun-card-badge">${gun.rarity.toUpperCase()}</div>`;
+    const formattedStats = `DMG <span class="desc-highlight">${gun.stats.bulletDamage}</span> &nbsp;|&nbsp; SPD <span class="desc-highlight">${gun.stats.bulletSpeed}</span> &nbsp;|&nbsp; RATE <span class="desc-highlight">${gun.stats.fireRate}</span>ms`;
+    const formattedDesc = formatGunDescription(gun.description);
+
     card.innerHTML = `
+      ${rarityBadgeHTML}
       <div class="gun-card-icon">${gun.icon}</div>
       <div class="gun-card-name">${gun.name}</div>
-      <div class="gun-card-desc">${gun.description}</div>
-      <div class="gun-card-stats">
-        DMG ${gun.stats.bulletDamage} &nbsp;|&nbsp;
-        SPD ${gun.stats.bulletSpeed} &nbsp;|&nbsp;
-        RATE ${gun.stats.fireRate}ms
-      </div>
+      <div class="gun-card-desc">${formattedDesc}</div>
+      <div class="gun-card-stats">${formattedStats}</div>
       ${!isUnlocked && gun.price > 0
         ? `<button class="gun-buy-btn${canAfford ? '' : ' gun-buy-disabled'}" data-id="${gun.id}" data-price="${gun.price}">
              ${canAfford ? `Buy (${gun.price}◈)` : `Locked (${gun.price}◈)`}

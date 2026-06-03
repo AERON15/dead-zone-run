@@ -25,6 +25,27 @@
   /* Fonts */
   --font-pixel: 'Black Ops One', Impact, monospace;
   --font-terminal: 'Share Tech Mono', 'Courier New', monospace;
+
+  /* Rarity Color Coding Custom Properties */
+  --rarity-common-color: #39ff14;
+  --rarity-common-glow: rgba(57, 255, 20, 0.4);
+  --rarity-common-bg: rgba(57, 255, 20, 0.04);
+  --rarity-common-bg-hover: linear-gradient(135deg, rgba(17, 24, 17, 0.95) 0%, rgba(9, 13, 9, 0.98) 100%);
+
+  --rarity-rare-color: #00bcff;
+  --rarity-rare-glow: rgba(0, 188, 255, 0.4);
+  --rarity-rare-bg: rgba(0, 188, 255, 0.04);
+  --rarity-rare-bg-hover: linear-gradient(135deg, rgba(17, 22, 24, 0.95) 0%, rgba(9, 12, 13, 0.98) 100%);
+
+  --rarity-epic-color: #c770ff;
+  --rarity-epic-glow: rgba(199, 112, 255, 0.4);
+  --rarity-epic-bg: rgba(199, 112, 255, 0.04);
+  --rarity-epic-bg-hover: linear-gradient(135deg, rgba(22, 17, 24, 0.95) 0%, rgba(12, 9, 13, 0.98) 100%);
+
+  --rarity-legendary-color: #ff7700;
+  --rarity-legendary-glow: rgba(255, 119, 0, 0.45);
+  --rarity-legendary-bg: rgba(255, 119, 0, 0.05);
+  --rarity-legendary-bg-hover: linear-gradient(135deg, rgba(30, 20, 15, 0.95) 0%, rgba(18, 10, 8, 0.98) 100%);
 }
 
 /* Reset and Base */
@@ -543,8 +564,10 @@ html, body {
   position: absolute;
   width: 8px;
   height: 8px;
-  background: var(--pixel-gray-light);
-  border: 2px solid #000;
+  background: linear-gradient(135deg, #a1a1b5 0%, #5d5d6c 100%);
+  border: 1.5px solid #000;
+  border-radius: 50%;
+  box-shadow: inset 1px 1px 1px rgba(255, 255, 255, 0.4), 1px 1px 2px rgba(0, 0, 0, 0.6);
 }
 .rivet.top-left { top: 8px; left: 8px; }
 .rivet.top-right { top: 8px; right: 8px; }
@@ -1116,69 +1139,198 @@ html, body {
 
 .upgrade-card {
   min-width: 0;
-  background: var(--bg-dark);
-  border: 4px solid var(--panel-border);
-  padding: 1.4rem 1rem;
+  background: 
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.01) 0px, rgba(255, 255, 255, 0.01) 2px, transparent 2px, transparent 10px),
+    linear-gradient(135deg, rgba(17, 17, 22, 0.9) 0%, rgba(9, 9, 12, 0.95) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: none;
+  padding: 1.6rem 1.2rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.7rem;
+  gap: 0.75rem;
   cursor: pointer;
-  transition: transform 0.1s steps(2), border-color 0.1s steps(2), box-shadow 0.1s steps(2);
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.15s ease, background 0.15s ease;
   position: relative;
-  box-shadow: 6px 6px 0px #000;
-  min-height: 200px;
+  box-shadow: 
+    5px 5px 0px #000,
+    inset 0 0 0 4px var(--rarity-color, var(--panel-border)),
+    inset 0 0 20px var(--rarity-color-bg, transparent);
+  min-height: 240px;
   overflow: hidden;
+  border-radius: 6px;
+}
+
+/* Card glass shine scan effect overlay - layered ON TOP of text to avoid cutout masks */
+.upgrade-card::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 250%;
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(
+    45deg,
+    transparent 43%,
+    rgba(255, 255, 255, 0.06) 47%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0.06) 53%,
+    transparent 57%
+  );
+  transform: translate(-50%, -50%) rotate(-15deg);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.upgrade-card:hover::before {
+  transform: translate(-20%, -20%) rotate(-15deg);
 }
 
 .upgrade-card:hover {
-  transform: translateY(-4px);
-  border-color: var(--pixel-orange);
-  box-shadow: 8px 8px 0px #000;
-  background: #0d0d14;
+  transform: translateY(-8px) scale(1.03) rotate(0.5deg);
+  box-shadow: 
+    10px 10px 0px #000,
+    0 0 15px var(--rarity-color-glow),
+    inset 0 0 0 4px var(--rarity-color),
+    inset 0 0 25px var(--rarity-color-bg) !important;
+  background: var(--rarity-bg-hover, linear-gradient(135deg, rgba(20, 20, 28, 0.95) 0%, rgba(10, 10, 15, 0.98) 100%)) !important;
 }
 
 .upgrade-card:active {
-  transform: translateY(-2px);
-  box-shadow: 6px 6px 0px #000;
-  border-color: var(--pixel-green);
+  transform: translateY(-3px) scale(1.01) rotate(0.2deg);
+  box-shadow: 
+    6px 6px 0px #000,
+    0 0 8px var(--rarity-color-glow),
+    inset 0 0 0 4px var(--rarity-color),
+    inset 0 0 15px var(--rarity-color-bg) !important;
 }
 
+/* Absolute Rarity capsule badge */
+.upgrade-card-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-family: var(--font-terminal);
+  font-size: 0.58rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid var(--rarity-color);
+  color: var(--rarity-color);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 0 6px var(--rarity-color-glow);
+  z-index: 6;
+  pointer-events: none;
+}
+
+.upgrade-card-badge::before {
+  content: "●";
+  font-size: 0.5rem;
+  animation: badge-blink 1.5s infinite steps(2);
+}
+
+@keyframes badge-blink {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* Tactical capsule badge for card icon representation */
 .upgrade-card-icon {
-  font-size: clamp(1.6rem, 2.6vw, 2.2rem);
-  margin-bottom: 0.1rem;
-  text-shadow: 3px 3px 0px #000;
-  filter: drop-shadow(2px 2px 0px #000);
-  line-height: 1;
+  font-family: var(--font-terminal);
+  font-size: clamp(0.9rem, 1.5vw, 1.1rem);
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: var(--rarity-color);
+  background: rgba(0, 0, 0, 0.6);
+  border: 1.5px solid var(--rarity-color);
+  border-radius: 4px;
+  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  height: 32px;
+  box-shadow: inset 0 0 8px var(--rarity-color-bg), 0 0 6px var(--rarity-color-bg);
+  margin-bottom: 0.2rem;
+  z-index: 2;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease, background 0.2s ease;
 }
 
+.upgrade-card:hover .upgrade-card-icon {
+  transform: scale(1.06) rotate(1deg);
+  box-shadow: inset 0 0 12px var(--rarity-color-bg), 0 0 12px var(--rarity-color);
+  background: rgba(0, 0, 0, 0.8);
+}
+
+/* Glowing text with custom divider underline that expands outwards on hover */
 .upgrade-card-title {
   font-family: var(--font-pixel);
-  font-size: clamp(0.68rem, 1vw, 0.82rem);
-  color: var(--pixel-orange);
+  font-size: clamp(0.75rem, 1.1vw, 0.92rem);
   text-transform: uppercase;
   line-height: 1.2;
-  letter-spacing: 0;
+  letter-spacing: 1px;
   overflow-wrap: anywhere;
+  margin-top: 0.1rem;
+  color: var(--rarity-color) !important;
+  text-shadow: 0 0 6px var(--rarity-color-glow);
+  position: relative;
+  padding-bottom: 10px;
+  width: 100%;
+  z-index: 2;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
 }
 
-.upgrade-card:hover .upgrade-card-title {
-  color: #ffaa00;
-  text-shadow: 0 0 3px rgba(255, 170, 0, 0.3);
+.upgrade-card-title::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 15%;
+  width: 70%;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--rarity-color) 30%, var(--rarity-color) 70%, transparent);
+  box-shadow: 0 0 6px var(--rarity-color-glow);
+  opacity: 0.6;
+  transition: width 0.3s ease, left 0.3s ease, opacity 0.3s ease;
+}
+
+.upgrade-card:hover .upgrade-card-title::after {
+  width: 90%;
+  left: 5%;
+  opacity: 1;
 }
 
 .upgrade-card-desc {
   font-family: var(--font-terminal);
-  font-size: clamp(0.82rem, 1.15vw, 1rem);
+  font-size: clamp(0.82rem, 1.15vw, 0.95rem);
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.45;
   flex-grow: 1;
   overflow-wrap: anywhere;
+  z-index: 2;
+  margin-top: 4px;
 }
 
-.upgrade-card:hover .upgrade-card-desc {
-  color: var(--text-primary);
+/* Custom highlight elements inside dynamic description formatting */
+.upgrade-card-desc .desc-highlight {
+  color: #00f0ff;
+  font-weight: bold;
+  text-shadow: 0 0 4px rgba(0, 240, 255, 0.3);
+}
+
+.upgrade-card-desc .desc-cap {
+  color: #ffaa00;
+  font-size: 0.8rem;
+  display: block;
+  margin-top: 6px;
+  font-style: italic;
+  opacity: 0.85;
 }
 
 /* Locked upgrade card — incompatible with active gun */
@@ -1186,7 +1338,7 @@ html, body {
   opacity: 0.42;
   cursor: not-allowed;
   filter: grayscale(0.55);
-  border-color: #2a2a35 !important;
+  box-shadow: 5px 5px 0px #000, inset 0 0 0 4px #2a2a35 !important;
   pointer-events: none;
 }
 
@@ -1234,7 +1386,11 @@ html, body {
   }
 
   .upgrade-card-icon {
-    font-size: 1.35rem;
+    font-size: 0.8rem;
+    padding: 2px 8px;
+    min-width: 66px;
+    height: 26px;
+    margin-bottom: 0;
   }
 
   .upgrade-card-desc {
@@ -1275,54 +1431,34 @@ html, body {
 
 /* Rarity Color Codings */
 .rarity-common {
-  border-color: var(--pixel-green) !important;
-  box-shadow: 6px 6px 0px rgba(57, 255, 20, 0.2), 6px 6px 0px #000 !important;
-}
-.rarity-common .upgrade-card-title {
-  color: var(--pixel-green) !important;
-}
-.rarity-common:hover {
-  border-color: #5eff40 !important;
-  box-shadow: 12px 12px 0px rgba(57, 255, 20, 0.35), 12px 12px 0px #000 !important;
+  --rarity-color: var(--rarity-common-color);
+  --rarity-color-glow: var(--rarity-common-glow);
+  --rarity-color-bg: var(--rarity-common-bg);
+  --rarity-bg-hover: var(--rarity-common-bg-hover);
 }
 
 .rarity-rare {
-  border-color: #00bcff !important;
-  box-shadow: 6px 6px 0px rgba(0, 188, 255, 0.2), 6px 6px 0px #000 !important;
-}
-.rarity-rare .upgrade-card-title {
-  color: #00bcff !important;
-}
-.rarity-rare:hover {
-  border-color: #33ccff !important;
-  box-shadow: 12px 12px 0px rgba(0, 188, 255, 0.35), 12px 12px 0px #000 !important;
+  --rarity-color: var(--rarity-rare-color);
+  --rarity-color-glow: var(--rarity-rare-glow);
+  --rarity-color-bg: var(--rarity-rare-bg);
+  --rarity-bg-hover: var(--rarity-rare-bg-hover);
 }
 
 .rarity-epic {
-  border-color: #b026ff !important;
-  box-shadow: 6px 6px 0px rgba(176, 38, 255, 0.2), 6px 6px 0px #000 !important;
-}
-.rarity-epic .upgrade-card-title {
-  color: #c770ff !important;
-}
-.rarity-epic:hover {
-  border-color: #c770ff !important;
-  box-shadow: 12px 12px 0px rgba(176, 38, 255, 0.35), 12px 12px 0px #000 !important;
+  --rarity-color: var(--rarity-epic-color);
+  --rarity-color-glow: var(--rarity-epic-glow);
+  --rarity-color-bg: var(--rarity-epic-bg);
+  --rarity-bg-hover: var(--rarity-epic-bg-hover);
 }
 
 .rarity-legendary {
-  border-color: var(--pixel-orange) !important;
-  box-shadow: 6px 6px 0px rgba(255, 119, 0, 0.3), 6px 6px 0px #000 !important;
-  background: linear-gradient(180deg, #111116 0%, #1c1005 100%) !important;
+  --rarity-color: var(--rarity-legendary-color);
+  --rarity-color-glow: var(--rarity-legendary-glow);
+  --rarity-color-bg: var(--rarity-legendary-bg);
+  --rarity-bg-hover: var(--rarity-legendary-bg-hover);
 }
 .rarity-legendary .upgrade-card-title {
-  color: var(--pixel-orange) !important;
   animation: legendary-pulse 1.5s infinite steps(4);
-}
-.rarity-legendary:hover {
-  border-color: #ffaa00 !important;
-  box-shadow: 12px 12px 0px rgba(255, 119, 0, 0.45), 12px 12px 0px #000 !important;
-  background: linear-gradient(180deg, #15151c 0%, #261608 100%) !important;
 }
 
 /* ── Reroll Row ────────────────────────────────────────────────────────── */
@@ -2058,7 +2194,10 @@ html, body {
     gap: 0.3rem !important;
   }
   .upgrade-card-icon {
-    font-size: 1.3rem !important;
+    font-size: 0.8rem !important;
+    padding: 2px 8px !important;
+    min-width: 66px !important;
+    height: 26px !important;
     margin-bottom: 0.1rem !important;
   }
   .upgrade-card-title {
@@ -2140,7 +2279,10 @@ html, body {
   }
 
   #wavecleared-screen .upgrade-card-icon {
-    font-size: 1.1rem !important;
+    font-size: 0.72rem !important;
+    padding: 2px 6px !important;
+    min-width: 60px !important;
+    height: 22px !important;
     margin-bottom: 0 !important;
   }
 
@@ -2543,110 +2685,236 @@ html, body {
 
 .arsenal-gun-card {
   position: relative;
-  background: rgba(0, 0, 0, 0.45);
-  border: 2px solid var(--panel-border);
-  border-left: 4px solid var(--panel-border-light);
-  padding: 0.65rem 0.75rem;
+  background: 
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.01) 0px, rgba(255, 255, 255, 0.01) 2px, transparent 2px, transparent 10px),
+    linear-gradient(135deg, rgba(14, 14, 20, 0.9) 0%, rgba(6, 6, 9, 0.95) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: none;
+  padding: 0.75rem 0.85rem;
   cursor: pointer;
-  transition: border-color 0.12s, box-shadow 0.12s;
   width: 100%;
   box-sizing: border-box;
+  border-radius: 4px;
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.15s ease, background 0.15s ease;
+  box-shadow: 
+    inset 0 0 12px var(--rarity-color-bg, transparent);
+}
+
+.arsenal-gun-card::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 250%;
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(
+    45deg,
+    transparent 43%,
+    rgba(255, 255, 255, 0.06) 47%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0.06) 53%,
+    transparent 57%
+  );
+  transform: translate(-50%, -50%) rotate(-15deg);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.arsenal-gun-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 2px var(--rarity-color, var(--panel-border));
+  pointer-events: none;
+  z-index: 6;
+  transition: box-shadow 0.15s ease;
+}
+
+.arsenal-gun-card:hover::before {
+  transform: translate(-20%, -20%) rotate(-15deg);
 }
 
 .arsenal-gun-card:hover:not(.arsenal-gun-locked) {
-  border-color: rgba(255, 180, 0, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 
+    0 4px 10px rgba(0, 0, 0, 0.45),
+    inset 0 0 18px var(--rarity-color-bg),
+    0 0 10px var(--rarity-color-glow);
+  background: var(--rarity-bg-hover, linear-gradient(135deg, rgba(20, 20, 28, 0.95) 0%, rgba(10, 10, 15, 0.98) 100%)) !important;
+}
+
+.arsenal-gun-card:hover:not(.arsenal-gun-locked)::after {
+  box-shadow: inset 0 0 0 2px var(--rarity-color);
 }
 
 .arsenal-gun-card.arsenal-selected {
-  border-color: #ffaa00 !important;
-  border-left-color: #ffaa00 !important;
-  box-shadow: 0 0 10px rgba(255, 170, 0, 0.3);
-  background: rgba(255, 140, 0, 0.08);
+  box-shadow: 
+    0 0 15px rgba(255, 170, 0, 0.4),
+    inset 0 0 20px rgba(255, 140, 0, 0.12) !important;
+  background: rgba(255, 140, 0, 0.08) !important;
+}
+
+.arsenal-gun-card.arsenal-selected::after {
+  box-shadow: inset 0 0 0 3px #ffaa00;
+}
+
+.arsenal-gun-card.arsenal-selected:hover:not(.arsenal-gun-locked)::after {
+  box-shadow: inset 0 0 0 3px #ffaa00;
+}
+
+.arsenal-gun-card.arsenal-gun-locked::after {
+  box-shadow: inset 0 0 0 2px #2a2a35;
 }
 
 .arsenal-gun-card.arsenal-gun-locked {
-  opacity: 0.52;
-  cursor: default;
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: grayscale(0.55);
+  box-shadow: inset 0 0 0 2px #2a2a35 !important;
+  pointer-events: none;
 }
-
-.arsenal-gun-card.rarity-common  { border-left-color: #888; }
-.arsenal-gun-card.rarity-rare    { border-left-color: #4fc3f7; }
-.arsenal-gun-card.rarity-epic    { border-left-color: #ce93d8; }
-.arsenal-gun-card.rarity-legendary { border-left-color: #ffb300; }
-.arsenal-gun-card.arsenal-selected { border-left-color: #ffaa00 !important; }
 
 .arsenal-gun-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem;
-  margin-bottom: 0.25rem;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  position: relative;
+  z-index: 2;
 }
 
 .arsenal-gun-icon {
   font-family: var(--font-terminal);
-  font-size: 0.85rem;
-  color: #ffaa00;
+  font-size: 0.65rem;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  color: var(--rarity-color);
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--rarity-color);
+  border-radius: 4px;
+  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 50px;
+  height: 20px;
+  box-shadow: inset 0 0 4px var(--rarity-color-bg), 0 0 4px var(--rarity-color-bg);
   white-space: nowrap;
   flex-shrink: 0;
+  z-index: 2;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.arsenal-gun-card:hover .arsenal-gun-icon {
+  transform: scale(1.04) rotate(0.5deg);
+  box-shadow: inset 0 0 6px var(--rarity-color-bg), 0 0 6px var(--rarity-color);
+  background: rgba(0, 0, 0, 0.8);
 }
 
 .arsenal-gun-name {
   font-family: var(--font-pixel);
-  font-size: 0.8rem;
-  color: #f0e6c8;
+  font-size: 0.82rem;
+  color: var(--rarity-color, #f0e6c8) !important;
+  text-shadow: 0 0 6px var(--rarity-color-glow);
   letter-spacing: 0.04em;
   flex: 1;
+  z-index: 2;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+.rarity-legendary .gun-card-name,
+.rarity-legendary .arsenal-gun-name {
+  animation: legendary-pulse 1.5s infinite steps(4);
 }
 
 .arsenal-equipped-badge {
   font-family: var(--font-terminal);
-  font-size: 0.6rem;
-  background: rgba(255, 170, 0, 0.2);
+  font-size: 0.58rem;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  background: rgba(255, 170, 0, 0.15);
   color: #ffaa00;
   border: 1px solid rgba(255, 170, 0, 0.5);
-  padding: 0.1rem 0.35rem;
+  padding: 1px 6px;
   white-space: nowrap;
   flex-shrink: 0;
+  border-radius: 4px;
+  box-shadow: 0 0 4px rgba(255, 170, 0, 0.25);
+  z-index: 2;
 }
 
 .arsenal-gun-stats {
   font-family: var(--font-terminal);
-  font-size: 0.6rem;
-  color: #6699cc;
-  margin-bottom: 0.25rem;
+  font-size: 0.62rem;
+  color: #00f0ff;
+  text-shadow: 0 0 3px rgba(0, 240, 255, 0.15);
+  margin-bottom: 0.35rem;
   letter-spacing: 0.02em;
+  font-weight: bold;
+  z-index: 2;
+  position: relative;
 }
 
 .arsenal-gun-desc {
   font-family: var(--font-terminal);
-  font-size: 0.62rem;
+  font-size: 0.65rem;
   color: var(--text-secondary);
-  line-height: 1.35;
-  margin-bottom: 0.3rem;
+  line-height: 1.4;
+  margin-bottom: 0.4rem;
+  z-index: 2;
+  position: relative;
+}
+
+.desc-highlight {
+  color: #00f0ff;
+  font-weight: bold;
+  text-shadow: 0 0 4px rgba(0, 240, 255, 0.3);
+}
+
+.desc-cap {
+  color: #ffaa00;
+  font-size: 0.8rem;
+  display: block;
+  margin-top: 6px;
+  font-style: italic;
+  opacity: 0.85;
 }
 
 .arsenal-buy-btn {
   font-family: var(--font-terminal);
-  font-size: 0.65rem;
-  background: rgba(0, 160, 70, 0.2);
-  color: #66ee99;
-  border: 1px solid rgba(0, 180, 70, 0.45);
-  padding: 0.25rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: bold;
+  background: rgba(57, 255, 20, 0.08);
+  color: #39ff14;
+  border: 1.5px solid #39ff14;
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
   cursor: pointer;
   width: 100%;
-  transition: background 0.12s;
-  letter-spacing: 0.04em;
+  transition: all 0.15s ease;
+  letter-spacing: 0.05em;
+  box-shadow: 0 0 4px rgba(57, 255, 20, 0.15);
+  z-index: 2;
+  position: relative;
+  text-transform: uppercase;
 }
 
 .arsenal-buy-btn:hover {
-  background: rgba(0, 200, 80, 0.35);
+  background: #39ff14;
+  color: #000;
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.45);
 }
 
 .arsenal-buy-locked {
-  background: rgba(60, 60, 60, 0.3) !important;
-  color: #555 !important;
-  border-color: #333 !important;
+  background: rgba(40, 40, 48, 0.3) !important;
+  color: #555566 !important;
+  border-color: #2a2a35 !important;
+  box-shadow: none !important;
   cursor: not-allowed !important;
 }
 
@@ -2669,90 +2937,255 @@ html, body {
 .gun-card {
   flex: 1 1 200px;
   max-width: 240px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 2px solid var(--panel-border);
-  padding: 1rem 0.9rem;
-  cursor: pointer;
-  position: relative;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  background: 
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.01) 0px, rgba(255, 255, 255, 0.01) 2px, transparent 2px, transparent 10px),
+    linear-gradient(135deg, rgba(17, 17, 22, 0.9) 0%, rgba(9, 9, 12, 0.95) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: none;
+  padding: 1.6rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.15s ease, background 0.15s ease;
+  position: relative;
+  box-shadow: 
+    5px 5px 0px #000,
+    inset 0 0 20px var(--rarity-color-bg, transparent);
+  min-height: 240px;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.gun-card::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 250%;
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(
+    45deg,
+    transparent 43%,
+    rgba(255, 255, 255, 0.06) 47%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0.06) 53%,
+    transparent 57%
+  );
+  transform: translate(-50%, -50%) rotate(-15deg);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.gun-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 3px var(--rarity-color, var(--panel-border));
+  pointer-events: none;
+  z-index: 6;
+  transition: box-shadow 0.15s ease;
+}
+
+.gun-card:hover::before {
+  transform: translate(-20%, -20%) rotate(-15deg);
 }
 
 .gun-card:hover:not(.gun-card-locked) {
-  border-color: rgba(255, 200, 0, 0.6);
-  box-shadow: 0 0 10px rgba(255, 200, 0, 0.25);
+  transform: translateY(-8px) scale(1.03) rotate(0.5deg);
+  box-shadow: 
+    10px 10px 0px #000,
+    0 0 15px var(--rarity-color-glow),
+    inset 0 0 25px var(--rarity-color-bg) !important;
+  background: var(--rarity-bg-hover, linear-gradient(135deg, rgba(20, 20, 28, 0.95) 0%, rgba(10, 10, 15, 0.98) 100%)) !important;
+}
+
+.gun-card:hover:not(.gun-card-locked)::after {
+  box-shadow: inset 0 0 0 3px var(--rarity-color);
 }
 
 .gun-card-selected {
-  border-color: #ffaa00 !important;
-  box-shadow: 0 0 14px rgba(255, 170, 0, 0.45) !important;
+  box-shadow: 
+    10px 10px 0px #000,
+    0 0 20px rgba(255, 170, 0, 0.45),
+    inset 0 0 25px rgba(255, 140, 0, 0.12) !important;
+  background: rgba(255, 140, 0, 0.08) !important;
+}
+
+.gun-card-selected::after {
+  box-shadow: inset 0 0 0 4px #ffaa00;
+}
+
+.gun-card-selected:hover:not(.gun-card-locked)::after {
+  box-shadow: inset 0 0 0 4px #ffaa00;
 }
 
 .gun-card-locked {
-  opacity: 0.5;
-  cursor: default;
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: grayscale(0.55);
+  box-shadow: 5px 5px 0px #000, inset 0 0 20px rgba(40, 40, 48, 0.1) !important;
+  pointer-events: none;
 }
 
-.gun-card.rarity-common  { border-left: 4px solid #aaaaaa; }
-.gun-card.rarity-rare    { border-left: 4px solid #4fc3f7; }
-.gun-card.rarity-epic    { border-left: 4px solid #ce93d8; }
-.gun-card.rarity-legendary { border-left: 4px solid #ffb300; }
+.gun-card-locked::after {
+  box-shadow: inset 0 0 0 3px #2a2a35 !important;
+}
+
+.gun-card-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-family: var(--font-terminal);
+  font-size: 0.58rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid var(--rarity-color);
+  color: var(--rarity-color);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 0 6px var(--rarity-color-glow);
+  z-index: 6;
+  pointer-events: none;
+}
+
+.gun-card-badge::before {
+  content: "●";
+  font-size: 0.5rem;
+  animation: badge-blink 1.5s infinite steps(2);
+}
 
 .gun-card-icon {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 1.4rem;
-  color: #ffaa00;
-  margin-bottom: 0.4rem;
-  letter-spacing: 0.05em;
+  font-family: var(--font-terminal);
+  font-size: clamp(0.9rem, 1.5vw, 1.1rem);
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: var(--rarity-color);
+  background: rgba(0, 0, 0, 0.6);
+  border: 1.5px solid var(--rarity-color);
+  border-radius: 4px;
+  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  height: 32px;
+  box-shadow: inset 0 0 8px var(--rarity-color-bg), 0 0 6px var(--rarity-color-bg);
+  margin-bottom: 0.2rem;
+  z-index: 2;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.gun-card:hover .gun-card-icon {
+  transform: scale(1.06) rotate(1deg);
+  box-shadow: inset 0 0 12px var(--rarity-color-bg), 0 0 12px var(--rarity-color);
+  background: rgba(0, 0, 0, 0.8);
 }
 
 .gun-card-name {
-  font-family: 'Black Ops One', sans-serif;
-  font-size: 0.95rem;
-  color: #f0e6c8;
-  margin-bottom: 0.3rem;
-  letter-spacing: 0.05em;
+  font-family: var(--font-pixel);
+  font-size: clamp(0.75rem, 1.1vw, 0.92rem);
+  text-transform: uppercase;
+  line-height: 1.2;
+  letter-spacing: 1px;
+  overflow-wrap: anywhere;
+  margin-top: 0.1rem;
+  color: var(--rarity-color) !important;
+  text-shadow: 0 0 6px var(--rarity-color-glow);
+  position: relative;
+  padding-bottom: 10px;
+  width: 100%;
+  z-index: 2;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+.gun-card-name::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 15%;
+  width: 70%;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--rarity-color) 30%, var(--rarity-color) 70%, transparent);
+  box-shadow: 0 0 6px var(--rarity-color-glow);
+  opacity: 0.6;
+  transition: width 0.3s ease, left 0.3s ease, opacity 0.3s ease;
+}
+
+.gun-card:hover .gun-card-name::after {
+  width: 90%;
+  left: 5%;
+  opacity: 1;
 }
 
 .gun-card-desc {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.68rem;
+  font-family: var(--font-terminal);
+  font-size: clamp(0.82rem, 1.15vw, 0.95rem);
   color: var(--text-secondary);
-  line-height: 1.4;
-  margin-bottom: 0.5rem;
+  line-height: 1.45;
+  flex-grow: 1;
+  overflow-wrap: anywhere;
+  z-index: 2;
+  margin-top: 4px;
 }
 
 .gun-card-stats {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.65rem;
-  color: #88ccff;
-  background: rgba(0, 100, 200, 0.15);
-  padding: 0.2rem 0.4rem;
-  border: 1px solid rgba(100, 180, 255, 0.2);
-  margin-bottom: 0.5rem;
+  font-family: var(--font-terminal);
+  font-size: clamp(0.68rem, 1.1vw, 0.82rem);
+  color: #00f0ff;
+  background: rgba(0, 240, 255, 0.04);
+  padding: 0.4rem 0.6rem;
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  border-radius: 4px;
+  margin-bottom: 0.2rem;
+  width: 100%;
+  box-sizing: border-box;
+  text-shadow: 0 0 3px rgba(0, 240, 255, 0.15);
+  font-weight: bold;
+  z-index: 2;
 }
 
 .gun-buy-btn {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.7rem;
-  background: rgba(0, 180, 80, 0.25);
-  color: #88ffaa;
-  border: 1px solid rgba(0, 200, 80, 0.5);
-  padding: 0.3rem 0.6rem;
+  font-family: var(--font-terminal);
+  font-size: clamp(0.72rem, 1.1vw, 0.85rem);
+  font-weight: bold;
+  background: rgba(57, 255, 20, 0.08);
+  color: #39ff14;
+  border: 1.5px solid #39ff14;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
   cursor: pointer;
   width: 100%;
-  transition: background 0.15s;
+  transition: all 0.15s ease;
+  letter-spacing: 0.05em;
+  box-shadow: 0 0 4px rgba(57, 255, 20, 0.15);
+  z-index: 2;
+  position: relative;
+  text-transform: uppercase;
+  margin-top: 0.2rem;
 }
 
 .gun-buy-btn:hover {
-  background: rgba(0, 200, 80, 0.4);
+  background: #39ff14;
+  color: #000;
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.45);
 }
 
-.gun-buy-disabled {
-  background: rgba(100, 100, 100, 0.2);
-  color: #666;
-  border-color: #444;
-  cursor: not-allowed;
+.gun-buy-btn.gun-buy-disabled {
+  background: rgba(40, 40, 48, 0.3) !important;
+  color: #555566 !important;
+  border-color: #2a2a35 !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
 }
 
 .gun-select-actions {
