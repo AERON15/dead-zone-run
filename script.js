@@ -1103,7 +1103,7 @@ const UPGRADES_REGISTRY = [
     id: 'weakpointscan',
     name: 'Weak Point Scan',
     icon: '[CRIT]',
-    description: 'Bullets gain +7% critical chance to deal 1.75x damage (Capped at 35% chance)',
+    description: 'Bullets gain +7% critical chance to deal +75% bonus damage on top of base damage (Capped at 35% chance)',
     rarity: 'common',
     apply: () => {
       player.critChance = Number((Math.min(0.35, player.critChance + 0.07)).toFixed(2));
@@ -3432,16 +3432,46 @@ function update() {
       damageZombie(z, 3 / 60, false); // Fire bullets burn for a steady 3 HP/sec instead of scaling twice (absorbed by shield)
 
       // Spawn volatile rising ember/flame particles
-      if (Math.random() < 0.15) {
+      if (Math.random() < 0.22) {
+        // Rising flame wisp — warm orange-yellow with upward drift
+        const flameHue = Math.random();
         gameParticles.push({
-          x: z.x + (Math.random() - 0.5) * z.size,
-          y: z.y + (Math.random() - 0.5) * z.size,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: -Math.random() * 1.5 - 0.5, // Drift upward
-          size: Math.floor(Math.random() * 3) + 2, // 2-5px
-          color: Math.random() > 0.4 ? '#ff5500' : '#ffea00',
-          life: 0.8,
-          decay: 0.05
+          x: z.x + (Math.random() - 0.5) * z.size * 0.8,
+          y: z.y + (Math.random() - 0.5) * z.size * 0.5,
+          vx: (Math.random() - 0.5) * 0.6,
+          vy: -Math.random() * 1.8 - 0.8, // Strong upward drift
+          size: Math.floor(Math.random() * 4) + 2,
+          color: flameHue < 0.35 ? '#ff3300' : (flameHue < 0.65 ? '#ff6600' : '#ffcc00'),
+          life: 0.9,
+          decay: 0.04
+        });
+      }
+      // Bright ember spark — small, fast, arcing outward
+      if (Math.random() < 0.10) {
+        const emberAngle = Math.random() * Math.PI * 2;
+        const emberSpeed = 1.2 + Math.random() * 1.5;
+        gameParticles.push({
+          x: z.x + (Math.random() - 0.5) * z.size * 0.3,
+          y: z.y + (Math.random() - 0.5) * z.size * 0.3,
+          vx: Math.cos(emberAngle) * emberSpeed,
+          vy: Math.sin(emberAngle) * emberSpeed - 1.0,
+          size: 2,
+          color: Math.random() > 0.5 ? '#ffea00' : '#ffffff',
+          life: 0.55,
+          decay: 0.07
+        });
+      }
+      // Occasional dark smoke puff — drifts upward slowly
+      if (Math.random() < 0.04) {
+        gameParticles.push({
+          x: z.x + (Math.random() - 0.5) * z.size * 0.6,
+          y: z.y - z.size * 0.2,
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: -Math.random() * 0.8 - 0.3,
+          size: Math.floor(Math.random() * 5) + 4,
+          color: '#3a2a1a',
+          life: 0.7,
+          decay: 0.025
         });
       }
     }
@@ -4197,10 +4227,10 @@ function update() {
             damageDealt = Math.round(damageDealt * longShotMult);
           }
 
-          // Weak Point Scan (Critical Hit chance)
+          // Weak Point Scan — additive crit bonus on base bullet damage, not the full multiplied stack
           if (player.critChance > 0 && Math.random() < player.critChance) {
             isCrit = true;
-            damageDealt = Math.round(damageDealt * 1.75);
+            damageDealt += Math.round(b.damage * 0.75);
           }
 
           // Finisher Rounds (+8% execute damage per stack to target below 35% HP)
@@ -5798,11 +5828,12 @@ function shootWeapon() {
     }
     // Burn Bullet damage boost is now applied on an individual bullet basis (under Chunk 6/7)
     let finalSize = 10 * (1 + player.bulletSizeModifier); // Giant Bullets modifier
-    const pulseOrbSize = 26 * (1 + player.bulletSizeModifier); // Pulse orb scales with Giant Bullets
+    let pulseOrbSize = 26 * (1 + player.bulletSizeModifier); // Pulse orb scales with Giant Bullets
 
     if (isOverclocked) {
       finalDamage = Math.round(finalDamage * 1.5); // +50% damage
       finalSize *= 1.5; // larger projectile visual
+      pulseOrbSize *= 1.5; // overclocked pulse orbs are 50% larger
     }
 
     if (selectedGun === 'shotgun') {
@@ -8129,7 +8160,7 @@ function drawBullets() {
       const coreTailX = b.x - b.vx * (trailLength * 0.5);
       const coreTailY = b.y - b.vy * (trailLength * 0.5);
 
-      if (b.isOverclocked) {
+      if (b.isOverclocked && !b.isPulseOrb) {
         // Glow sheath
         ctx.strokeStyle = 'rgba(255, 0, 50, 0.4)';
         ctx.lineWidth = b.size * 1.2;
@@ -8235,7 +8266,8 @@ function drawBullets() {
           const gx = b.x - b.vx * (gi * 3.5);
           const gy = b.y - b.vy * (gi * 3.5);
           const gr = (b.size / 2) * (1 - gi * 0.25);
-          ctx.fillStyle = `rgba(120, 0, 200, ${0.28 - gi * 0.07})`;
+          const ghostColor = b.isFire ? `rgba(200, 40, 0, ${0.28 - gi * 0.07})` : (b.isCryo ? `rgba(0, 140, 220, ${0.28 - gi * 0.07})` : (b.isOverclocked ? `rgba(200, 0, 40, ${0.28 - gi * 0.07})` : `rgba(120, 0, 200, ${0.28 - gi * 0.07})`));
+          ctx.fillStyle = ghostColor;
           ctx.beginPath(); ctx.arc(gx, gy, gr, 0, Math.PI * 2); ctx.fill();
         }
       } else if (b.isChargedShot) {
@@ -8446,7 +8478,7 @@ function drawBullets() {
       ctx.beginPath(); ctx.arc(0, 0, half * 0.20, 0, Math.PI * 2); ctx.fill();
 
       ctx.restore();
-    } else if (b.isOverclocked) {
+    } else if (b.isOverclocked && !b.isPulseOrb) {
       ctx.fillStyle = '#ff0033';
       ctx.fillRect(Math.floor(b.x - half), Math.floor(b.y - half), b.size, b.size);
       ctx.fillStyle = '#ffffff';
@@ -8475,7 +8507,10 @@ function drawBullets() {
       ctx.fill();
     } else if (b.isTurretBullet) {
       ctx.fillStyle = '#b85823'; // copper/bronze body
-      ct    } else if (b.isPulseOrb) {
+      ctx.beginPath(); ctx.arc(b.x, b.y, half, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffcc44'; // hot brass core
+      ctx.beginPath(); ctx.arc(b.x, b.y, half * 0.4, 0, Math.PI * 2); ctx.fill();
+    } else if (b.isPulseOrb) {
       // 1. Heavy energetic void/plasma projectile rendering
       const _age = b.age || 0;
       const _pulse = (Math.sin(_age * 0.32) + 1) / 2; // high-frequency pulse
@@ -8508,6 +8543,15 @@ function drawBullets() {
         arcColor = '#ffffff'; // jagged white fractures
         orbitRingColor = `rgba(130, 230, 255, ${0.60 + _pulse * 0.35})`; // ice halo ring
         satelliteColor = 'rgba(200, 245, 255, 0.85)'; // snow crystals
+      } else if (b.isOverclocked) {
+        // Supercharged crimson plasma shell
+        outerColor = `rgba(120, 0, 15, 0.90)`; // deep blood-black
+        midColor = `rgba(255, 0, 50, 0.85)`; // neon crimson
+        innerColor = `rgba(255, 80, 120, 0.92)`; // hot pink-red
+        coreColor = `rgba(255, 240, 245, ${0.92 + _pulse * 0.08})`; // white-hot core
+        arcColor = '#ff3366'; // crackling red arcs
+        orbitRingColor = `rgba(255, 0, 60, ${0.60 + _pulse * 0.35})`; // crimson halo ring
+        satelliteColor = 'rgba(255, 120, 160, 0.85)'; // hot pink sparks
       }
 
       // Trace trailing jet-exhaust rings in opposite direction of travel vector
@@ -8529,6 +8573,8 @@ function drawBullets() {
             ctx.strokeStyle = `rgba(255, 69, 0, ${ringAlpha})`;
           } else if (b.isCryo) {
             ctx.strokeStyle = `rgba(80, 220, 255, ${ringAlpha})`;
+          } else if (b.isOverclocked) {
+            ctx.strokeStyle = `rgba(255, 0, 50, ${ringAlpha})`;
           } else {
             ctx.strokeStyle = `rgba(160, 40, 255, ${ringAlpha})`;
           }
@@ -8564,7 +8610,7 @@ function drawBullets() {
       ctx.fill();
 
       // 3. High-voltage energetic outline border
-      ctx.strokeStyle = b.isFire ? `rgba(255, 140, 0, ${0.60 + _pulse * 0.40})` : (b.isCryo ? `rgba(130, 230, 255, ${0.60 + _pulse * 0.40})` : `rgba(0, 220, 255, ${0.60 + _pulse * 0.40})`);
+      ctx.strokeStyle = b.isFire ? `rgba(255, 140, 0, ${0.60 + _pulse * 0.40})` : (b.isCryo ? `rgba(130, 230, 255, ${0.60 + _pulse * 0.40})` : (b.isOverclocked ? `rgba(255, 0, 60, ${0.60 + _pulse * 0.40})` : `rgba(0, 220, 255, ${0.60 + _pulse * 0.40})`));
       ctx.lineWidth = 2.0;
       ctx.beginPath();
       ctx.arc(b.x, b.y, _r * 1.15, 0, Math.PI * 2);
@@ -10971,31 +11017,121 @@ function drawZombies() {
     // Previously gated with !isFlashed which caused the effect to never show when bullets
     // hit rapidly (flashTicks kept resetting, perpetually suppressing the aura).
     if (z.burnTicks > 0) {
-      // Animated layered waving fluid flames
-      // Red base layer
-      ctx.fillStyle = 'rgba(230, 30, 0, 0.4)';
+      const spBase = baseSpriteSizes[z.type] || baseSpriteSizes.normal;
+      const burnRadius = spBase * 0.62;
+      const burnPulse = (Math.sin(gameTick * 0.12) + 1) / 2;
+      const burnIntensity = Math.min(1.0, z.burnTicks / 60); // fades as burn expires
+
+      // 1. Outer heat distortion shimmer aura (radial gradient halo)
+      const heatGrad = ctx.createRadialGradient(0, 0, burnRadius * 0.3, 0, 0, burnRadius * 1.4);
+      heatGrad.addColorStop(0, `rgba(255, 60, 0, ${0.06 * burnIntensity})`);
+      heatGrad.addColorStop(0.5, `rgba(255, 120, 0, ${0.10 * burnIntensity + burnPulse * 0.04})`);
+      heatGrad.addColorStop(1, `rgba(255, 40, 0, 0)`);
+      ctx.fillStyle = heatGrad;
       ctx.beginPath();
-      ctx.arc(Math.sin(gameTick * 0.1) * size * 0.08, -Math.cos(gameTick * 0.08) * size * 0.08 - size * 0.08, size * 0.44, 0, Math.PI * 2);
+      ctx.arc(0, 0, burnRadius * 1.4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Orange middle layer
-      ctx.fillStyle = 'rgba(255, 120, 0, 0.52)';
+      // 2. Animated hexagonal flame cage (slowly rotating molten border)
+      const hexAngle = gameTick * 0.008;
+      const hexSides = 6;
+      ctx.strokeStyle = `rgba(255, 80, 0, ${0.55 + burnPulse * 0.30})`;
+      ctx.lineWidth = 2.0;
       ctx.beginPath();
-      ctx.arc(Math.cos(gameTick * 0.12) * size * 0.06, Math.sin(gameTick * 0.1) * size * 0.06 - size * 0.15, size * 0.32, 0, Math.PI * 2);
+      for (let s = 0; s <= hexSides; s++) {
+        const a = (s * Math.PI * 2 / hexSides) + hexAngle;
+        // Warp the hex vertices with flickering displacement
+        const warp = 1.0 + Math.sin(gameTick * 0.18 + s * 1.8) * 0.08;
+        const hx = Math.cos(a) * burnRadius * warp;
+        const hy = Math.sin(a) * burnRadius * warp;
+        if (s === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      // Inner molten fill
+      ctx.fillStyle = `rgba(255, 50, 0, ${0.10 + burnPulse * 0.06})`;
       ctx.fill();
 
-      // Yellow/white radiant core layer
-      ctx.fillStyle = 'rgba(255, 235, 100, 0.72)';
+      // 3. Rising procedural flame tongues (6 independent flickers)
+      for (let f = 0; f < 6; f++) {
+        const fAngle = (f / 6) * Math.PI * 2 + hexAngle * 0.5;
+        const flamePhase = gameTick * 0.15 + f * 2.1;
+        const flameHeight = spBase * (0.28 + Math.abs(Math.sin(flamePhase)) * 0.22);
+        const flameWidth = spBase * 0.09;
+
+        // Flame base on the hex boundary
+        const baseX = Math.cos(fAngle) * burnRadius * 0.7;
+        const baseY = Math.sin(fAngle) * burnRadius * 0.7;
+
+        // Flame tip rises outward + upward with flickering offset
+        const tipJitter = Math.sin(flamePhase * 1.7) * spBase * 0.06;
+        const tipX = Math.cos(fAngle) * (burnRadius * 0.7 + flameHeight) + tipJitter;
+        const tipY = Math.sin(fAngle) * (burnRadius * 0.7 + flameHeight) - Math.abs(Math.sin(flamePhase)) * spBase * 0.12;
+
+        // Perpendicular for flame width
+        const perpA = fAngle + Math.PI / 2;
+        const px1 = baseX + Math.cos(perpA) * flameWidth;
+        const py1 = baseY + Math.sin(perpA) * flameWidth;
+        const px2 = baseX - Math.cos(perpA) * flameWidth;
+        const py2 = baseY - Math.sin(perpA) * flameWidth;
+
+        // Draw triangular flame tongue
+        const flameBright = 0.55 + Math.abs(Math.sin(flamePhase)) * 0.40;
+        ctx.fillStyle = f % 2 === 0
+          ? `rgba(255, ${Math.floor(60 + flameBright * 100)}, 0, ${flameBright * burnIntensity})`
+          : `rgba(255, ${Math.floor(160 + flameBright * 80)}, ${Math.floor(flameBright * 40)}, ${flameBright * 0.85 * burnIntensity})`;
+        ctx.beginPath();
+        ctx.moveTo(px1, py1);
+        ctx.quadraticCurveTo(tipX, tipY, px2, py2);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 4. Glowing ember veins radiating from core (4 branching veins)
+      ctx.strokeStyle = `rgba(255, 200, 50, ${0.50 + burnPulse * 0.35})`;
+      ctx.lineWidth = 1.4;
       ctx.beginPath();
-      ctx.arc(Math.sin(gameTick * 0.15) * size * 0.04, -size * 0.22, size * 0.18, 0, Math.PI * 2);
+      for (let v = 0; v < 4; v++) {
+        const vAngle = (v * Math.PI * 2 / 4) + hexAngle * 1.5 + Math.PI / 4;
+        ctx.moveTo(0, 0);
+        // Jagged mid-point for organic vein look
+        const midDist = burnRadius * 0.45;
+        const mx = Math.cos(vAngle) * midDist + Math.sin(gameTick * 0.08 + v * 3) * spBase * 0.04;
+        const my = Math.sin(vAngle) * midDist + Math.cos(gameTick * 0.06 + v * 2) * spBase * 0.04;
+        ctx.lineTo(mx, my);
+        ctx.lineTo(Math.cos(vAngle) * burnRadius * 0.85, Math.sin(vAngle) * burnRadius * 0.85);
+      }
+      ctx.stroke();
+
+      // 5. White-hot molten core
+      const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, spBase * 0.18);
+      coreGrad.addColorStop(0, `rgba(255, 255, 230, ${0.85 + burnPulse * 0.15})`);
+      coreGrad.addColorStop(0.5, `rgba(255, 200, 80, ${0.60 + burnPulse * 0.20})`);
+      coreGrad.addColorStop(1, `rgba(255, 80, 0, 0)`);
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, spBase * 0.18, 0, Math.PI * 2);
       ctx.fill();
 
-      // Subtle flickering flame sparks
-      ctx.fillStyle = 'rgba(255, 165, 0, 0.75)';
-      for (let f = 0; f < 3; f++) {
-        const fx = (Math.random() - 0.5) * size * 0.6;
-        const fy = -Math.random() * size * 0.7;
-        ctx.fillRect(fx, fy, 4, 4);
+      // 6. Orbiting volcanic cinder sparks (3 sparks spiraling upward)
+      for (let c = 0; c < 3; c++) {
+        const cPhase = gameTick * 0.10 + (c / 3) * Math.PI * 2;
+        const cDist = burnRadius * (0.6 + Math.sin(cPhase * 0.7) * 0.35);
+        const cx = Math.cos(cPhase) * cDist;
+        const cy = Math.sin(cPhase) * cDist - Math.abs(Math.sin(cPhase * 0.5)) * spBase * 0.25; // rise upward
+
+        const sparkSize = 2.0 + Math.sin(cPhase * 1.3) * 1.2;
+        ctx.fillStyle = `rgba(255, ${Math.floor(180 + Math.sin(cPhase) * 60)}, 0, ${0.80 + Math.sin(cPhase) * 0.20})`;
+        ctx.beginPath();
+        // Diamond-shaped cinder spark
+        ctx.moveTo(cx, cy - sparkSize);
+        ctx.lineTo(cx + sparkSize * 0.5, cy);
+        ctx.lineTo(cx, cy + sparkSize);
+        ctx.lineTo(cx - sparkSize * 0.5, cy);
+        ctx.closePath();
+        ctx.fill();
       }
     } else if (z.cryoSlowTicks > 0) {
       const spBase = baseSpriteSizes[z.type] || baseSpriteSizes.normal;
